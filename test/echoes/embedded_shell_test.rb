@@ -53,7 +53,7 @@ class Echoes::EmbeddedShellTest < Test::Unit::TestCase
 
   test "cd changes the embedded shell's cwd" do
     @shell.submit_and_wait("cd /tmp")
-    expected_tmp = RbConfig::CONFIG['host_os'] =~ /darwin/ ? "/private/tmp" : "/tmp"
+    expected_tmp = Echoes::Platform.macos? ? "/private/tmp" : "/tmp"
     assert_equal expected_tmp, @shell.cwd
   end
 

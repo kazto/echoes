@@ -1,9 +1,8 @@
 # frozen_string_literal: true
 
-require 'rbconfig'
-is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+require_relative 'platform'
 
-if is_windows
+if Echoes::Platform.windows?
   require 'open3'
 else
   require 'pty'
@@ -919,8 +918,7 @@ module Echoes
     DARWIN_TIOCSPGRP = 0x80047476
 
     def spawn_with_pty(spawn_args, env, rows, cols)
-      is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
-      if is_windows
+      if Platform.windows?
         pty_write, pty_read, @win_wait_thr =
           if env
             Open3.popen2e(env, *spawn_args)

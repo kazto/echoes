@@ -21,6 +21,7 @@
 
 require 'json'
 require 'fiddle/import'
+require_relative 'platform'
 require 'rubish'
 require 'rubish/runtime/command'
 require 'reline'
@@ -39,8 +40,7 @@ module Echoes
     def initialize
       Process.setsid rescue nil
       
-      is_macos = RbConfig::CONFIG['host_os'] =~ /darwin/
-      tiocsctty = is_macos ? DARWIN_TIOCSCTTY : LINUX_TIOCSCTTY
+      tiocsctty = Platform.macos? ? DARWIN_TIOCSCTTY : LINUX_TIOCSCTTY
       STDIN.ioctl(tiocsctty, 0) rescue nil
       # After claiming ctty, explicitly set the slave's foreground
       # process group to ours. Without this, the line discipline has
@@ -77,8 +77,7 @@ module Echoes
       # Errors land on stderr (= the pty, visible in the pane) so
       # silent failures during startup don't disappear into the void.
       run_init_step(:setup_default_aliases)
-      is_macos = RbConfig::CONFIG['host_os'] =~ /darwin/
-      run_init_step(:load_config) if is_macos
+      run_init_step(:load_config) if Platform.macos?
       run_init_step(:load_history) unless no_rc
       @control_in  = IO.for_fd(3, 'r')
       @control_out = IO.for_fd(4, 'w')

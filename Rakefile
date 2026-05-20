@@ -2,19 +2,43 @@
 
 require "bundler/gem_tasks"
 require "rake/testtask"
+require_relative "lib/echoes/platform"
+
+CORE_TEST_FILES = FileList[
+  "test/echoes_test.rb",
+  "test/echoes/cell_test.rb",
+  "test/echoes/client_test.rb",
+  "test/echoes/configuration_test.rb",
+  "test/echoes/copy_mode_test.rb",
+  "test/echoes/cursor_test.rb",
+  "test/echoes/gui_test.rb",
+  "test/echoes/iterm2_images_test.rb",
+  "test/echoes/keybind_test.rb",
+  "test/echoes/kitty_graphics_test.rb",
+  "test/echoes/parser_test.rb",
+  "test/echoes/platform_test.rb",
+  "test/echoes/profile_test.rb",
+  "test/echoes/screen_test.rb",
+  "test/echoes/shake_detector_test.rb",
+  "test/echoes/sixel_decoder_test.rb",
+]
 
 Rake::TestTask.new(:test) do |t|
   t.libs << "test"
   t.libs << "lib"
-  is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
-  if is_windows
-    t.test_files = FileList["test/**/*_test.rb"]
-                   .exclude("test/**/embedded_shell_test.rb")
-                   .exclude("test/**/objc_test.rb")
-                   .exclude("test/**/shake_detector_test.rb")
-                   .exclude("test/**/installer_test.rb")
+  if Echoes::Platform.windows?
+    t.test_files = CORE_TEST_FILES
   else
     t.test_files = FileList["test/**/*_test.rb"]
+  end
+end
+
+namespace :test do
+  desc "Run OS-independent core tests"
+  Rake::TestTask.new(:core) do |t|
+    t.libs << "test"
+    t.libs << "lib"
+    t.test_files = CORE_TEST_FILES
   end
 end
 

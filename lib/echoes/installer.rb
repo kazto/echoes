@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require 'fileutils'
-require 'rbconfig'
+require_relative 'platform'
 
 module Echoes
   # Puts launcher wrappers into place so the user can easily launch echoes.
@@ -14,7 +14,7 @@ module Echoes
     module_function
 
     def is_windows?
-      RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+      Platform.windows?
     end
 
     def install(source_root: default_source_root, target_dir: nil)

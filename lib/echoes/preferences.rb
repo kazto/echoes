@@ -1,16 +1,14 @@
 # frozen_string_literal: true
 
-require 'rbconfig'
 require 'fileutils'
+require_relative 'platform'
 
 module Echoes
   # Thin wrapper around configuration persistence.
   # On macOS, it wraps `[NSUserDefaults initWithSuiteName:]` saving in `~/Library/Preferences/<SUITE>.plist`.
   # On Windows, it falls back to a JSON file saved in `~/.config/echoes/preferences.json`.
   module Preferences
-    is_macos = RbConfig::CONFIG['host_os'] =~ /darwin/
-
-    if is_macos
+    if Platform.macos?
       require_relative 'objc'
       SUITE = 'jp.dio.echoes'
 

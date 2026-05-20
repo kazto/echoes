@@ -27,3 +27,20 @@ jobs:
           bundler-cache: true
       - name: Run the default task
         run: bundle exec rake
+
+  windows-core:
+    runs-on: windows-latest
+    name: Windows core tests
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0'
+      - name: Install core test dependencies
+        run: gem install rake test-unit
+      - name: Run core tests
+        run: ruby -S rake test:core

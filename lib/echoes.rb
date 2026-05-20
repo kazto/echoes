@@ -14,26 +14,25 @@
 end
 
 require_relative "echoes/version"
+require_relative "echoes/platform"
 require_relative "echoes/configuration"
 require_relative "echoes/cell"
 require_relative "echoes/cursor"
 require_relative "echoes/screen"
 require_relative "echoes/parser"
 require_relative "echoes/copy_mode"
+require_relative "echoes/shake_detector"
 require_relative "echoes/pane"
 require_relative "echoes/pane_tree"
 require_relative "echoes/tab"
 require_relative "echoes/sixel_decoder"
 require_relative "echoes/terminal"
 require_relative "echoes/preferences"
-require 'rbconfig'
-is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
-is_macos = RbConfig::CONFIG['host_os'] =~ /darwin/
 
-if is_windows
+if Echoes::Platform.windows?
   require_relative "echoes/win32"
   require_relative "echoes/gui_win32"
-elsif is_macos
+elsif Echoes::Platform.macos?
   require_relative "echoes/objc"
   require_relative "echoes/gui"
 else

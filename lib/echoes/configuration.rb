@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require 'rbconfig'
+require_relative 'platform'
 require_relative 'profile'
 
 module Echoes
@@ -9,8 +9,7 @@ module Echoes
       @font_size = 14.0
       @rows = 24
       @cols = 80
-      is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
-      @shell = ENV['SHELL'] || (is_windows ? 'powershell.exe' : '/bin/bash')
+      @shell = ENV['SHELL'] || Platform.default_shell
       @scrollback_limit = 1000
       @foreground = [0.9, 0.9, 0.9]
       @background = [0.0, 0.0, 0.0]

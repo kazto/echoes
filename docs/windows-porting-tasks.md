@@ -6,35 +6,59 @@
 
 このタスクリストは、Windows 対応を進めるための作業項目を依存順に並べたものです。まず Windows で `require "echoes"` と OS 非依存テストを動かせる状態を作り、その後に shell backend、ConPTY、GUI、配布まわりへ進みます。
 
+## 進捗メモ
+
+更新日: 2026-05-20
+
+- `feature/windows` ブランチで Phase 1 と Phase 2 の最小対応を進行中。
+- `Echoes::Platform` を追加し、OS 判定と default shell 判定を集約済み。
+- `ShakeDetector` を AppKit GUI から切り出し、Windows でも OS 非依存テストに含められる状態に更新済み。
+- `rake test:core` を追加し、Windows では OS 非依存コアテストだけを実行する default test に更新済み。
+- GitHub Actions に Windows core test job を追加済み。ただしリモート CI の成功はまだ未確認。
+- Windows ローカル確認済み:
+  - `ruby -S rake test:core`: 496 tests, 1078 assertions, 0 failures, 0 errors
+  - `ruby -S rake test`: 496 tests, 1078 assertions, 0 failures, 0 errors
+  - `ruby -Ilib -e "require 'echoes'; puts Echoes::VERSION"`: `0.2.0`
+- 既知の未解決事項:
+  - Windows ローカルでは `bundle exec rake ...` が `rubish` git checkout 不足で失敗する。Windows core CI は暫定的に Bundler を使わず `gem install rake test-unit` と `ruby -S rake test:core` で実行する。
+  - macOS フルテストはこの作業環境では未実行。
+
 ## Phase 0: 作業前確認
 
 - [ ] `bundle exec rake test` を macOS で実行し、現行ベースラインを確認する。
-- [ ] `git status --short` で未コミット差分を確認する。
-- [ ] Windows 対応の初期スコープを決める。
+- [x] `git status --short` で未コミット差分を確認する。
+- [x] Windows 対応の初期スコープを決める。
   - 推奨: 通常シェル + OS 非依存コアテストを最初の対象にする。
   - 後回し推奨: AppKit 相当のフル GUI、embedded rubish mode、画像表示、IME、インストーラ。
 - [ ] Windows の対象 Ruby と対象 Windows バージョンを決める。
+  - 暫定: ローカル検証は Ruby 4.0 / Windows で実施。
   - ConPTY を使う前提なら Windows 10 1809 以降が必要。
 
 ## Phase 1: OS 判定とロード境界
 
-- [ ] `lib/echoes/platform.rb` を追加し、`macos?`, `windows?`, `unix?` を定義する。
-- [ ] `lib/echoes.rb` で `echoes/objc`, `echoes/preferences`, `echoes/gui` を無条件 require しないようにする。
+- [x] `lib/echoes/platform.rb` を追加し、`macos?`, `windows?`, `unix?` を定義する。
+- [x] `lib/echoes.rb` で `echoes/objc`, `echoes/preferences`, `echoes/gui` を無条件 require しないようにする。
+  - `preferences` は require 自体を残しつつ、内部で OS 別に安全に分岐する形に更新済み。
 - [ ] `exe/echoes` を修正し、GUI 起動時だけ OS 別 GUI backend を require する。
+  - `lib/echoes.rb` 側の OS 別 GUI ロードは対応済み。entrypoint 側の整理は未実施。
 - [ ] Windows で GUI 未実装の場合、`echoes` 実行時に明確な未対応メッセージを出す。
-- [ ] `require "echoes"` が Windows で AppKit / CoreGraphics をロードしないことを確認する。
-- [ ] `test/test_helper.rb` を OS 非依存テスト向けに整理する。
+- [x] `require "echoes"` が Windows で AppKit / CoreGraphics をロードしないことを確認する。
+- [x] `test/test_helper.rb` を OS 非依存テスト向けに整理する。
 - [ ] AppKit 必須テスト用の helper を分ける。
-- [ ] `gui_test.rb`, `objc_test.rb`, `preferences_test.rb` を macOS 限定で skip する。
+- [x] AppKit 依存の `gui_test.rb`, `objc_test.rb` を macOS 限定で skip する。
+  - `gui_test.rb` と `objc_test.rb` は macOS 限定に整理済み。
+  - `preferences_test.rb` は JSON backend により Windows でも実行可能なため、macOS 限定にはしていない。
 - [ ] `/bin/*` や `/usr/bin/*` 前提のテストを洗い出し、OS 条件付きにする。
-- [ ] parser / screen / cell / copy mode / pane tree など OS 非依存テストだけを Windows で走らせるコマンドを用意する。
+- [x] parser / screen / cell / copy mode / pane tree など OS 非依存テストだけを Windows で走らせるコマンドを用意する。
+  - `ruby -S rake test:core` を追加済み。
 
 ## Phase 2: CI の最小 Windows ジョブ
 
-- [ ] `.github/workflows/main.yml` に Windows ジョブを追加する。
-- [ ] Windows ジョブでは、最初は OS 非依存テストだけを実行する。
-- [ ] macOS ジョブは既存のフルテストを維持する。
+- [x] `.github/workflows/main.yml` に Windows ジョブを追加する。
+- [x] Windows ジョブでは、最初は OS 非依存テストだけを実行する。
+- [x] macOS ジョブは既存のフルテストを維持する。
 - [ ] CI 上で Bundler が `rubish-gem` / `rvim` を取得できるか確認する。
+  - Windows core CI は暫定的に Bundler を使わない構成にしている。
 - [ ] CI の Ruby バージョン表記と `CLAUDE.md` の記述差分を確認し、必要ならドキュメントを更新する。
 
 ## Phase 3: Shell Backend 抽象化
@@ -163,7 +187,8 @@
 ## Phase 12: 最終確認
 
 - [ ] macOS フルテストを実行する。
-- [ ] Windows コアテストを実行する。
+- [x] Windows コアテストを実行する。
+  - ローカルで `ruby -S rake test:core` 成功。
 - [ ] Windows backend テストを実行する。
 - [ ] Windows GUI 手動確認を実施する。
 - [ ] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。
@@ -171,9 +196,10 @@
 
 ## 初回マイルストーンの完了条件
 
-- [ ] Windows で `require "echoes"` が成功する。
+- [x] Windows で `require "echoes"` が成功する。
 - [ ] Windows CI で OS 非依存テストが通る。
+  - CI job は追加済み。リモート実行結果は未確認。
 - [ ] macOS の既存 GUI / PTY テストが壊れていない。
-- [ ] AppKit 依存テストが macOS 限定として明示されている。
+- [x] AppKit 依存テストが macOS 限定として明示されている。
 - [ ] 次の作業者が ConPTY backend に着手できる状態になっている。
 

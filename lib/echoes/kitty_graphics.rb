@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'zlib'
+require_relative 'platform'
 
 module Echoes
   # Minimum-viable Kitty graphics protocol decoder. Wire format:
@@ -245,13 +246,11 @@ module Echoes
     #   f=24          — raw RGB packed, dims from s= / v=
     #   f=32          — raw RGBA packed, dims from s= / v=
     def decode_image(bytes, format, opts = {})
-      require 'rbconfig'
-      is_win = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
       case format.to_s
       when '100', ''
         decode_png(bytes)
       when '24'
-        if is_win
+        if Platform.windows?
           require_relative 'kitty_graphics_win32'
           GdiPlusPng.from_rgb(bytes, opts['s'].to_i, opts['v'].to_i)
         else
@@ -259,7 +258,7 @@ module Echoes
           AppKitPng.from_rgb(bytes, opts['s'].to_i, opts['v'].to_i)
         end
       when '32'
-        if is_win
+        if Platform.windows?
           require_relative 'kitty_graphics_win32'
           GdiPlusPng.from_rgba(bytes, opts['s'].to_i, opts['v'].to_i)
         else
@@ -271,8 +270,7 @@ module Echoes
 
     # PNG → {rgba:, width:, height:}.
     def decode_png(bytes)
-      require 'rbconfig'
-      if RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+      if Platform.windows?
         require_relative 'kitty_graphics_win32'
         GdiPlusPng.decode(bytes)
       else

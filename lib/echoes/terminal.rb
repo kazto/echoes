@@ -1,9 +1,8 @@
 # frozen_string_literal: true
 
-require 'rbconfig'
-is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+require_relative 'platform'
 
-if is_windows
+if Echoes::Platform.windows?
   require_relative 'conpty'
 else
   require 'pty'
@@ -24,9 +23,7 @@ module Echoes
     end
 
     def run
-      is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
-
-      if is_windows
+      if Platform.windows?
         conpty = ConPTY.new
         conpty.spawn(@command, cols: @cols, rows: @rows)
 
@@ -149,8 +146,7 @@ module Echoes
     end
 
     def setup_signal_handlers
-      is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
-      return if is_windows
+      return if Platform.windows?
 
       Signal.trap(:WINCH) do
         if IO.console

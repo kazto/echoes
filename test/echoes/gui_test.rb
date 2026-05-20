@@ -4,9 +4,7 @@ require "test_helper"
 require "shellwords"
 require "tmpdir"
 
-require "rbconfig"
-
-if RbConfig::CONFIG['host_os'] =~ /darwin/
+if Echoes::Platform.macos?
   class Echoes::GUIFileDropTest < Test::Unit::TestCase
     def create_pasteboard_with_file_urls(*paths)
       pb = ObjC::MSG_PTR_1.call(

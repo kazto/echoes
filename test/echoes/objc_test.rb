@@ -2,9 +2,7 @@
 
 require "test_helper"
 
-require "rbconfig"
-
-if RbConfig::CONFIG['host_os'] =~ /darwin/
+if Echoes::Platform.macos?
   class Echoes::ObjCTest < Test::Unit::TestCase
     test "to_ruby_string returns UTF-8 encoding" do
       ns = Echoes::ObjC.nsstring("hello")

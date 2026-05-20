@@ -6,7 +6,6 @@ require_relative 'pane'
 require_relative 'preferences'
 require_relative 'profile'
 require_relative 'configuration'
-require 'rbconfig'
 require 'socket'
 require 'uri'
 
@@ -230,7 +229,6 @@ module Echoes
           vk = wparam.to_i
           warn "echoes debug: WM_KEYDOWN vk=#{vk}"
           ctrl_pressed = (Win32::GetKeyState.call(0x11) & 0x8000) != 0
-          shift_pressed = (Win32::GetKeyState.call(0x10) & 0x8000) != 0
 
           escape_sequence = nil
           case vk
