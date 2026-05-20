@@ -25,10 +25,26 @@ require_relative "echoes/pane_tree"
 require_relative "echoes/tab"
 require_relative "echoes/sixel_decoder"
 require_relative "echoes/terminal"
-require_relative "echoes/objc"
 require_relative "echoes/preferences"
-require_relative "echoes/client"
-require_relative "echoes/gui"
+require 'rbconfig'
+is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+is_macos = RbConfig::CONFIG['host_os'] =~ /darwin/
+
+if is_windows
+  require_relative "echoes/win32"
+  require_relative "echoes/gui_win32"
+elsif is_macos
+  require_relative "echoes/objc"
+  require_relative "echoes/gui"
+else
+  module Echoes
+    class GUI
+      def self.run
+        # No-op stub for platform-independent tests on non-macOS/non-Windows systems
+      end
+    end
+  end
+end
 
 module Echoes
   class Error < StandardError; end

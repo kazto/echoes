@@ -4,7 +4,7 @@ require "test_helper"
 
 class Echoes::TabTest < Test::Unit::TestCase
   setup do
-    @tab = Echoes::Tab.new(command: "/bin/cat", rows: 24, cols: 80)
+    @tab = Echoes::Tab.new(command: TestHelper::CAT_COMMAND, rows: 24, cols: 80)
   end
 
   teardown do
@@ -37,12 +37,15 @@ class Echoes::TabTest < Test::Unit::TestCase
   end
 
   test "initialize sets title from command basename" do
-    assert_equal("cat", @tab.title)
+    expected = TestHelper::IS_WINDOWS ? File.basename(TestHelper::CAT_COMMAND) : "cat"
+    assert_equal(expected, @tab.title)
   end
 
   test "initialize with path sets title to basename" do
-    tab = Echoes::Tab.new(command: "/usr/bin/env", rows: 5, cols: 10)
-    assert_equal("env", tab.title)
+    cmd = TestHelper::IS_WINDOWS ? "C:\\Windows\\System32\\cmd.exe" : "/usr/bin/env"
+    expected = TestHelper::IS_WINDOWS ? "cmd.exe" : "env"
+    tab = Echoes::Tab.new(command: cmd, rows: 5, cols: 10)
+    assert_equal(expected, tab.title)
     tab.close
   end
 
@@ -51,8 +54,8 @@ class Echoes::TabTest < Test::Unit::TestCase
   end
 
   test "alive? returns false after process exits" do
-    tab = Echoes::Tab.new(command: "/usr/bin/true", rows: 5, cols: 10)
-    sleep 0.2
+    tab = Echoes::Tab.new(command: TestHelper::TRUE_COMMAND, rows: 5, cols: 10)
+    sleep(TestHelper::IS_WINDOWS ? 0.8 : 0.2)
     assert_equal(false, tab.alive?)
     tab.close
   end
@@ -89,9 +92,28 @@ class Echoes::TabTest < Test::Unit::TestCase
   end
 
   test "pty communication" do
-    @tab.pty_write.print("hello")
-    output = @tab.pty_read.readpartial(1024)
-    assert_equal("hello", output)
+    output = +""
+    if TestHelper::IS_WINDOWS
+      15.times do
+        chunk = @tab.read_available_output
+        break if chunk&.end_with?(">")
+        sleep 0.1
+      end
+
+      @tab.pty_write.print("hello\r\n")
+      @tab.pty_write.flush rescue nil
+      30.times do
+        chunk = @tab.read_available_output
+        output << chunk if chunk && !chunk.empty?
+        break if output.include?("hello")
+        sleep 0.1
+      end
+      assert_match(/hello/, output)
+    else
+      @tab.pty_write.print("hello")
+      output = @tab.pty_read.readpartial(1024)
+      assert_equal("hello", output)
+    end
   end
 
   # --- PaneTree integration ---

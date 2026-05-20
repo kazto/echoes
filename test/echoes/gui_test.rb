@@ -4,140 +4,151 @@ require "test_helper"
 require "shellwords"
 require "tmpdir"
 
-class Echoes::GUIFileDropTest < Test::Unit::TestCase
-  def create_pasteboard_with_file_urls(*paths)
-    pb = ObjC::MSG_PTR_1.call(
-      ObjC.cls('NSPasteboard'),
-      ObjC.sel('pasteboardWithName:'),
-      ObjC.nsstring("com.echoes.test.#{object_id}")
-    )
+require "rbconfig"
 
-    urls = paths.map do |path|
-      ObjC::MSG_PTR_1.call(
-        ObjC.cls('NSURL'),
-        ObjC.sel('fileURLWithPath:'),
-        ObjC.nsstring(path)
+if RbConfig::CONFIG['host_os'] =~ /darwin/
+  class Echoes::GUIFileDropTest < Test::Unit::TestCase
+    def create_pasteboard_with_file_urls(*paths)
+      pb = ObjC::MSG_PTR_1.call(
+        ObjC.cls('NSPasteboard'),
+        ObjC.sel('pasteboardWithName:'),
+        ObjC.nsstring("com.echoes.test.#{object_id}")
       )
+
+      urls = paths.map do |path|
+        ObjC::MSG_PTR_1.call(
+          ObjC.cls('NSURL'),
+          ObjC.sel('fileURLWithPath:'),
+          ObjC.nsstring(path)
+        )
+      end
+
+      ns_array = ObjC::MSG_PTR.call(ObjC.cls('NSMutableArray'), ObjC.sel('array'))
+      urls.each do |url|
+        ObjC::MSG_VOID_1.call(ns_array, ObjC.sel('addObject:'), url)
+      end
+
+      ObjC::MSG_VOID.call(pb, ObjC.sel('clearContents'))
+      ObjC::MSG_PTR_1.call(pb, ObjC.sel('writeObjects:'), ns_array)
+
+      pb
     end
 
-    ns_array = ObjC::MSG_PTR.call(ObjC.cls('NSMutableArray'), ObjC.sel('array'))
-    urls.each do |url|
-      ObjC::MSG_VOID_1.call(ns_array, ObjC.sel('addObject:'), url)
+    ObjC = Echoes::ObjC
+
+    test "file_paths_from_pasteboard returns shell-escaped path for a single file" do
+      pb = create_pasteboard_with_file_urls("/tmp/hello.txt")
+      result = Echoes::GUI.file_paths_from_pasteboard(pb)
+      assert_equal("/tmp/hello.txt", result)
     end
 
-    ObjC::MSG_VOID.call(pb, ObjC.sel('clearContents'))
-    ObjC::MSG_PTR_1.call(pb, ObjC.sel('writeObjects:'), ns_array)
-
-    pb
-  end
-
-  ObjC = Echoes::ObjC
-
-  test "file_paths_from_pasteboard returns shell-escaped path for a single file" do
-    pb = create_pasteboard_with_file_urls("/tmp/hello.txt")
-    result = Echoes::GUI.file_paths_from_pasteboard(pb)
-    assert_equal("/tmp/hello.txt", result)
-  end
-
-  test "file_paths_from_pasteboard escapes spaces in paths" do
-    pb = create_pasteboard_with_file_urls("/tmp/my file.txt")
-    result = Echoes::GUI.file_paths_from_pasteboard(pb)
-    assert_equal("/tmp/my\\ file.txt", result)
-  end
-
-  test "file_paths_from_pasteboard joins multiple files with spaces" do
-    pb = create_pasteboard_with_file_urls("/tmp/a.txt", "/tmp/b.txt")
-    result = Echoes::GUI.file_paths_from_pasteboard(pb)
-    assert_equal("/tmp/a.txt /tmp/b.txt", result)
-  end
-
-  test "file_paths_from_pasteboard handles multiple files with spaces" do
-    pb = create_pasteboard_with_file_urls("/tmp/my file.txt", "/tmp/other file.txt")
-    result = Echoes::GUI.file_paths_from_pasteboard(pb)
-    assert_equal("/tmp/my\\ file.txt /tmp/other\\ file.txt", result)
-  end
-
-  test "file_paths_from_pasteboard returns nil for empty pasteboard" do
-    pb = ObjC::MSG_PTR_1.call(
-      ObjC.cls('NSPasteboard'),
-      ObjC.sel('pasteboardWithName:'),
-      ObjC.nsstring("com.echoes.test.empty.#{object_id}")
-    )
-    ObjC::MSG_VOID.call(pb, ObjC.sel('clearContents'))
-    result = Echoes::GUI.file_paths_from_pasteboard(pb)
-    assert_nil(result)
-  end
-
-  test "file_paths_from_pasteboard escapes special shell characters" do
-    pb = create_pasteboard_with_file_urls("/tmp/file(1).txt")
-    result = Echoes::GUI.file_paths_from_pasteboard(pb)
-    assert_equal("/tmp/file\\(1\\).txt", result)
-  end
-end
-
-class Echoes::GUIOpenNewWindowTest < Test::Unit::TestCase
-  # Regression: pressing cmd+n used to open a blank window with no shell
-  # rendering. makeKeyAndOrderFront: on the new window synchronously fires
-  # NSWindowDidResignKeyNotification on the previously-key window, whose
-  # observer is its NSView. That handler called activate_for_view, which
-  # reset @view back to the old window's view mid-construction. The new ws
-  # then got registered under the OLD view's pointer, overwriting the
-  # existing mapping; the new view was never invalidated, so the window
-  # stayed blank.
-  test "open_new_window: each new window's view is uniquely registered in @view_to_ws" do
-    gui = Echoes::GUI.new(command: '/bin/cat', rows: 24, cols: 80, font_size: 12.0)
-    gui.setup_app
-    gui.create_fonts
-    gui.create_view_class
-    gui.send(:open_new_window)
-    gui.send(:open_new_window)
-
-    window_states = gui.instance_variable_get(:@window_states)
-    view_to_ws = gui.instance_variable_get(:@view_to_ws)
-
-    assert_equal(2, window_states.size, "two open_new_window calls should produce two ws entries")
-    assert_equal(2, view_to_ws.size, "two open_new_window calls should produce two view->ws mappings")
-
-    view_ptrs = window_states.map { |ws| ws[:nsview].to_i }
-    assert_equal(view_ptrs.size, view_ptrs.uniq.size, "windows must have distinct view pointers")
-
-    window_states.each do |ws|
-      assert_equal(ws, view_to_ws[ws[:nsview].to_i],
-                   "each ws[:nsview] must map back to the same ws via @view_to_ws")
+    test "file_paths_from_pasteboard escapes spaces in paths" do
+      pb = create_pasteboard_with_file_urls("/tmp/my file.txt")
+      result = Echoes::GUI.file_paths_from_pasteboard(pb)
+      assert_equal("/tmp/my\\ file.txt", result)
     end
-  ensure
-    # Hide windows and reap shell processes so the test doesn't leak PTYs or
-    # leave windows on screen.
-    if defined?(window_states) && window_states
+
+    test "file_paths_from_pasteboard joins multiple files with spaces" do
+      pb = create_pasteboard_with_file_urls("/tmp/a.txt", "/tmp/b.txt")
+      result = Echoes::GUI.file_paths_from_pasteboard(pb)
+      assert_equal("/tmp/a.txt /tmp/b.txt", result)
+    end
+
+    test "file_paths_from_pasteboard handles multiple files with spaces" do
+      pb = create_pasteboard_with_file_urls("/tmp/my file.txt", "/tmp/other file.txt")
+      result = Echoes::GUI.file_paths_from_pasteboard(pb)
+      assert_equal("/tmp/my\\ file.txt /tmp/other\\ file.txt", result)
+    end
+
+    test "file_paths_from_pasteboard returns nil for empty pasteboard" do
+      pb = ObjC::MSG_PTR_1.call(
+        ObjC.cls('NSPasteboard'),
+        ObjC.sel('pasteboardWithName:'),
+        ObjC.nsstring("com.echoes.test.empty.#{object_id}")
+      )
+      ObjC::MSG_VOID.call(pb, ObjC.sel('clearContents'))
+      result = Echoes::GUI.file_paths_from_pasteboard(pb)
+      assert_nil(result)
+    end
+
+    test "file_paths_from_pasteboard escapes special shell characters" do
+      pb = create_pasteboard_with_file_urls("/tmp/file(1).txt")
+      result = Echoes::GUI.file_paths_from_pasteboard(pb)
+      assert_equal("/tmp/file\\(1\\).txt", result)
+    end
+  end
+
+  class Echoes::GUIOpenNewWindowTest < Test::Unit::TestCase
+    # Regression: pressing cmd+n used to open a blank window with no shell
+    # rendering. makeKeyAndOrderFront: on the new window synchronously fires
+    # NSWindowDidResignKeyNotification on the previously-key window, whose
+    # observer is its NSView. That handler called activate_for_view, which
+    # reset @view back to the old window's view mid-construction. The new ws
+    # then got registered under the OLD view's pointer, overwriting the
+    # existing mapping; the new view was never invalidated, so the window
+    # stayed blank.
+    test "open_new_window: each new window's view is uniquely registered in @view_to_ws" do
+      gui = Echoes::GUI.new(command: '/bin/cat', rows: 24, cols: 80, font_size: 12.0)
+      gui.setup_app
+      gui.create_fonts
+      gui.create_view_class
+      gui.send(:open_new_window)
+      gui.send(:open_new_window)
+
+      window_states = gui.instance_variable_get(:@window_states)
+      view_to_ws = gui.instance_variable_get(:@view_to_ws)
+
+      assert_equal(2, window_states.size, "two open_new_window calls should produce two ws entries")
+      assert_equal(2, view_to_ws.size, "two open_new_window calls should produce two view->ws mappings")
+
+      view_ptrs = window_states.map { |ws| ws[:nsview].to_i }
+      assert_equal(view_ptrs.size, view_ptrs.uniq.size, "windows must have distinct view pointers")
+
       window_states.each do |ws|
-        ws[:tabs]&.each(&:close)
-        if ws[:nswindow]
-          Echoes::ObjC::MSG_VOID_1.call(ws[:nswindow], Echoes::ObjC.sel('orderOut:'),
-                                         Fiddle::Pointer.new(0)) rescue nil
+        assert_equal(ws, view_to_ws[ws[:nsview].to_i],
+                     "each ws[:nsview] must map back to the same ws via @view_to_ws")
+      end
+    ensure
+      # Hide windows and reap shell processes so the test doesn't leak PTYs or
+      # leave windows on screen.
+      if defined?(window_states) && window_states
+        window_states.each do |ws|
+          ws[:tabs]&.each(&:close)
+          if ws[:nswindow]
+            Echoes::ObjC::MSG_VOID_1.call(ws[:nswindow], Echoes::ObjC.sel('orderOut:'),
+                                           Fiddle::Pointer.new(0)) rescue nil
+          end
         end
       end
     end
   end
-
 end
 
 class Echoes::GUICwdFromOsc7UriTest < Test::Unit::TestCase
+  def file_uri(path, host: nil)
+    normalized = path.tr('\\', '/')
+    uri_path = normalized.start_with?('/') ? normalized : "/#{normalized}"
+    "file://#{host}#{uri_path.gsub(' ', '%20')}"
+  end
+
   test "returns nil for nil or empty input" do
     assert_nil(Echoes::GUI.cwd_from_osc7_uri(nil))
     assert_nil(Echoes::GUI.cwd_from_osc7_uri(""))
   end
 
   test "returns the path for file://localhost/<existing path>" do
-    assert_equal("/tmp", Echoes::GUI.cwd_from_osc7_uri("file://localhost/tmp"))
+    path = Dir.tmpdir
+    assert_equal(path, Echoes::GUI.cwd_from_osc7_uri(file_uri(path, host: 'localhost')))
   end
 
   test "returns the path for file:///<existing path> (empty host)" do
-    assert_equal("/tmp", Echoes::GUI.cwd_from_osc7_uri("file:///tmp"))
+    path = Dir.tmpdir
+    assert_equal(path, Echoes::GUI.cwd_from_osc7_uri(file_uri(path)))
   end
 
   test "URL-decodes percent-encoded path components" do
     Dir.mktmpdir("echoes test ") do |dir|
-      encoded = "file://localhost" + dir.gsub(' ', '%20')
+      encoded = file_uri(dir, host: 'localhost')
       assert_equal(dir, Echoes::GUI.cwd_from_osc7_uri(encoded))
     end
   end

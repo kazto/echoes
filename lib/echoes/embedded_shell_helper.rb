@@ -34,10 +34,14 @@ module Echoes
 
   class EmbeddedShellHelper
     DARWIN_TIOCSCTTY = 0x20007461
+    LINUX_TIOCSCTTY  = 0x540E
 
     def initialize
       Process.setsid rescue nil
-      STDIN.ioctl(DARWIN_TIOCSCTTY, 0) rescue nil
+      
+      is_macos = RbConfig::CONFIG['host_os'] =~ /darwin/
+      tiocsctty = is_macos ? DARWIN_TIOCSCTTY : LINUX_TIOCSCTTY
+      STDIN.ioctl(tiocsctty, 0) rescue nil
       # After claiming ctty, explicitly set the slave's foreground
       # process group to ours. Without this, the line discipline has
       # nowhere to deliver SIGINT (the kernel doesn't do it automatically
@@ -73,7 +77,8 @@ module Echoes
       # Errors land on stderr (= the pty, visible in the pane) so
       # silent failures during startup don't disappear into the void.
       run_init_step(:setup_default_aliases)
-      run_init_step(:load_config)
+      is_macos = RbConfig::CONFIG['host_os'] =~ /darwin/
+      run_init_step(:load_config) if is_macos
       run_init_step(:load_history) unless no_rc
       @control_in  = IO.for_fd(3, 'r')
       @control_out = IO.for_fd(4, 'w')

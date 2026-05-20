@@ -82,8 +82,14 @@ module Echoes
     # (PNG / JPEG / GIF / TIFF / BMP) because it draws the
     # decoded CGImage into a known RGBA8 CGBitmapContext.
     def decode_image(bytes)
-      require_relative 'kitty_graphics_appkit'
-      KittyGraphics::AppKitPng.decode(bytes)
+      require 'rbconfig'
+      if RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+        require_relative 'kitty_graphics_win32'
+        KittyGraphics::GdiPlusPng.decode(bytes)
+      else
+        require_relative 'kitty_graphics_appkit'
+        KittyGraphics::AppKitPng.decode(bytes)
+      end
     end
 
     # Translate the wire's `width=` / `height=` into cell counts

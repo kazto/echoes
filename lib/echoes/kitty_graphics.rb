@@ -245,24 +245,40 @@ module Echoes
     #   f=24          — raw RGB packed, dims from s= / v=
     #   f=32          — raw RGBA packed, dims from s= / v=
     def decode_image(bytes, format, opts = {})
+      require 'rbconfig'
+      is_win = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
       case format.to_s
       when '100', ''
         decode_png(bytes)
       when '24'
-        load_appkit
-        AppKitPng.from_rgb(bytes, opts['s'].to_i, opts['v'].to_i)
+        if is_win
+          require_relative 'kitty_graphics_win32'
+          GdiPlusPng.from_rgb(bytes, opts['s'].to_i, opts['v'].to_i)
+        else
+          load_appkit
+          AppKitPng.from_rgb(bytes, opts['s'].to_i, opts['v'].to_i)
+        end
       when '32'
-        load_appkit
-        AppKitPng.from_rgba(bytes, opts['s'].to_i, opts['v'].to_i)
+        if is_win
+          require_relative 'kitty_graphics_win32'
+          GdiPlusPng.from_rgba(bytes, opts['s'].to_i, opts['v'].to_i)
+        else
+          load_appkit
+          AppKitPng.from_rgba(bytes, opts['s'].to_i, opts['v'].to_i)
+        end
       end
     end
 
-    # PNG → {rgba:, width:, height:}. Implemented in
-    # kitty_graphics_appkit.rb; loaded lazily so non-GUI tests
-    # (which don't link AppKit) still pass.
+    # PNG → {rgba:, width:, height:}.
     def decode_png(bytes)
-      load_appkit
-      AppKitPng.decode(bytes)
+      require 'rbconfig'
+      if RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+        require_relative 'kitty_graphics_win32'
+        GdiPlusPng.decode(bytes)
+      else
+        load_appkit
+        AppKitPng.decode(bytes)
+      end
     end
 
     def load_appkit

@@ -4,7 +4,7 @@ require "test_helper"
 
 class Echoes::PaneTreeTest < Test::Unit::TestCase
   setup do
-    @pane1 = Echoes::Pane.new(command: "/bin/cat", rows: 24, cols: 80)
+    @pane1 = Echoes::Pane.new(command: TestHelper::CAT_COMMAND, rows: 24, cols: 80)
     @tree = Echoes::PaneTree.new(@pane1)
   end
 
@@ -29,7 +29,7 @@ class Echoes::PaneTreeTest < Test::Unit::TestCase
   end
 
   test "split vertical creates two panes side by side" do
-    pane2 = Echoes::Pane.new(command: "/bin/cat", rows: 24, cols: 40)
+    pane2 = Echoes::Pane.new(command: TestHelper::CAT_COMMAND, rows: 24, cols: 40)
     @tree.split(@pane1, :vertical, pane2)
 
     assert_equal(false, @tree.single_pane?)
@@ -52,7 +52,7 @@ class Echoes::PaneTreeTest < Test::Unit::TestCase
   end
 
   test "split horizontal creates two panes stacked" do
-    pane2 = Echoes::Pane.new(command: "/bin/cat", rows: 12, cols: 80)
+    pane2 = Echoes::Pane.new(command: TestHelper::CAT_COMMAND, rows: 12, cols: 80)
     @tree.split(@pane1, :horizontal, pane2)
 
     rects = @tree.layout(0, 0, 80, 24)
@@ -71,7 +71,7 @@ class Echoes::PaneTreeTest < Test::Unit::TestCase
   end
 
   test "remove promotes sibling to parent's position" do
-    pane2 = Echoes::Pane.new(command: "/bin/cat", rows: 24, cols: 40)
+    pane2 = Echoes::Pane.new(command: TestHelper::CAT_COMMAND, rows: 24, cols: 40)
     @tree.split(@pane1, :vertical, pane2)
     @tree.remove(@pane1)
     @pane1.close
@@ -88,7 +88,7 @@ class Echoes::PaneTreeTest < Test::Unit::TestCase
   end
 
   test "remove sets active_pane to first remaining pane when removing active" do
-    pane2 = Echoes::Pane.new(command: "/bin/cat", rows: 24, cols: 40)
+    pane2 = Echoes::Pane.new(command: TestHelper::CAT_COMMAND, rows: 24, cols: 40)
     @tree.split(@pane1, :vertical, pane2)
     @tree.active_pane = pane2
     @tree.remove(pane2)
@@ -98,7 +98,7 @@ class Echoes::PaneTreeTest < Test::Unit::TestCase
   end
 
   test "next_pane cycles forward" do
-    pane2 = Echoes::Pane.new(command: "/bin/cat", rows: 24, cols: 40)
+    pane2 = Echoes::Pane.new(command: TestHelper::CAT_COMMAND, rows: 24, cols: 40)
     @tree.split(@pane1, :vertical, pane2)
 
     assert_equal(pane2, @tree.next_pane(@pane1))
@@ -106,7 +106,7 @@ class Echoes::PaneTreeTest < Test::Unit::TestCase
   end
 
   test "prev_pane cycles backward" do
-    pane2 = Echoes::Pane.new(command: "/bin/cat", rows: 24, cols: 40)
+    pane2 = Echoes::Pane.new(command: TestHelper::CAT_COMMAND, rows: 24, cols: 40)
     @tree.split(@pane1, :vertical, pane2)
 
     assert_equal(@pane1, @tree.prev_pane(pane2))
@@ -115,11 +115,11 @@ class Echoes::PaneTreeTest < Test::Unit::TestCase
 
   test "nested splits produce correct layout" do
     # Split pane1 vertically: pane1 | pane2
-    pane2 = Echoes::Pane.new(command: "/bin/cat", rows: 24, cols: 40)
+    pane2 = Echoes::Pane.new(command: TestHelper::CAT_COMMAND, rows: 24, cols: 40)
     @tree.split(@pane1, :vertical, pane2)
 
     # Split pane2 horizontally: pane2_top / pane3
-    pane3 = Echoes::Pane.new(command: "/bin/cat", rows: 12, cols: 40)
+    pane3 = Echoes::Pane.new(command: TestHelper::CAT_COMMAND, rows: 12, cols: 40)
     @tree.split(pane2, :horizontal, pane3)
 
     assert_equal(3, @tree.pane_count)
@@ -147,9 +147,9 @@ class Echoes::PaneTreeTest < Test::Unit::TestCase
   end
 
   test "panes returns in-order traversal" do
-    pane2 = Echoes::Pane.new(command: "/bin/cat", rows: 24, cols: 40)
+    pane2 = Echoes::Pane.new(command: TestHelper::CAT_COMMAND, rows: 24, cols: 40)
     @tree.split(@pane1, :vertical, pane2)
-    pane3 = Echoes::Pane.new(command: "/bin/cat", rows: 12, cols: 40)
+    pane3 = Echoes::Pane.new(command: TestHelper::CAT_COMMAND, rows: 12, cols: 40)
     @tree.split(pane2, :horizontal, pane3)
 
     assert_equal([@pane1, pane2, pane3], @tree.panes)

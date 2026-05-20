@@ -1,6 +1,13 @@
 # frozen_string_literal: true
 
-require 'pty'
+require 'rbconfig'
+is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+
+if is_windows
+  require 'open3'
+else
+  require 'pty'
+end
 
 module Echoes
   # A Pane is one shell session within a Tab. It owns a Screen (the cell
@@ -154,6 +161,10 @@ module Echoes
       return !@editor.closed? if editor?
       if embedded?
         @embedded_shell.alive?
+      elsif @conpty
+        @conpty.alive?
+      elsif @win_wait_thr
+        @win_wait_thr.alive?
       else
         Process.waitpid(@pty_pid, Process::WNOHANG).nil?
       end
@@ -170,6 +181,10 @@ module Echoes
         @embedded_shell.resize(rows: rows, cols: cols,
                                 px_width:  pty_pixel_width(cols),
                                 px_height: pty_pixel_height(rows))
+      elsif @conpty
+        @pty_read.winsize = [rows, cols]
+      elsif @win_wait_thr
+        @pty_read.winsize = [rows, cols]
       else
         @pty_read.winsize = pty_winsize_quad(rows, cols)
       end
@@ -189,6 +204,8 @@ module Echoes
         @embedded_shell.resize(rows: rows, cols: cols,
                                 px_width:  pty_pixel_width(cols),
                                 px_height: pty_pixel_height(rows))
+      elsif @conpty
+        @pty_read.winsize = [rows, cols]
       elsif @pty_read && !@pty_read.closed?
         @pty_read.winsize = pty_winsize_quad(rows, cols)
       end
@@ -203,7 +220,19 @@ module Echoes
       end
       @pty_write.close rescue nil
       @pty_read.close rescue nil
-      Process.kill(:HUP, @pty_pid) rescue nil
+      if @conpty
+        @conpty.kill rescue nil
+      elsif @win_wait_thr
+        begin
+          Process.kill(:KILL, @pty_pid) if @win_wait_thr.alive?
+        rescue Errno::ESRCH
+          # Process may have already exited after its stdio was closed.
+        ensure
+          @win_wait_thr = nil
+        end
+      else
+        Process.kill(:HUP, @pty_pid) rescue nil
+      end
     end
 
     def process_output(data)
@@ -890,25 +919,54 @@ module Echoes
     DARWIN_TIOCSPGRP = 0x80047476
 
     def spawn_with_pty(spawn_args, env, rows, cols)
-      master, slave = PTY.open
-      slave.winsize = pty_winsize_quad(rows, cols)
-      pid = fork do
-        master.close
-        Process.setsid rescue nil
-        slave.ioctl(DARWIN_TIOCSCTTY, 0) rescue nil
-        slave.ioctl(DARWIN_TIOCSPGRP, [Process.getpgrp].pack('i!')) rescue nil
-        STDIN.reopen(slave)
-        STDOUT.reopen(slave)
-        STDERR.reopen(slave)
-        slave.close rescue nil
-        if env
-          exec(env, *spawn_args)
-        else
-          exec(*spawn_args)
+      is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+      if is_windows
+        pty_write, pty_read, @win_wait_thr =
+          if env
+            Open3.popen2e(env, *spawn_args)
+          else
+            Open3.popen2e(*spawn_args)
+          end
+
+        pty_rows = rows
+        pty_cols = cols
+        pty_read.define_singleton_method(:winsize) do
+          [pty_rows, pty_cols]
         end
+        pty_read.define_singleton_method(:winsize=) do |size|
+          pty_rows = size[0]
+          pty_cols = size[1]
+        end
+        pty_write.define_singleton_method(:winsize) do
+          [pty_rows, pty_cols]
+        end
+        pty_write.define_singleton_method(:winsize=) do |size|
+          pty_rows = size[0]
+          pty_cols = size[1]
+        end
+
+        [pty_read, pty_write, @win_wait_thr.pid]
+      else
+        master, slave = PTY.open
+        slave.winsize = pty_winsize_quad(rows, cols)
+        pid = fork do
+          master.close
+          Process.setsid rescue nil
+          slave.ioctl(DARWIN_TIOCSCTTY, 0) rescue nil
+          slave.ioctl(DARWIN_TIOCSPGRP, [Process.getpgrp].pack('i!')) rescue nil
+          STDIN.reopen(slave)
+          STDOUT.reopen(slave)
+          STDERR.reopen(slave)
+          slave.close rescue nil
+          if env
+            exec(env, *spawn_args)
+          else
+            exec(*spawn_args)
+          end
+        end
+        slave.close
+        [master, master, pid]
       end
-      slave.close
-      [master, master, pid]
     end
 
     # 4-element winsize tuple [rows, cols, xpixel, ypixel] for

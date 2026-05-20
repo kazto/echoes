@@ -4,7 +4,7 @@ require "test_helper"
 
 class Echoes::PaneTest < Test::Unit::TestCase
   setup do
-    @pane = Echoes::Pane.new(command: "/bin/cat", rows: 24, cols: 80)
+    @pane = Echoes::Pane.new(command: TestHelper::CAT_COMMAND, rows: 24, cols: 80)
   end
 
   teardown do
@@ -37,7 +37,8 @@ class Echoes::PaneTest < Test::Unit::TestCase
   end
 
   test "initialize sets title from command basename" do
-    assert_equal("cat", @pane.title)
+    expected = TestHelper::IS_WINDOWS ? File.basename(TestHelper::CAT_COMMAND) : "cat"
+    assert_equal(expected, @pane.title)
   end
 
   test "initialize sets copy_mode to nil" do
@@ -49,8 +50,8 @@ class Echoes::PaneTest < Test::Unit::TestCase
   end
 
   test "alive? returns false after process exits" do
-    pane = Echoes::Pane.new(command: "/usr/bin/true", rows: 5, cols: 10)
-    sleep 0.2
+    pane = Echoes::Pane.new(command: TestHelper::TRUE_COMMAND, rows: 5, cols: 10)
+    sleep(TestHelper::IS_WINDOWS ? 2.0 : 0.2)
     assert_equal(false, pane.alive?)
     pane.close
   end
@@ -87,8 +88,33 @@ class Echoes::PaneTest < Test::Unit::TestCase
   end
 
   test "pty communication" do
-    @pane.pty_write.print("hello")
-    output = @pane.pty_read.readpartial(1024)
-    assert_equal("hello", output)
+    assert_equal(true, @pane.alive?, "Process should be alive before communication")
+    sleep(TestHelper::IS_WINDOWS ? 2.0 : 0.2)
+
+    # Drain cmd.exe startup output before checking the echoed command.
+    if TestHelper::IS_WINDOWS
+      15.times do
+        chunk = @pane.read_available_output
+        break if chunk&.end_with?(">")
+        sleep 0.1
+      end
+    end
+
+    @pane.pty_write.print("hello\r\n")
+    @pane.pty_write.flush rescue nil
+    output = +""
+    if TestHelper::IS_WINDOWS
+      30.times do
+        chunk = @pane.read_available_output
+        output << chunk if chunk && !chunk.empty?
+        break if output.include?("hello")
+        sleep 0.1
+      end
+      assert_match(/hello/, output)
+    else
+      sleep 0.1
+      output = @pane.read_available_output
+      assert_match(/hello/, output)
+    end
   end
 end

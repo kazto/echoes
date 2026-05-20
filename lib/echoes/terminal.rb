@@ -1,6 +1,13 @@
 # frozen_string_literal: true
 
-require 'pty'
+require 'rbconfig'
+is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+
+if is_windows
+  require_relative 'conpty'
+else
+  require 'pty'
+end
 require 'io/console'
 
 module Echoes
@@ -17,12 +24,25 @@ module Echoes
     end
 
     def run
-      PTY.spawn(@command) do |read_io, write_io, pid|
-        @read_io = read_io
-        @write_io = write_io
-        @pid = pid
+      is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
 
-        @read_io.winsize = [@rows, @cols]
+      if is_windows
+        conpty = ConPTY.new
+        conpty.spawn(@command, cols: @cols, rows: @rows)
+
+        msvcrt = Fiddle.dlopen('ucrtbase.dll') rescue Fiddle.dlopen('msvcrt.dll')
+        _open_osfhandle = Fiddle::Function.new(
+          msvcrt['_open_osfhandle'],
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_INT],
+          Fiddle::TYPE_INT
+        )
+
+        fd_read = _open_osfhandle.call(conpty.pipe_out_r, 0 | 0x8000) # O_RDONLY | O_BINARY
+        @read_io = IO.for_fd(fd_read, 'r')
+
+        fd_write = _open_osfhandle.call(conpty.pipe_in_w, 1 | 0x8000) # O_WRONLY | O_BINARY
+        @write_io = IO.for_fd(fd_write, 'w')
+        @pid = conpty.h_process.to_i
 
         setup_signal_handlers
 
@@ -30,6 +50,24 @@ module Echoes
           reader = Thread.new { read_loop }
           write_loop
           reader.kill
+        end
+
+        conpty.kill
+      else
+        PTY.spawn(@command) do |read_io, write_io, pid|
+          @read_io = read_io
+          @write_io = write_io
+          @pid = pid
+
+          @read_io.winsize = [@rows, @cols]
+
+          setup_signal_handlers
+
+          STDIN.raw do
+            reader = Thread.new { read_loop }
+            write_loop
+            reader.kill
+          end
         end
       end
     end
@@ -111,6 +149,9 @@ module Echoes
     end
 
     def setup_signal_handlers
+      is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+      return if is_windows
+
       Signal.trap(:WINCH) do
         if IO.console
           @rows, @cols = IO.console.winsize

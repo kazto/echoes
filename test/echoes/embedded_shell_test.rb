@@ -1,8 +1,19 @@
 # frozen_string_literal: true
 
 require "test_helper"
-require "echoes/embedded_shell"
 require "tmpdir"
+
+if TestHelper::IS_WINDOWS
+  class Echoes::EmbeddedShellTest < Test::Unit::TestCase
+    test "embedded shell requires pty" do
+      omit "EmbeddedShell depends on Ruby pty, which is unavailable on Windows"
+    end
+  end
+
+  return
+end
+
+require "echoes/embedded_shell"
 
 class Echoes::EmbeddedShellTest < Test::Unit::TestCase
   def setup
@@ -42,7 +53,8 @@ class Echoes::EmbeddedShellTest < Test::Unit::TestCase
 
   test "cd changes the embedded shell's cwd" do
     @shell.submit_and_wait("cd /tmp")
-    assert_equal "/private/tmp", @shell.cwd
+    expected_tmp = RbConfig::CONFIG['host_os'] =~ /darwin/ ? "/private/tmp" : "/tmp"
+    assert_equal expected_tmp, @shell.cwd
   end
 
   test "complete_at returns command completions" do

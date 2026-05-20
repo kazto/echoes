@@ -6,7 +6,16 @@ require "rake/testtask"
 Rake::TestTask.new(:test) do |t|
   t.libs << "test"
   t.libs << "lib"
-  t.test_files = FileList["test/**/*_test.rb"]
+  is_windows = RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/
+  if is_windows
+    t.test_files = FileList["test/**/*_test.rb"]
+                   .exclude("test/**/embedded_shell_test.rb")
+                   .exclude("test/**/objc_test.rb")
+                   .exclude("test/**/shake_detector_test.rb")
+                   .exclude("test/**/installer_test.rb")
+  else
+    t.test_files = FileList["test/**/*_test.rb"]
+  end
 end
 
 task default: :test
