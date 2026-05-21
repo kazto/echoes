@@ -40,6 +40,7 @@ module Echoes
     TerminateProcess     = new_func('TerminateProcess', [P, U], I)
     ReadFile             = new_func('ReadFile', [P, P, U, P, P], I)
     WriteFile            = new_func('WriteFile', [P, P, U, P, P], I)
+    PeekNamedPipe        = new_func('PeekNamedPipe', [P, P, U, P, P, P], I)
 
     # Constants
     S_OK = 0
@@ -120,36 +121,20 @@ module Echoes
       # Prepare Startup Info Ex struct containing the ProcThreadAttributeList
       size_list = Fiddle::Pointer.malloc(8, Fiddle::RUBY_FREE)
       size_list[0, 8] = "\x00" * 8
-      InitializeProcThreadAttributeList.call(nil, 2, 0, size_list)
+      InitializeProcThreadAttributeList.call(nil, 1, 0, size_list)
       list_size = size_list[0, 8].unpack1('Q') # Ensure correct 64-bit size unpack
 
       attr_list = Fiddle::Pointer.malloc(list_size, Fiddle::RUBY_FREE)
       attr_list[0, list_size] = "\x00" * list_size
-      raise "ConPTY: InitializeProcThreadAttributeList failed" unless InitializeProcThreadAttributeList.call(attr_list, 2, 0, size_list) != 0
+      raise "ConPTY: InitializeProcThreadAttributeList failed" unless InitializeProcThreadAttributeList.call(attr_list, 1, 0, size_list) != 0
 
       begin
-        # 1. Update PseudoConsole attribute
         raise "ConPTY: UpdateProcThreadAttribute failed" unless UpdateProcThreadAttribute.call(
           attr_list,
           0,
           PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
           @h_pc,
           8,
-          nil,
-          nil
-        ) != 0
-
-        # 2. Update Handle List attribute (only inherit h_pipe_in_r and h_pipe_out_w)
-        handle_array = Fiddle::Pointer.malloc(16, Fiddle::RUBY_FREE)
-        handle_array[0, 8] = [h_pipe_in_r].pack('Q')
-        handle_array[8, 8] = [h_pipe_out_w].pack('Q')
-
-        raise "ConPTY: UpdateProcThreadAttribute for Handle List failed" unless UpdateProcThreadAttribute.call(
-          attr_list,
-          0,
-          PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-          handle_array,
-          16,
           nil,
           nil
         ) != 0
@@ -171,8 +156,8 @@ module Echoes
           nil,
           cmd_w,
           nil, nil,
-          1, # inheritHandles = TRUE (1) (required for ConPTY pipes to be inherited by child)
-          EXTENDED_STARTUPINFO_PRESENT,
+          0,
+          EXTENDED_STARTUPINFO_PRESENT | DETACHED_PROCESS,
           nil, nil,
           si_ex,
           pi
@@ -197,6 +182,35 @@ module Echoes
       return unless @h_pc && @h_pc != 0
       size = self.class.make_coord(cols, rows)
       ResizePseudoConsole.call(@h_pc, size)
+    end
+
+    def read_available_output(max = 4096)
+      return '' unless @pipe_out_r && @pipe_out_r != 0
+      available_ptr = Fiddle::Pointer.malloc(4, Fiddle::RUBY_FREE)
+      available_ptr[0, 4] = "\x00" * 4
+      ok = PeekNamedPipe.call(@pipe_out_r, nil, 0, nil, available_ptr, nil)
+      return '' if ok == 0
+      available = available_ptr[0, 4].unpack1('L')
+      return '' if available == 0
+
+      read_len = [available, max].min
+      buffer = Fiddle::Pointer.malloc(read_len, Fiddle::RUBY_FREE)
+      read_ptr = Fiddle::Pointer.malloc(4, Fiddle::RUBY_FREE)
+      read_ptr[0, 4] = "\x00" * 4
+      ok = ReadFile.call(@pipe_out_r, buffer, read_len, read_ptr, nil)
+      return '' if ok == 0
+      bytes_read = read_ptr[0, 4].unpack1('L')
+      buffer[0, bytes_read]
+    end
+
+    def write(bytes)
+      return 0 unless @pipe_in_w && @pipe_in_w != 0
+      data = bytes.to_s
+      buffer = Fiddle::Pointer[data]
+      written_ptr = Fiddle::Pointer.malloc(4, Fiddle::RUBY_FREE)
+      written_ptr[0, 4] = "\x00" * 4
+      ok = WriteFile.call(@pipe_in_w, buffer, data.bytesize, written_ptr, nil)
+      ok == 0 ? 0 : written_ptr[0, 4].unpack1('L')
     end
 
     def alive?

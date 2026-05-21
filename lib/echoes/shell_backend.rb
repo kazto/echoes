@@ -6,9 +6,9 @@ module Echoes
   module ShellBackend
     module_function
 
-    def for_platform(os = Platform.host_os)
+    def for_platform(os = Platform.host_os, windows_backend: :popen)
       if Platform.windows?(os)
-        WindowsPopenBackend
+        windows_backend == :conpty ? WindowsConPTYBackend : WindowsPopenBackend
       elsif Platform.macos?(os)
         MacPtyBackend
       else
@@ -82,6 +82,49 @@ module Echoes
           pty_cols = size[1]
         end
       end
+    end
+  end
+
+  class WindowsConPTYBackend
+    attr_reader :read_io, :write_io, :pid
+
+    def initialize(command:, env:, rows:, cols:, px_width: 0, px_height: 0, conpty: nil)
+      require_relative "conpty"
+
+      raise ArgumentError, "WindowsConPTYBackend does not support explicit env yet" if env
+
+      @conpty = conpty || ConPTY.new
+      @conpty.spawn(command.is_a?(Array) ? command.join(" ") : command, cols: cols, rows: rows)
+      @pid = @conpty.h_process.to_i
+    end
+
+    def write(bytes)
+      @conpty.write(bytes)
+    end
+
+    def read_available_output(max)
+      @conpty.read_available_output(max)
+    end
+
+    def resize(rows, cols, px_width: 0, px_height: 0)
+      @conpty.resize(cols, rows)
+    end
+
+    def refresh_size(rows, cols, px_width: 0, px_height: 0)
+      resize(rows, cols, px_width: px_width, px_height: px_height)
+    end
+
+    def alive?
+      @conpty.alive?
+    end
+
+    def interrupt
+      write("\x03")
+    rescue IOError, SystemCallError
+    end
+
+    def close
+      @conpty.kill
     end
   end
 

@@ -16,8 +16,8 @@
 - `rake test:core` を追加し、Windows では OS 非依存コアテストだけを実行する default test に更新済み。2026-05-21 時点で pane / tab / pane_tree / preferences / shell_backend / cli も core 対象に追加済み。
 - GitHub Actions に Windows core test job を追加済み。ただしリモート CI の成功はまだ未確認。
 - Windows ローカル確認済み:
-  - `ruby -S rake test:core`: 566 tests, 1223 assertions, 0 failures, 0 errors
-  - `ruby -S rake test`: 566 tests, 1223 assertions, 0 failures, 0 errors
+  - `ruby -S rake test:core`: 570 tests, 1233 assertions, 0 failures, 0 errors
+  - `ruby -S rake test`: 570 tests, 1233 assertions, 0 failures, 0 errors
   - `ruby -Ilib -e "require 'echoes'; puts Echoes::VERSION"`: `0.2.0`
 - 既知の未解決事項:
   - Windows ローカルでは `bundle exec rake ...` が `rubish` git checkout 不足で失敗する。Windows core CI は暫定的に Bundler を使わず `gem install rake test-unit` と `ruby -S rake test:core` で実行する。
@@ -85,18 +85,21 @@
 
 ## Phase 4: Windows ConPTY Spike
 
-- [ ] Windows 用 backend ファイルを追加する。
-- [ ] ConPTY API 呼び出し方法を決める。
-  - 候補: Ruby Fiddle で Win32 API を直接呼ぶ。
+- [x] Windows 用 backend ファイルを追加する。
+  - `WindowsConPTYBackend` を追加済み。既定の Windows backend はまだ安全な `WindowsPopenBackend` のまま。
+- [x] ConPTY API 呼び出し方法を決める。
+  - Ruby Fiddle で Win32 API を直接呼ぶ。
   - 候補: 既存 gem / native extension を利用する。
-- [ ] 疑似コンソール作成を実装する。
-- [ ] stdin / stdout pipe の作成と接続を実装する。
-- [ ] 子プロセス起動を実装する。
-- [ ] 初期 shell 解決を実装する。
+- [x] 疑似コンソール作成を実装する。
+- [x] stdin / stdout pipe の作成と接続を実装する。
+  - `ConPTY#read_available_output` / `ConPTY#write` を追加済み。
+- [x] 子プロセス起動を実装する。
+- [x] 初期 shell 解決を実装する。
   - 優先候補: `ENV["COMSPEC"]`
   - 次点候補: `pwsh`
   - 次点候補: `powershell.exe`
 - [ ] read / write が既存 parser に接続できることを確認する。
+  - 2026-05-21 の手動確認では `cmd.exe` 起動後に pipe から shell 出力を取得できていない。次作業で ConPTY attribute / startup info の調査が必要。
 - [ ] resize が ConPTY に反映されることを確認する。
 - [ ] close 時に pipe / process / pseudoconsole handle を解放する。
 - [ ] Ctrl-C 相当の配送方法を検証する。
@@ -196,6 +199,7 @@
 - [x] Windows コアテストを実行する。
   - ローカルで `ruby -S rake test:core` 成功。2026-05-21 時点: 563 tests, 1215 assertions。
   - Terminal / EmbeddedShell の Phase 3 対応後: 566 tests, 1223 assertions。
+  - ConPTY backend adapter 追加後: 570 tests, 1233 assertions。
 - [ ] Windows backend テストを実行する。
 - [ ] Windows GUI 手動確認を実施する。
 - [ ] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。

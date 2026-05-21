@@ -26,8 +26,29 @@ class Echoes::PlatformTest < Test::Unit::TestCase
   end
 
   test "chooses a platform default shell" do
-    assert_equal "powershell.exe", Echoes::Platform.default_shell("x64-mingw-ucrt")
+    assert_equal(
+      "powershell.exe",
+      Echoes::Platform.default_shell("x64-mingw-ucrt", env: {}, executable_lookup: ->(_) {})
+    )
     assert_equal "/bin/bash", Echoes::Platform.default_shell("darwin23")
     assert_equal "/bin/bash", Echoes::Platform.default_shell("linux-gnu")
+  end
+
+  test "Windows default shell prefers COMSPEC" do
+    assert_equal(
+      "C:\\Windows\\System32\\cmd.exe",
+      Echoes::Platform.default_shell(
+        "x64-mingw-ucrt",
+        env: {"COMSPEC" => "C:\\Windows\\System32\\cmd.exe"}
+      )
+    )
+  end
+
+  test "Windows default shell prefers pwsh before Windows PowerShell" do
+    lookup = ->(name) { name == "pwsh" ? "C:\\Program Files\\PowerShell\\7\\pwsh.exe" : nil }
+    assert_equal(
+      "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+      Echoes::Platform.default_shell("x64-mingw-ucrt", env: {}, executable_lookup: lookup)
+    )
   end
 end

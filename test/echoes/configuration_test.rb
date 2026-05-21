@@ -14,7 +14,7 @@ class Echoes::ConfigurationTest < Test::Unit::TestCase
     assert_equal(14.0, @config.font_size)
     assert_equal(24, @config.rows)
     assert_equal(80, @config.cols)
-    expected_shell = ENV['SHELL'] || (TestHelper::IS_WINDOWS ? 'powershell.exe' : '/bin/bash')
+    expected_shell = ENV['SHELL'] || Echoes::Platform.default_shell
     assert_equal(expected_shell, @config.shell)
     assert_equal(1000, @config.scrollback_limit)
     assert_equal([0.9, 0.9, 0.9], @config.foreground)
