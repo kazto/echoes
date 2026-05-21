@@ -54,18 +54,41 @@ class Echoes::ConfigurationTest < Test::Unit::TestCase
       f.write("font_size 20\nrows 40\n")
       f.flush
 
-      original_path = Echoes::CONFIG_PATH
-      silence_warnings { Echoes.const_set(:CONFIG_PATH, f.path) }
       Echoes.instance_variable_set(:@config, nil)
       begin
-        Echoes.load_config
+        Echoes.load_config(paths: [f.path])
         assert_equal(20.0, Echoes.config.font_size)
         assert_equal(40, Echoes.config.rows)
       ensure
-        silence_warnings { Echoes.const_set(:CONFIG_PATH, original_path) }
         Echoes.instance_variable_set(:@config, nil)
       end
     end
+  end
+
+  test "config_paths uses APPDATA before legacy config on Windows" do
+    paths = Echoes.config_paths(
+      os: "mswin",
+      env: {"APPDATA" => "C:\\Users\\me\\AppData\\Roaming"},
+      home: "C:\\Users\\me"
+    )
+
+    assert_equal(
+      [
+        "C:\\Users\\me\\AppData\\Roaming/Echoes/echoes.conf",
+        "C:\\Users\\me/.config/echoes/echoes.conf"
+      ],
+      paths
+    )
+  end
+
+  test "config_paths honors ECHOES_CONFIG_HOME on Windows" do
+    paths = Echoes.config_paths(
+      os: "mswin",
+      env: {"ECHOES_CONFIG_HOME" => "C:\\tmp\\echoes-config"},
+      home: "C:\\Users\\me"
+    )
+
+    assert_equal(["C:\\tmp\\echoes-config/echoes.conf"], paths)
   end
 
   test "hex color" do
@@ -96,16 +119,13 @@ class Echoes::ConfigurationTest < Test::Unit::TestCase
       f.write("font_size 20\nthis is invalid syntax !!!\n")
       f.flush
 
-      original_path = Echoes::CONFIG_PATH
-      silence_warnings { Echoes.const_set(:CONFIG_PATH, f.path) }
       Echoes.instance_variable_set(:@config, nil)
       begin
-        _stderr = capture_stderr { Echoes.load_config }
+        _stderr = capture_stderr { Echoes.load_config(paths: [f.path]) }
         # Config should still have defaults (font_size may or may not be set
         # depending on where the error occurs, but it should not crash)
         assert_instance_of(Echoes::Configuration, Echoes.config)
       ensure
-        silence_warnings { Echoes.const_set(:CONFIG_PATH, original_path) }
         Echoes.instance_variable_set(:@config, nil)
       end
     end
@@ -122,11 +142,4 @@ class Echoes::ConfigurationTest < Test::Unit::TestCase
     $stderr = old
   end
 
-  def silence_warnings
-    old_verbose = $VERBOSE
-    $VERBOSE = nil
-    yield
-  ensure
-    $VERBOSE = old_verbose
-  end
 end
