@@ -4,6 +4,8 @@ require "test_helper"
 require "shellwords"
 require "tmpdir"
 
+Echoes.load_gui_backend if Echoes::Platform.windows? || Echoes::Platform.macos?
+
 if Echoes::Platform.macos?
   class Echoes::GUIFileDropTest < Test::Unit::TestCase
     def create_pasteboard_with_file_urls(*paths)
@@ -122,6 +124,7 @@ if Echoes::Platform.macos?
   end
 end
 
+if defined?(Echoes::GUI)
 class Echoes::GUICwdFromOsc7UriTest < Test::Unit::TestCase
   def file_uri(path, host: nil)
     normalized = path.tr('\\', '/')
@@ -166,6 +169,7 @@ class Echoes::GUICwdFromOsc7UriTest < Test::Unit::TestCase
   test "returns nil for a malformed URI" do
     assert_nil(Echoes::GUI.cwd_from_osc7_uri("file://[bad"))
   end
+end
 end
 
 class Echoes::GUISelectedTextTest < Test::Unit::TestCase

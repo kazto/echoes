@@ -8,16 +8,16 @@
 
 ## 進捗メモ
 
-更新日: 2026-05-20
+更新日: 2026-05-21
 
 - `feature/windows` ブランチで Phase 1 と Phase 2 の最小対応を進行中。
 - `Echoes::Platform` を追加し、OS 判定と default shell 判定を集約済み。
 - `ShakeDetector` を AppKit GUI から切り出し、Windows でも OS 非依存テストに含められる状態に更新済み。
-- `rake test:core` を追加し、Windows では OS 非依存コアテストだけを実行する default test に更新済み。
+- `rake test:core` を追加し、Windows では OS 非依存コアテストだけを実行する default test に更新済み。2026-05-21 時点で pane / tab / pane_tree / preferences / shell_backend / cli も core 対象に追加済み。
 - GitHub Actions に Windows core test job を追加済み。ただしリモート CI の成功はまだ未確認。
 - Windows ローカル確認済み:
-  - `ruby -S rake test:core`: 496 tests, 1078 assertions, 0 failures, 0 errors
-  - `ruby -S rake test`: 496 tests, 1078 assertions, 0 failures, 0 errors
+  - `ruby -S rake test:core`: 563 tests, 1215 assertions, 0 failures, 0 errors
+  - `ruby -S rake test`: 563 tests, 1215 assertions, 0 failures, 0 errors
   - `ruby -Ilib -e "require 'echoes'; puts Echoes::VERSION"`: `0.2.0`
 - 既知の未解決事項:
   - Windows ローカルでは `bundle exec rake ...` が `rubish` git checkout 不足で失敗する。Windows core CI は暫定的に Bundler を使わず `gem install rake test-unit` と `ruby -S rake test:core` で実行する。
@@ -39,16 +39,18 @@
 - [x] `lib/echoes/platform.rb` を追加し、`macos?`, `windows?`, `unix?` を定義する。
 - [x] `lib/echoes.rb` で `echoes/objc`, `echoes/preferences`, `echoes/gui` を無条件 require しないようにする。
   - `preferences` は require 自体を残しつつ、内部で OS 別に安全に分岐する形に更新済み。
-- [ ] `exe/echoes` を修正し、GUI 起動時だけ OS 別 GUI backend を require する。
-  - `lib/echoes.rb` 側の OS 別 GUI ロードは対応済み。entrypoint 側の整理は未実施。
-- [ ] Windows で GUI 未実装の場合、`echoes` 実行時に明確な未対応メッセージを出す。
+- [x] `exe/echoes` を修正し、GUI 起動時だけ OS 別 GUI backend を require する。
+  - `Echoes::CLI` を追加し、`--tty` では GUI backend をロードしない構成に更新済み。
+- [x] Windows で GUI 未実装の場合、`echoes` 実行時に明確な未対応メッセージを出す。
+  - 非対応 platform では `Echoes.load_gui_backend` が明示的に `Echoes::Error` を出す。Windows では既存 `gui_win32` を lazy load する。
 - [x] `require "echoes"` が Windows で AppKit / CoreGraphics をロードしないことを確認する。
 - [x] `test/test_helper.rb` を OS 非依存テスト向けに整理する。
 - [ ] AppKit 必須テスト用の helper を分ける。
 - [x] AppKit 依存の `gui_test.rb`, `objc_test.rb` を macOS 限定で skip する。
   - `gui_test.rb` と `objc_test.rb` は macOS 限定に整理済み。
   - `preferences_test.rb` は JSON backend により Windows でも実行可能なため、macOS 限定にはしていない。
-- [ ] `/bin/*` や `/usr/bin/*` 前提のテストを洗い出し、OS 条件付きにする。
+- [x] `/bin/*` や `/usr/bin/*` 前提のテストを洗い出し、OS 条件付きにする。
+  - core 対象の shell command は `TestHelper::CAT_COMMAND` / `TRUE_COMMAND` 経由に整理済み。`editor_test` は `rvim` 依存、`installer_test` は macOS bundle 前提のため core 対象外。
 - [x] parser / screen / cell / copy mode / pane tree など OS 非依存テストだけを Windows で走らせるコマンドを用意する。
   - `ruby -S rake test:core` を追加済み。
 
@@ -63,7 +65,7 @@
 
 ## Phase 3: Shell Backend 抽象化
 
-- [ ] `Pane` から shell process の責務を切り出す。
+- [x] `Pane` から shell process の責務を切り出す。
   - 起動
   - 読み取り
   - 書き込み
@@ -71,10 +73,11 @@
   - alive 判定
   - close
   - interrupt
-- [ ] macOS 既存実装を `MacPtyBackend` 相当のクラスへ移す。
-- [ ] `Pane` は backend の共通 API だけを呼ぶようにする。
+- [x] macOS 既存実装を `MacPtyBackend` 相当のクラスへ移す。
+- [x] `Pane` は backend の共通 API だけを呼ぶようにする。
 - [ ] `Pane` の既存テストを backend 抽象後も macOS で通す。
-- [ ] backend contract の単体テストを追加する。
+  - Windows では `pane_test`, `tab_test`, `pane_tree_test` が通過済み。macOS は未確認。
+- [x] backend contract の単体テストを追加する。
 - [ ] `Terminal` の `PTY.spawn` 依存を backend に寄せるか、Windows では `--tty` 未対応として明示する。
 - [ ] `EmbeddedShell` はこの段階では macOS 限定として明示的に分岐する。
 
@@ -112,13 +115,14 @@
 
 - [ ] `Preferences` を OS 別 backend に分ける。
 - [ ] macOS backend は既存 `NSUserDefaults` 実装を維持する。
-- [ ] Windows backend の保存場所を決める。
+- [x] Windows backend の保存場所を決める。
   - 候補: `%APPDATA%/Echoes/preferences.json`
 - [ ] `Configuration::CONFIG_PATH` の Windows での扱いを決める。
   - 互換維持: `~/.config/echoes/echoes.conf` も読む。
   - Windows 標準: `%APPDATA%/Echoes/echoes.conf` を読む。
 - [ ] 設定ファイル探索順をドキュメント化する。
-- [ ] Windows backend の preference 読み書きテストを追加する。
+- [x] Windows backend の preference 読み書きテストを追加する。
+  - テストでは `ECHOES_CONFIG_HOME` で repo 内の `tmp/test-config` に保存先を差し替える。
 
 ## Phase 7: GUI Backend 設計
 
@@ -188,7 +192,7 @@
 
 - [ ] macOS フルテストを実行する。
 - [x] Windows コアテストを実行する。
-  - ローカルで `ruby -S rake test:core` 成功。
+  - ローカルで `ruby -S rake test:core` 成功。2026-05-21 時点: 563 tests, 1215 assertions。
 - [ ] Windows backend テストを実行する。
 - [ ] Windows GUI 手動確認を実施する。
 - [ ] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。

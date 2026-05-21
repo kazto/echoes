@@ -29,24 +29,22 @@ require_relative "echoes/sixel_decoder"
 require_relative "echoes/terminal"
 require_relative "echoes/preferences"
 
-if Echoes::Platform.windows?
-  require_relative "echoes/win32"
-  require_relative "echoes/gui_win32"
-elsif Echoes::Platform.macos?
-  require_relative "echoes/objc"
-  require_relative "echoes/gui"
-else
-  module Echoes
-    class GUI
-      def self.run
-        # No-op stub for platform-independent tests on non-macOS/non-Windows systems
-      end
-    end
-  end
-end
-
 module Echoes
   class Error < StandardError; end
+
+  module_function
+
+  def load_gui_backend
+    if Platform.windows?
+      require_relative "echoes/win32"
+      require_relative "echoes/gui_win32"
+    elsif Platform.macos?
+      require_relative "echoes/objc"
+      require_relative "echoes/gui"
+    else
+      raise Error, "Echoes GUI is not supported on this platform"
+    end
+  end
 end
 
 Echoes.load_config

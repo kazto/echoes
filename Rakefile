@@ -7,6 +7,7 @@ require_relative "lib/echoes/platform"
 CORE_TEST_FILES = FileList[
   "test/echoes_test.rb",
   "test/echoes/cell_test.rb",
+  "test/echoes/cli_test.rb",
   "test/echoes/client_test.rb",
   "test/echoes/configuration_test.rb",
   "test/echoes/copy_mode_test.rb",
@@ -16,11 +17,16 @@ CORE_TEST_FILES = FileList[
   "test/echoes/keybind_test.rb",
   "test/echoes/kitty_graphics_test.rb",
   "test/echoes/parser_test.rb",
+  "test/echoes/pane_test.rb",
+  "test/echoes/pane_tree_test.rb",
   "test/echoes/platform_test.rb",
+  "test/echoes/preferences_test.rb",
   "test/echoes/profile_test.rb",
   "test/echoes/screen_test.rb",
+  "test/echoes/shell_backend_test.rb",
   "test/echoes/shake_detector_test.rb",
   "test/echoes/sixel_decoder_test.rb",
+  "test/echoes/tab_test.rb",
 ]
 
 Rake::TestTask.new(:test) do |t|

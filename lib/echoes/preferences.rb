@@ -6,7 +6,7 @@ require_relative 'platform'
 module Echoes
   # Thin wrapper around configuration persistence.
   # On macOS, it wraps `[NSUserDefaults initWithSuiteName:]` saving in `~/Library/Preferences/<SUITE>.plist`.
-  # On Windows, it falls back to a JSON file saved in `~/.config/echoes/preferences.json`.
+  # On Windows, it falls back to a JSON file saved in `%APPDATA%/Echoes/preferences.json`.
   module Preferences
     if Platform.macos?
       require_relative 'objc'
@@ -39,7 +39,13 @@ module Echoes
       end
     else
       require 'json'
-      CONFIG_DIR = File.join(Dir.home, '.config', 'echoes')
+      CONFIG_DIR = if ENV['ECHOES_CONFIG_HOME']
+                     ENV['ECHOES_CONFIG_HOME']
+                   elsif Platform.windows?
+                     File.join(ENV['APPDATA'] || File.join(Dir.home, 'AppData', 'Roaming'), 'Echoes')
+                   else
+                     File.join(Dir.home, '.config', 'echoes')
+                   end
       PREFS_PATH = File.join(CONFIG_DIR, 'preferences.json')
 
       def self.defaults

@@ -1,12 +1,7 @@
 # frozen_string_literal: true
 
 require_relative 'platform'
-
-if Echoes::Platform.windows?
-  require 'open3'
-else
-  require 'pty'
-end
+require_relative 'shell_backend'
 
 module Echoes
   # A Pane is one shell session within a Tab. It owns a Screen (the cell
@@ -21,7 +16,7 @@ module Echoes
   class Pane
     attr_accessor :screen, :parser, :pty_read, :pty_write, :pty_pid,
                   :scroll_offset, :scroll_accum, :title, :copy_mode
-    attr_reader :embedded_shell
+    attr_reader :embedded_shell, :shell_backend
 
     def initialize(command:, rows:, cols:, cwd: nil, embedded: false, no_rc: false, editor_file: nil, env: nil)
       @screen = Screen.new(rows: rows, cols: cols)
@@ -57,7 +52,16 @@ module Echoes
         @search_saved_cursor = nil
         @search_saved_autosuggestion = nil
       else
-        start_dir = (cwd && Dir.exist?(cwd)) ? cwd : Dir.home
+        start_dir = if cwd && Dir.exist?(cwd)
+                      cwd
+                    else
+                      home = Dir.home
+                      begin
+                        Dir.chdir(home) { home }
+                      rescue SystemCallError
+                        Dir.pwd
+                      end
+                    end
         Dir.chdir(start_dir) do
           # When env: is nil (the default), we just normalize a few
           # vars on our own process — the child then inherits the
@@ -76,9 +80,17 @@ module Echoes
           # array form is what the OSC 7772 ;open-window handler
           # uses so user-supplied argv isn't subject to shell quoting.
           spawn_args = command.is_a?(Array) ? command : [command]
-          @pty_read, @pty_write, @pty_pid = spawn_with_pty(spawn_args, env, rows, cols)
+          @shell_backend = ShellBackend.for_platform.new(command: spawn_args,
+                                                         env: env,
+                                                         rows: rows,
+                                                         cols: cols,
+                                                         px_width: pty_pixel_width(cols),
+                                                         px_height: pty_pixel_height(rows))
+          @pty_read = @shell_backend.read_io
+          @pty_write = @shell_backend.write_io
+          @pty_pid = @shell_backend.pid
         end
-        @parser = Parser.new(@screen, writer: ->(s) { @pty_write.write(s) rescue nil })
+        @parser = Parser.new(@screen, writer: ->(s) { @shell_backend.write(s) rescue nil })
         @title = File.basename(command.is_a?(Array) ? command.first : command)
       end
       @scroll_offset = 0
@@ -106,7 +118,7 @@ module Echoes
       if embedded?
         # phase-1 stub: no per-keystroke routing yet
       else
-        @pty_write.write(bytes) rescue nil
+        @shell_backend.write(bytes) rescue nil
       end
     end
 
@@ -119,7 +131,7 @@ module Echoes
                                      px_width:  pty_pixel_width(@screen.cols),
                                      px_height: pty_pixel_height(@screen.rows))
       else
-        @pty_write.write("#{line}\r") rescue nil
+        @shell_backend.write("#{line}\r") rescue nil
       end
     end
 
@@ -150,7 +162,7 @@ module Echoes
         end
         out
       else
-        @pty_read.read_nonblock(max)
+        @shell_backend.read_available_output(max)
       end
     rescue IO::WaitReadable, EOFError, Errno::EIO, IOError
       ''
@@ -160,12 +172,8 @@ module Echoes
       return !@editor.closed? if editor?
       if embedded?
         @embedded_shell.alive?
-      elsif @conpty
-        @conpty.alive?
-      elsif @win_wait_thr
-        @win_wait_thr.alive?
       else
-        Process.waitpid(@pty_pid, Process::WNOHANG).nil?
+        @shell_backend.alive?
       end
     rescue Errno::ECHILD
       false
@@ -180,12 +188,10 @@ module Echoes
         @embedded_shell.resize(rows: rows, cols: cols,
                                 px_width:  pty_pixel_width(cols),
                                 px_height: pty_pixel_height(rows))
-      elsif @conpty
-        @pty_read.winsize = [rows, cols]
-      elsif @win_wait_thr
-        @pty_read.winsize = [rows, cols]
       else
-        @pty_read.winsize = pty_winsize_quad(rows, cols)
+        @shell_backend.resize(rows, cols,
+                               px_width: pty_pixel_width(cols),
+                               px_height: pty_pixel_height(rows))
       end
     rescue Errno::EIO, IOError
     end
@@ -203,10 +209,10 @@ module Echoes
         @embedded_shell.resize(rows: rows, cols: cols,
                                 px_width:  pty_pixel_width(cols),
                                 px_height: pty_pixel_height(rows))
-      elsif @conpty
-        @pty_read.winsize = [rows, cols]
-      elsif @pty_read && !@pty_read.closed?
-        @pty_read.winsize = pty_winsize_quad(rows, cols)
+      elsif @shell_backend
+        @shell_backend.refresh_size(rows, cols,
+                                    px_width: pty_pixel_width(cols),
+                                    px_height: pty_pixel_height(rows))
       end
     rescue Errno::EIO, IOError
     end
@@ -217,21 +223,7 @@ module Echoes
         @embedded_shell.shutdown
         return
       end
-      @pty_write.close rescue nil
-      @pty_read.close rescue nil
-      if @conpty
-        @conpty.kill rescue nil
-      elsif @win_wait_thr
-        begin
-          Process.kill(:KILL, @pty_pid) if @win_wait_thr.alive?
-        rescue Errno::ESRCH
-          # Process may have already exited after its stdio was closed.
-        ensure
-          @win_wait_thr = nil
-        end
-      else
-        Process.kill(:HUP, @pty_pid) rescue nil
-      end
+      @shell_backend.close if @shell_backend
     end
 
     def process_output(data)
@@ -900,80 +892,6 @@ module Echoes
     end
 
     private
-
-    # macOS ioctl numbers used by the manual pty setup below.
-    # PTY.spawn does setsid + TIOCSCTTY, but skips tcsetpgrp —
-    # leaving the slave's foreground process group unset (the
-    # macOS kernel doesn't fill it in automatically the way Linux
-    # does on TIOCSCTTY). The user's shell rc files then run
-    # things like `stty -ixon`, zsh fork+setpgid's stty into its
-    # own group for job control, that group has no parent in
-    # the slave's session, and tcsetattr returns
-    #   stty: tcsetattr: Input/output error
-    # because the calling group is "orphaned and not foreground".
-    # Pre-seeding the foreground pgrp to the shell's pid in the
-    # child — same way embedded_shell_helper does — makes the
-    # whole startup path tcsetattr-safe.
-    DARWIN_TIOCSCTTY = 0x20007461
-    DARWIN_TIOCSPGRP = 0x80047476
-
-    def spawn_with_pty(spawn_args, env, rows, cols)
-      if Platform.windows?
-        pty_write, pty_read, @win_wait_thr =
-          if env
-            Open3.popen2e(env, *spawn_args)
-          else
-            Open3.popen2e(*spawn_args)
-          end
-
-        pty_rows = rows
-        pty_cols = cols
-        pty_read.define_singleton_method(:winsize) do
-          [pty_rows, pty_cols]
-        end
-        pty_read.define_singleton_method(:winsize=) do |size|
-          pty_rows = size[0]
-          pty_cols = size[1]
-        end
-        pty_write.define_singleton_method(:winsize) do
-          [pty_rows, pty_cols]
-        end
-        pty_write.define_singleton_method(:winsize=) do |size|
-          pty_rows = size[0]
-          pty_cols = size[1]
-        end
-
-        [pty_read, pty_write, @win_wait_thr.pid]
-      else
-        master, slave = PTY.open
-        slave.winsize = pty_winsize_quad(rows, cols)
-        pid = fork do
-          master.close
-          Process.setsid rescue nil
-          slave.ioctl(DARWIN_TIOCSCTTY, 0) rescue nil
-          slave.ioctl(DARWIN_TIOCSPGRP, [Process.getpgrp].pack('i!')) rescue nil
-          STDIN.reopen(slave)
-          STDOUT.reopen(slave)
-          STDERR.reopen(slave)
-          slave.close rescue nil
-          if env
-            exec(env, *spawn_args)
-          else
-            exec(*spawn_args)
-          end
-        end
-        slave.close
-        [master, master, pid]
-      end
-    end
-
-    # 4-element winsize tuple [rows, cols, xpixel, ypixel] for
-    # TIOCSWINSZ. The pixel fields seed the slave's TIOCGWINSZ so
-    # processes that prefer ioctl over CSI 14 t (kitten icat,
-    # tput, …) see real screen pixel dims.
-    def pty_winsize_quad(rows, cols)
-      [rows, cols, pty_pixel_width(cols), pty_pixel_height(rows)]
-    end
 
     def pty_pixel_width(cols)
       (cols * @screen.cell_pixel_width).to_i
