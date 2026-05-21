@@ -5,8 +5,13 @@ require "tmpdir"
 
 if TestHelper::IS_WINDOWS
   class Echoes::EmbeddedShellTest < Test::Unit::TestCase
-    test "embedded shell requires pty" do
-      omit "EmbeddedShell depends on Ruby pty, which is unavailable on Windows"
+    test "embedded shell raises a clear unsupported error" do
+      require "echoes/embedded_shell"
+
+      error = assert_raise(Echoes::Error) do
+        Echoes::EmbeddedShell.new(no_rc: true)
+      end
+      assert_match(/not supported on Windows/, error.message)
     end
   end
 

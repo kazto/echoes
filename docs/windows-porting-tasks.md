@@ -16,8 +16,8 @@
 - `rake test:core` を追加し、Windows では OS 非依存コアテストだけを実行する default test に更新済み。2026-05-21 時点で pane / tab / pane_tree / preferences / shell_backend / cli も core 対象に追加済み。
 - GitHub Actions に Windows core test job を追加済み。ただしリモート CI の成功はまだ未確認。
 - Windows ローカル確認済み:
-  - `ruby -S rake test:core`: 563 tests, 1215 assertions, 0 failures, 0 errors
-  - `ruby -S rake test`: 563 tests, 1215 assertions, 0 failures, 0 errors
+  - `ruby -S rake test:core`: 566 tests, 1223 assertions, 0 failures, 0 errors
+  - `ruby -S rake test`: 566 tests, 1223 assertions, 0 failures, 0 errors
   - `ruby -Ilib -e "require 'echoes'; puts Echoes::VERSION"`: `0.2.0`
 - 既知の未解決事項:
   - Windows ローカルでは `bundle exec rake ...` が `rubish` git checkout 不足で失敗する。Windows core CI は暫定的に Bundler を使わず `gem install rake test-unit` と `ruby -S rake test:core` で実行する。
@@ -78,8 +78,10 @@
 - [ ] `Pane` の既存テストを backend 抽象後も macOS で通す。
   - Windows では `pane_test`, `tab_test`, `pane_tree_test` が通過済み。macOS は未確認。
 - [x] backend contract の単体テストを追加する。
-- [ ] `Terminal` の `PTY.spawn` 依存を backend に寄せるか、Windows では `--tty` 未対応として明示する。
-- [ ] `EmbeddedShell` はこの段階では macOS 限定として明示的に分岐する。
+- [x] `Terminal` の `PTY.spawn` 依存を backend に寄せるか、Windows では `--tty` 未対応として明示する。
+  - `Terminal` は `ShellBackend` を注入して起動する形に更新済み。
+- [x] `EmbeddedShell` はこの段階では macOS 限定として明示的に分岐する。
+  - Windows では `pty` require ではなく `Echoes::Error` で未対応を明示する。
 
 ## Phase 4: Windows ConPTY Spike
 
@@ -193,6 +195,7 @@
 - [ ] macOS フルテストを実行する。
 - [x] Windows コアテストを実行する。
   - ローカルで `ruby -S rake test:core` 成功。2026-05-21 時点: 563 tests, 1215 assertions。
+  - Terminal / EmbeddedShell の Phase 3 対応後: 566 tests, 1223 assertions。
 - [ ] Windows backend テストを実行する。
 - [ ] Windows GUI 手動確認を実施する。
 - [ ] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。

@@ -1,83 +1,55 @@
 # frozen_string_literal: true
 
-require_relative 'platform'
-
-if Echoes::Platform.windows?
-  require_relative 'conpty'
-else
-  require 'pty'
-end
+require_relative 'shell_backend'
 require 'io/console'
 
 module Echoes
   class Terminal
-    attr_reader :screen
+    attr_reader :screen, :parser, :pid
 
-    def initialize(command: Echoes.config.shell, rows: nil, cols: nil)
+    def initialize(command: Echoes.config.shell, rows: nil, cols: nil, backend_class: ShellBackend.for_platform)
       size = IO.console&.winsize || [24, 80]
       @rows = rows || size[0]
       @cols = cols || size[1]
       @command = command
+      @backend_class = backend_class
       @screen = Screen.new(rows: @rows, cols: @cols)
-      @parser = Parser.new(@screen, writer: ->(s) { @write_io&.write(s) rescue nil })
+      @parser = Parser.new(@screen, writer: ->(s) { @shell_backend&.write(s) rescue nil })
     end
 
     def run
-      if Platform.windows?
-        conpty = ConPTY.new
-        conpty.spawn(@command, cols: @cols, rows: @rows)
+      start_backend
+      setup_signal_handlers
 
-        msvcrt = Fiddle.dlopen('ucrtbase.dll') rescue Fiddle.dlopen('msvcrt.dll')
-        _open_osfhandle = Fiddle::Function.new(
-          msvcrt['_open_osfhandle'],
-          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_INT],
-          Fiddle::TYPE_INT
-        )
-
-        fd_read = _open_osfhandle.call(conpty.pipe_out_r, 0 | 0x8000) # O_RDONLY | O_BINARY
-        @read_io = IO.for_fd(fd_read, 'r')
-
-        fd_write = _open_osfhandle.call(conpty.pipe_in_w, 1 | 0x8000) # O_WRONLY | O_BINARY
-        @write_io = IO.for_fd(fd_write, 'w')
-        @pid = conpty.h_process.to_i
-
-        setup_signal_handlers
-
-        STDIN.raw do
-          reader = Thread.new { read_loop }
-          write_loop
-          reader.kill
-        end
-
-        conpty.kill
-      else
-        PTY.spawn(@command) do |read_io, write_io, pid|
-          @read_io = read_io
-          @write_io = write_io
-          @pid = pid
-
-          @read_io.winsize = [@rows, @cols]
-
-          setup_signal_handlers
-
-          STDIN.raw do
-            reader = Thread.new { read_loop }
-            write_loop
-            reader.kill
-          end
-        end
+      STDIN.raw do
+        reader = Thread.new { read_loop }
+        write_loop
+        reader.kill
       end
+    ensure
+      @shell_backend&.close
     end
 
     private
 
+    def start_backend
+      @shell_backend = @backend_class.new(
+        command: @command,
+        env: nil,
+        rows: @rows,
+        cols: @cols
+      )
+      @pid = @shell_backend.pid
+      @shell_backend
+    end
+
     def read_loop
       loop do
-        data = @read_io.read_nonblock(4096)
+        data = @shell_backend.read_available_output(4096)
         @parser.feed(data)
         render
       rescue IO::WaitReadable
-        IO.select([@read_io])
+        IO.select([@shell_backend.read_io])
         retry
       rescue EOFError, Errno::EIO
         break
@@ -87,7 +59,7 @@ module Echoes
     def write_loop
       loop do
         data = STDIN.read_nonblock(4096)
-        @write_io.write(data)
+        @shell_backend.write(data)
       rescue IO::WaitReadable
         IO.select([STDIN])
         retry
@@ -152,7 +124,7 @@ module Echoes
         if IO.console
           @rows, @cols = IO.console.winsize
           @screen.resize(@rows, @cols)
-          @read_io.winsize = [@rows, @cols]
+          @shell_backend.resize(@rows, @cols)
           render
         end
       end
