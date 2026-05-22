@@ -2,19 +2,19 @@
 
 作成日: 2026-05-20
 
-このメモは、macOS 専用実装になっている Echoes を Windows 対応へ進めるための引き継ぎ資料です。現時点のソースを読んだ範囲では、Windows 対応はまだ実装途中というより、macOS 依存を分離する前段階です。`README.md` でも `macOS (uses AppKit via Fiddle; no Linux/Windows support)` と明記されています。
+このメモは、macOS 専用実装から Windows 対応へ進めるための引き継ぎ資料です。2026-05-22 時点では、ロード境界、Windows core test、shell backend 抽象、Windows ConPTY backend の最小 read/write/resize/cwd/env/close までは進んでいます。一方で Windows GUI、installer、embedded rubish mode、Ctrl-C 相当の配送は未完です。
 
 ## 現状
 
-- Ruby gem 形式のターミナルエミュレータです。CLI 起点は `exe/echoes` で、通常は `Echoes::GUI.new.run`、`--tty` 指定時のみ `Echoes::Terminal.new.run` に分岐します。
-- GUI は `lib/echoes/gui.rb` に大きく集約され、`lib/echoes/objc.rb` の Fiddle ラッパーを通じて AppKit / Foundation / CoreGraphics / CoreText を直接呼び出しています。
-- `lib/echoes.rb` が `echoes/objc`、`echoes/preferences`、`echoes/gui` を無条件で require しているため、Windows では GUI を起動しない用途でも macOS フレームワークのロードで失敗します。
-- 通常ペインは `lib/echoes/pane.rb` の `spawn_with_pty` で `PTY.open`、`fork`、`setsid`、macOS 固有 ioctl (`DARWIN_TIOCSCTTY`, `DARWIN_TIOCSPGRP`) を使います。
-- TTY モードも `lib/echoes/terminal.rb` で Ruby 標準の `PTY.spawn` に依存しています。
+- Ruby gem 形式のターミナルエミュレータです。CLI 起点は `exe/echoes` で、GUI 起動時だけ OS 別 GUI backend を lazy load します。
+- GUI は macOS AppKit 実装が中心で、Windows GUI はまだ最小実装段階です。
+- `require "echoes"` は Windows でも AppKit / CoreGraphics をロードしないように分離済みです。
+- 通常ペインは `ShellBackend` 経由で shell process を扱います。macOS では既存 PTY backend、Windows では ConPTY backend を選べます。
+- TTY モードは backend 注入に寄せていますが、Windows ではまだ GUI/通常ペインほど検証していません。
 - 組み込み rubish モードは `lib/echoes/embedded_shell.rb` と `lib/echoes/embedded_shell_helper.rb` で、`PTY.open`、制御 pipe、`Process.spawn`、`tcsetpgrp`、`TIOCSCTTY` を使ってジョブ制御を成立させています。
 - インストーラは `lib/echoes/installer.rb` が `~/Applications` に `Echoes.app` / `EchoesEmbed.app` のラッパーを作る macOS 専用です。
-- CI は `.github/workflows/main.yml` で `macos-latest` のみです。Windows ジョブはありません。
-- `git status --short` は空で、調査開始時点では未コミット差分はありませんでした。
+- CI には Windows core test job を追加済みです。ただしリモート CI の成功は未確認です。
+- Windows ローカルでは `ruby -S rake test:core` が通過しています。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
 
 ## Windows 対応の主なブロッカー
 
@@ -28,7 +28,7 @@
 - `/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics`
 - `/System/Library/Frameworks/CoreText.framework/CoreText`
 
-Windows ではここで即時に失敗します。まず `Echoes::Platform` のような小さな判定層を作り、コア実装、GUI 実装、macOS 実装を遅延ロードできる形に分ける必要があります。
+この問題は Phase 1 で対応済みです。`Echoes::Platform` と lazy load 境界により、Windows で `require "echoes"` と OS 非依存テストを動かせる状態になっています。
 
 ### 2. GUI バックエンドが AppKit 直結
 
@@ -46,18 +46,18 @@ Windows 側の候補は未実装です。Ruby から直接 Win32 API を Fiddle 
 
 ### 3. PTY とプロセス制御が Unix/macOS 前提
 
-通常ペインは `lib/echoes/pane.rb` で `PTY.open`、`fork`、`Process.setsid`、`exec`、`TIOCSCTTY`、`TIOCSPGRP` を使っています。Windows Ruby には同じ意味の `fork` / Unix PTY / process group / ioctl がありません。
+通常ペインの macOS 実装は PTY / fork / process group / ioctl 前提ですが、現在は `ShellBackend` に切り出し済みです。Windows では `lib/echoes/conpty.rb` と `WindowsConPTYBackend` が ConPTY (`CreatePseudoConsole`) を使います。
 
-Windows では ConPTY (`CreatePseudoConsole`) を使う別実装が必要です。必要になる責務は次の通りです。
+Windows ConPTY backend で対応済み、または残っている責務は次の通りです。
 
-- 疑似コンソールの作成とリサイズ
-- 子プロセス起動 (`cmd.exe`, PowerShell, pwsh など)
-- stdin/stdout pipe の読み書き
-- Ctrl-C 相当の配送
-- cwd / env / PATH の扱い
-- 終了検知とリソース解放
+- 疑似コンソールの作成とリサイズ: 実装済み。`cmd.exe mode con` で resize 反映を確認済み。
+- 子プロセス起動 (`cmd.exe`, PowerShell, pwsh など): 初期 shell 解決と `cmd.exe` 起動は確認済み。
+- stdin/stdout pipe の読み書き: 実装済み。stdout/stderr を ConPTY output pipe に明示し、stdin は ConPTY に任せる構成。
+- Ctrl-C 相当の配送: 未解決。`\x03` write と `GenerateConsoleCtrlEvent` は期待通りに効いていません。
+- cwd / env / PATH の扱い: cwd と explicit env は確認済み。
+- 終了検知とリソース解放: close / process exit は確認済み。
 
-既存の `Pane` は表示ロジックもキーバインドも多く持っているため、まず「shell backend」インターフェイスを切り出し、macOS PTY backend と Windows ConPTY backend を差し替えられる形にするのが現実的です。
+`Pane` は Windows で ConPTY backend を選ぶようになっています。`pane_test`, `tab_test`, `shell_backend_test` は Windows ローカルで通過済みです。
 
 ### 4. 組み込み rubish モードも Unix ジョブ制御前提
 

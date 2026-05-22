@@ -32,6 +32,10 @@ module Echoes
     end
 
     def initialize(command: Echoes.config.shell, rows: Echoes.config.rows, cols: Echoes.config.cols, font_size: nil)
+      if ENV['ECHOES_EMBED'] == '1'
+        raise Error, 'Embedded rubish mode is not supported on Windows yet'
+      end
+
       ENV['TERM_PROGRAM']         = 'Echoes'
       ENV['TERM_PROGRAM_VERSION'] = Echoes::VERSION
       @rows = rows

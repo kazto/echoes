@@ -12,7 +12,8 @@ proportional fonts) other terminals can't.
 
 ## Requirements
 
-- macOS (uses AppKit via Fiddle; no Linux/Windows support)
+- macOS for the full GUI (uses AppKit via Fiddle)
+- Windows support is in progress: core tests and the ConPTY shell backend run, but the Windows GUI, installer, embedded rubish mode, and image rendering are not complete yet.
 - Ruby >= 3.2
 
 ## Installation
@@ -116,6 +117,7 @@ Echoes::Client.bg_clear
 ```sh
 bin/setup
 bundle exec rake test       # run all tests
+ruby -S rake test:core      # Windows-friendly core test subset
 bundle exec exe/echoes      # launch from the working tree
 bin/console                 # irb with the gem loaded
 ```

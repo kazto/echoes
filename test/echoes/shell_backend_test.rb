@@ -95,4 +95,58 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     backend.close
     assert_true(conpty.killed)
   end
+
+  test "Windows ConPTY backend talks to cmd.exe" do
+    omit("Windows only") unless TestHelper::IS_WINDOWS
+
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80
+    )
+    begin
+      output = drain_backend_output(backend, until_match: /C:\\.*>/)
+      assert_match(/Microsoft Windows/, output)
+
+      backend.write("echo echoes-conpty\r\n")
+      output = drain_backend_output(backend, until_match: /echoes-conpty/)
+      assert_match(/echoes-conpty/, output)
+    ensure
+      backend.close
+    end
+  end
+
+  test "Windows ConPTY backend passes explicit environment" do
+    omit("Windows only") unless TestHelper::IS_WINDOWS
+
+    env = ENV.to_h.merge("ECHOES_CONPTY_ENV_TEST" => "ok")
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: env,
+      rows: 24,
+      cols: 80
+    )
+    begin
+      drain_backend_output(backend, until_match: /C:\\.*>/)
+      backend.write("echo %ECHOES_CONPTY_ENV_TEST%\r\n")
+      output = drain_backend_output(backend, until_match: /ok/)
+      assert_match(/ok/, output)
+    ensure
+      backend.close
+    end
+  end
+
+  private
+
+  def drain_backend_output(backend, until_match:, attempts: 30)
+    output = +""
+    attempts.times do
+      chunk = backend.read_available_output(16_384)
+      output << chunk if chunk && !chunk.empty?
+      break if output.match?(until_match)
+      sleep 0.1
+    end
+    output
+  end
 end

@@ -130,7 +130,8 @@
 - [x] `Pane#read_available_output` が Windows backend でも非ブロッキングに動くことを確認する。
 - [x] `Pane#resize` が Windows backend でも例外なく動くことを確認する。
 - [x] `Pane#close` が Windows backend でもプロセスを残さないことを確認する。
-- [ ] Windows backend 用の最小統合テストを追加する。
+- [x] Windows backend 用の最小統合テストを追加する。
+  - `WindowsConPTYBackend` で `cmd.exe` の read/write と explicit env を確認する Windows 限定テストを追加済み。
 
 ## Phase 6: 設定と Preferences
 
@@ -204,11 +205,14 @@
 
 ## Phase 11: Embedded Rubish Mode
 
-- [ ] Windows 初期リリースで embedded mode を対象に含めるか決める。
-- [ ] 対象外にする場合、Windows で `ECHOES_EMBED=1` を指定したときの明確なエラーを実装する。
+- [x] Windows 初期リリースで embedded mode を対象に含めるか決める。
+  - 初期 Windows 対応では embedded rubish mode は対象外にする。
+- [x] 対象外にする場合、Windows で `ECHOES_EMBED=1` を指定したときの明確なエラーを実装する。
+  - `EmbeddedShell` と Windows GUI 初期化の両方で unsupported error を出す。
 - [ ] 対象にする場合、Windows 用 helper のプロセス制御モデルを設計する。
 - [ ] Ctrl-C / command interruption / history / cwd 通知の Windows 仕様を決める。
-- [ ] embedded mode の Windows 専用テストを追加する。
+- [x] embedded mode の Windows 専用テストを追加する。
+  - `embedded_shell_test.rb` と `gui_test.rb` で Windows の unsupported error を確認する。
 
 ## Phase 12: 最終確認
 
@@ -219,7 +223,8 @@
   - ConPTY backend adapter 追加後: 570 tests, 1233 assertions。
   - ConPTY handle cleanup 修正後: 572 tests, 1235 assertions。
 - [x] Windows backend テストを実行する。
-  - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`, `pane_test.rb`, `tab_test.rb` が通過。
+  - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
+  - `pane_test.rb`, `tab_test.rb` も ConPTY backend 統合後に通過済み。
 - [ ] Windows GUI 手動確認を実施する。
 - [ ] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。
 - [ ] 未対応機能を明示したリリースノート草案を作る。

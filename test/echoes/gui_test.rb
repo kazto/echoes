@@ -6,6 +6,21 @@ require "tmpdir"
 
 Echoes.load_gui_backend if Echoes::Platform.windows? || Echoes::Platform.macos?
 
+if Echoes::Platform.windows?
+  class Echoes::GUIWindowsTest < Test::Unit::TestCase
+    test "embedded mode raises a clear unsupported error" do
+      old = ENV["ECHOES_EMBED"]
+      ENV["ECHOES_EMBED"] = "1"
+      error = assert_raise(Echoes::Error) do
+        Echoes::GUI.new
+      end
+      assert_match(/Embedded rubish mode is not supported on Windows/, error.message)
+    ensure
+      ENV["ECHOES_EMBED"] = old
+    end
+  end
+end
+
 if Echoes::Platform.macos?
   class Echoes::GUIFileDropTest < Test::Unit::TestCase
     def create_pasteboard_with_file_urls(*paths)
