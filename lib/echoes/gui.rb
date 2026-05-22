@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require 'pty'
+require 'pty' unless Echoes::Platform.windows?
 require 'shellwords'
 require 'socket'
 require 'uri'
@@ -8,6 +8,9 @@ require 'json'
 
 module Echoes
   class GUI
+    class << self
+      attr_accessor :window_class
+    end
     CRASH_LOG = File.join(Dir.home, '.local', 'share', 'echoes', 'crash.log')
 
     def log_crash(exception, context: nil)
@@ -120,6 +123,7 @@ module Echoes
         return nil
       end
       path = URI.decode_www_form_component(uri.path) rescue nil
+      path = path[1..] if path && path.match?(/\A\/[A-Za-z]:\//)
       path if path && !path.empty? && Dir.exist?(path)
     end
 

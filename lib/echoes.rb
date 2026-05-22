@@ -35,12 +35,15 @@ module Echoes
   module_function
 
   def load_gui_backend
+    require_relative "echoes/gui"
     if Platform.windows?
       require_relative "echoes/win32"
-      require_relative "echoes/gui_win32"
+      require_relative "echoes/gui/win32_window"
+      GUI.window_class = GUI::Win32Window
     elsif Platform.macos?
       require_relative "echoes/objc"
-      require_relative "echoes/gui"
+      require_relative "echoes/gui/mac_window"
+      GUI.window_class = GUI::MacWindow
     else
       raise Error, "Echoes GUI is not supported on this platform"
     end
