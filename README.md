@@ -13,7 +13,7 @@ proportional fonts) other terminals can't.
 ## Requirements
 
 - macOS for the full GUI (uses AppKit via Fiddle)
-- Windows support is in progress: core tests and the ConPTY shell backend run, but the Windows GUI, installer, embedded rubish mode, and image rendering are not complete yet.
+- Windows support is in progress: core tests, the ConPTY shell backend, installer, and a minimal Win32 GUI run. Embedded rubish mode and some GUI integrations are still incomplete.
 - Ruby >= 3.2
 
 ## Installation
@@ -32,8 +32,9 @@ removes them.
 
 On Windows, `echoes install` writes an `echoes.bat` wrapper to
 `~/bin` by default. Add that directory to `PATH` to run `echoes` from
-Command Prompt or PowerShell. Windows GUI support is still in progress;
-the launcher is intended for the current development build.
+Command Prompt or PowerShell. Windows GUI support is still in progress,
+but the current development build includes ConPTY shell panes, GDI text
+drawing, clipboard, image rendering, notifications, and URL opening.
 
 To run from a clone instead:
 

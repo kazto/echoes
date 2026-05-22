@@ -425,9 +425,23 @@ module Echoes
         Win32::DeleteObject.call(handle)
         instance_variable_set(ivar, nil)
       end
+      @font_cache&.each_value { |handle| Win32::DeleteObject.call(handle) if handle }
+      @font_cache = {}
     end
 
     private def font_for_cell(cell)
+      fallback_family = fallback_font_family_for_char(cell.char.to_s)
+      return styled_base_font(cell) unless fallback_family
+
+      key = [fallback_family, cell.bold ? 700 : 400, !!cell.italic]
+      @font_cache[key] ||= create_font(
+        weight: key[1],
+        italic: key[2],
+        family: fallback_family
+      )
+    end
+
+    private def styled_base_font(cell)
       if cell.bold && cell.italic
         @bold_italic_hfont || @bold_hfont || @italic_hfont || @hfont
       elsif cell.bold
@@ -437,6 +451,40 @@ module Echoes
       else
         @hfont
       end
+    end
+
+    private def fallback_font_family_for_char(char)
+      return nil if char.nil? || char.empty? || char.ascii_only?
+
+      cp = char.codepoints.first
+      case cp
+      when 0x1F000..0x1FAFF, 0x2600..0x27BF
+        "Segoe UI Emoji"
+      when 0x2500..0x25FF, 0x2190..0x21FF, 0x2300..0x23FF, 0x2B00..0x2BFF
+        "Segoe UI Symbol"
+      when 0x3040..0x30FF, 0x3400..0x4DBF, 0x4E00..0x9FFF, 0xF900..0xFAFF
+        "Yu Gothic UI"
+      when 0xAC00..0xD7AF, 0x1100..0x11FF, 0x3130..0x318F
+        "Malgun Gothic"
+      else
+        nil
+      end
+    end
+
+    private def same_font_run_range(row, start)
+      first = row[start]
+      return [start, 0] unless first
+
+      family = fallback_font_family_for_char(first.char.to_s)
+      length = 1
+      while (start + length) < row.length
+        cell = row[start + length]
+        break unless cell
+        break if fallback_font_family_for_char(cell.char.to_s) != family
+
+        length += 1
+      end
+      [start, length]
     end
 
     def build_color_table
@@ -523,6 +571,7 @@ module Echoes
     private def wire_screen_handlers(pane)
       pane.screen.clipboard_handler = method(:handle_clipboard)
       pane.screen.glyph_measurer = method(:measure_glyph)
+      pane.screen.notification_handler = ->(title, message) { post_notification(title, message) }
       pane.screen.cell_pixel_width = @cell_width if @cell_width
       pane.screen.cell_pixel_height = @cell_height if @cell_height
       pane.refresh_pty_pixel_size if @cell_width && @cell_height
@@ -536,6 +585,17 @@ module Echoes
       when :get
         Win32.get_clipboard_text(@hwnd)
       end
+    end
+
+    private def post_notification(title, message)
+      Win32.show_notification(@hwnd, title, message)
+    end
+
+    private def open_url(url)
+      uri = URI.parse(url.to_s) rescue nil
+      return false unless uri && %w[http https].include?(uri.scheme)
+
+      !!Win32.open_url(uri.to_s)
     end
 
     private def paste_from_clipboard
@@ -648,6 +708,7 @@ module Echoes
 
           run_length = 1
           run_str = cell.char || " "
+          run_font_family = fallback_font_family_for_char(run_str)
 
           while (c + run_length) < pane_cols
             next_cell = row[c + run_length]
@@ -661,6 +722,7 @@ module Echoes
             n_italic = next_cell.italic
             n_underline = next_cell.underline
             n_strikethrough = next_cell.strikethrough
+            n_font_family = fallback_font_family_for_char(next_cell.char.to_s)
 
             if n_inverse
               n_fg_val, n_bg_val = n_bg_val, n_fg_val
@@ -683,7 +745,8 @@ module Echoes
                      n_bold != cell.bold ||
                      n_italic != cell.italic ||
                      n_underline != cell.underline ||
-                     n_strikethrough != cell.strikethrough
+                     n_strikethrough != cell.strikethrough ||
+                     n_font_family != run_font_family
 
             run_str += next_cell.char || " "
             run_length += 1

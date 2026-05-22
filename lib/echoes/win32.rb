@@ -8,6 +8,7 @@ module Echoes
     USER32   = Fiddle.dlopen('user32.dll') rescue nil
     GDI32    = Fiddle.dlopen('gdi32.dll') rescue nil
     KERNEL32 = Fiddle.dlopen('kernel32.dll') rescue nil
+    SHELL32  = Fiddle.dlopen('shell32.dll') rescue nil
     DWRITE   = Fiddle.dlopen('dwrite.dll') rescue nil
     IMM32    = Fiddle.dlopen('imm32.dll') rescue nil
 
@@ -60,6 +61,10 @@ module Echoes
     EmptyClipboard    = new_func(USER32, 'EmptyClipboard', [], I)
     SetClipboardData  = new_func(USER32, 'SetClipboardData', [U, P], P)
     GetClipboardData  = new_func(USER32, 'GetClipboardData', [U], P)
+    MessageBoxW       = new_func(USER32, 'MessageBoxW', [P, P, P, U], I)
+
+    # --- Shell32 Functions ---
+    ShellExecuteW     = new_func(SHELL32, 'ShellExecuteW', [P, P, P, P, P, I], P)
 
     # --- Kernel32 Functions ---
     GlobalAlloc       = new_func(KERNEL32, 'GlobalAlloc', [U, S], P)
@@ -92,6 +97,8 @@ module Echoes
     WS_OVERLAPPEDWINDOW = 0x00CF0000
     WS_VISIBLE         = 0x10000000
     SW_SHOWNORMAL      = 1
+    MB_OK              = 0x00000000
+    MB_ICONINFORMATION = 0x00000040
 
     # Windows Messages
     WM_DESTROY         = 0x0002
@@ -213,6 +220,23 @@ module Echoes
       ensure
         CloseClipboard.call
       end
+    end
+
+    def self.show_notification(hwnd, title, message)
+      return false unless MessageBoxW
+
+      caption = to_wstring(title.to_s.empty? ? 'Echoes' : title.to_s)
+      body = to_wstring(message.to_s)
+      MessageBoxW.call(hwnd, Fiddle::Pointer[body], Fiddle::Pointer[caption], MB_OK | MB_ICONINFORMATION) != 0
+    end
+
+    def self.open_url(url)
+      return false unless ShellExecuteW
+
+      operation = to_wstring('open')
+      target = to_wstring(url.to_s)
+      result = ShellExecuteW.call(0, Fiddle::Pointer[operation], Fiddle::Pointer[target], nil, nil, SW_SHOWNORMAL)
+      result.to_i > 32
     end
 
     def self.null_pointer?(ptr)

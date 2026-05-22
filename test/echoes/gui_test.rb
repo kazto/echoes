@@ -18,11 +18,14 @@ if Echoes::Platform.windows?
         active_pane.screen
       end
     end
+    StubScreenOnlyPane = Struct.new(:screen) do
+      def refresh_pty_pixel_size; end
+    end
     StubCopyMode = Struct.new(:selection_start, :selection_end) do
       def active = true
       def selecting? = true
     end
-    StubCellStyle = Struct.new(:bold, :italic)
+    StubCellStyle = Struct.new(:bold, :italic, :char)
 
     test "embedded mode raises a clear unsupported error" do
       old = ENV["ECHOES_EMBED"]
@@ -109,6 +112,36 @@ if Echoes::Platform.windows?
       assert_equal 4, gui.send(:font_for_cell, StubCellStyle.new(true, true))
     end
 
+    test "Windows font fallback selects fonts by Unicode range" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hfont, 1)
+      gui.instance_variable_set(:@font_cache, {})
+      gui.define_singleton_method(:create_font) do |weight: 400, italic: false, height: nil, family: nil|
+        "font:#{family}:#{weight}:#{italic}"
+      end
+
+      assert_equal 1, gui.send(:font_for_cell, StubCellStyle.new(false, false, "A"))
+      assert_equal "font:Yu Gothic UI:400:false",
+                   gui.send(:font_for_cell, StubCellStyle.new(false, false, "漢"))
+      assert_equal "font:Segoe UI Emoji:400:false",
+                   gui.send(:font_for_cell, StubCellStyle.new(false, false, "\u{1F600}"))
+      assert_equal "font:Segoe UI Symbol:700:true",
+                   gui.send(:font_for_cell, StubCellStyle.new(true, true, "▶"))
+    end
+
+    test "Windows text runs split when fallback font family changes" do
+      gui = Echoes::GUI.allocate
+
+      assert_equal [0, 2],
+                   gui.send(:same_font_run_range, [StubCellStyle.new(false, false, "a"),
+                                                    StubCellStyle.new(false, false, "b"),
+                                                    StubCellStyle.new(false, false, "漢")], 0)
+      assert_equal [2, 1],
+                   gui.send(:same_font_run_range, [StubCellStyle.new(false, false, "a"),
+                                                    StubCellStyle.new(false, false, "b"),
+                                                    StubCellStyle.new(false, false, "漢")], 2)
+    end
+
     test "Windows text decoration rects cover underline and strikethrough" do
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@cell_height, 16)
@@ -128,6 +161,44 @@ if Echoes::Platform.windows?
                    gui.send(:aligned_text_origin, 10, 10, 60, 24, 30, 8, halign: 2, valign: 2)
       assert_equal [40, 26],
                    gui.send(:aligned_text_origin, 10, 10, 60, 24, 30, 8, halign: 1, valign: 1)
+    end
+
+    test "Windows screen handlers include notifications" do
+      screen = Echoes::Screen.new(rows: 1, cols: 1)
+      pane = StubScreenOnlyPane.new(screen)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hwnd, 123)
+
+      gui.send(:wire_screen_handlers, pane)
+
+      captured = nil
+      with_win32_notification(->(hwnd, title, message) { captured = [hwnd, title, message] }) do
+        screen.notification_handler.call("Build", "Finished")
+      end
+
+      assert_equal [123, "Build", "Finished"], captured
+    end
+
+    test "Windows open_url delegates http urls to ShellExecute" do
+      gui = Echoes::GUI.allocate
+
+      opened = nil
+      with_win32_url_opener(->(url) { opened = url }) do
+        assert_true gui.send(:open_url, "https://example.com/a")
+      end
+
+      assert_equal "https://example.com/a", opened
+    end
+
+    test "Windows open_url rejects unsupported schemes" do
+      gui = Echoes::GUI.allocate
+
+      opened = nil
+      with_win32_url_opener(->(url) { opened = url }) do
+        assert_false gui.send(:open_url, "file:///C:/secret.txt")
+      end
+
+      assert_nil opened
     end
 
     private
@@ -152,6 +223,28 @@ if Echoes::Platform.windows?
     ensure
       singleton.send(:remove_method, :set_clipboard_text)
       singleton.define_method(:set_clipboard_text) { |hwnd, text| original.call(hwnd, text) }
+    end
+
+    def with_win32_notification(setter)
+      singleton = class << Echoes::Win32; self; end
+      original = Echoes::Win32.method(:show_notification)
+      singleton.send(:remove_method, :show_notification)
+      singleton.define_method(:show_notification) { |hwnd, title, message| setter.call(hwnd, title, message) }
+      yield
+    ensure
+      singleton.send(:remove_method, :show_notification)
+      singleton.define_method(:show_notification) { |hwnd, title, message| original.call(hwnd, title, message) }
+    end
+
+    def with_win32_url_opener(opener)
+      singleton = class << Echoes::Win32; self; end
+      original = Echoes::Win32.method(:open_url)
+      singleton.send(:remove_method, :open_url)
+      singleton.define_method(:open_url) { |url| opener.call(url) }
+      yield
+    ensure
+      singleton.send(:remove_method, :open_url)
+      singleton.define_method(:open_url) { |url| original.call(url) }
     end
   end
 end

@@ -31,9 +31,10 @@
 - [x] Windows 対応の初期スコープを決める。
   - 推奨: 通常シェル + OS 非依存コアテストを最初の対象にする。
   - 後回し推奨: AppKit 相当のフル GUI、embedded rubish mode、画像表示、IME、インストーラ。
-- [ ] Windows の対象 Ruby と対象 Windows バージョンを決める。
-  - 暫定: ローカル検証は Ruby 4.0 / Windows で実施。
-  - ConPTY を使う前提なら Windows 10 1809 以降が必要。
+- [x] Windows の対象 Ruby と対象 Windows バージョンを決める。
+  - 初期対象 Ruby: Ruby 4.0 x64。
+  - 初期対象 Windows: Windows 10 1809 以降 / Windows 11。
+  - 理由: 通常ペインは ConPTY (`CreatePseudoConsole`) 前提で、ConPTY は Windows 10 1809 以降が必要。
 
 ## Phase 1: OS 判定とロード境界
 
@@ -173,7 +174,11 @@
   - timer
   - clipboard
   - 初期最小機能は Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard とする。
-- [ ] IME、drag and drop、file dialog、multi-display、notification の対応順を決める。
+- [x] IME、drag and drop、file dialog、multi-display、notification の対応順を決める。
+  - 1. IME: 日本語入力の基本操作に直結するため優先。
+  - 2. notification / URL open: OSC 9 / OSC 777 / hyperlink のホスト連携として優先。Windows は `MessageBoxW` / `ShellExecuteW` の最小 helper を追加済み。
+  - 3. file dialog / drag and drop: editor / paste workflows の補助として次点。
+  - 4. multi-display: OSC 7772 `open-window` の display 指定対応として後続。
 
 ## Phase 8: Windows GUI 最小実装
 
@@ -191,6 +196,9 @@
   - message loop 内で shell output を polling し、出力時に `InvalidateRect` / `UpdateWindow` する。
 - [x] clipboard copy / paste を実装する。
   - `CF_UNICODETEXT` を使う Win32 clipboard helper を追加し、OSC 52 と Ctrl+Shift+C/V 経路から利用する。
+- [x] notification / URL open の最小 helper を実装する。
+  - OSC notification は `MessageBoxW` へ接続する。
+  - URL open は `http` / `https` のみ `ShellExecuteW` に渡す。
 - [ ] 最小 GUI で Windows shell が起動し、入力と出力ができることを確認する。
 
 ## Phase 9: 画像・フォント拡張
@@ -203,7 +211,9 @@
 - [x] iTerm2 images の Windows decode / render backend を追加する。
   - iTerm2 inline images は Kitty graphics と同じ GDI+ PNG decoder を使う。
   - render は Kitty graphics と同じ `screen.placements` / GDI blit 経路を使う。
-- [ ] Unicode fallback font の解決を実装する。
+- [x] Unicode fallback font の解決を実装する。
+  - Windows GUI は CJK を `Yu Gothic UI`、Hangul を `Malgun Gothic`、emoji を `Segoe UI Emoji`、box / geometric / arrow symbols を `Segoe UI Symbol` に fallback する。
+  - 通常テキスト描画 run は fallback font family が変わる位置で分割する。
 - [x] bold / italic / underline / strikethrough の描画差を確認する。
   - Windows GUI は GDI font を regular / bold / italic / bold-italic で切り替え、underline / strikethrough はセル幅に合わせて `FillRect` で描画する。
 - [x] OSC 66 proportional text の Windows 対応可否を判断する。
@@ -228,8 +238,10 @@
   - 初期 Windows 対応では embedded rubish mode は対象外にする。
 - [x] 対象外にする場合、Windows で `ECHOES_EMBED=1` を指定したときの明確なエラーを実装する。
   - `EmbeddedShell` と Windows GUI 初期化の両方で unsupported error を出す。
-- [ ] 対象にする場合、Windows 用 helper のプロセス制御モデルを設計する。
-- [ ] Ctrl-C / command interruption / history / cwd 通知の Windows 仕様を決める。
+- [x] 対象にする場合、Windows 用 helper のプロセス制御モデルを設計する。
+  - 初期 Windows 対応では対象外。将来対応する場合は ConPTY 通常ペインとは別に helper process + control channel を設計する。
+- [x] Ctrl-C / command interruption / history / cwd 通知の Windows 仕様を決める。
+  - 初期 Windows 対応では embedded rubish mode を対象外にするため、仕様決定は通常ペインの ConPTY Ctrl-C 検証に一本化する。
 - [x] embedded mode の Windows 専用テストを追加する。
   - `embedded_shell_test.rb` と `gui_test.rb` で Windows の unsupported error を確認する。
 
@@ -249,12 +261,15 @@
   - Windows GUI image blit 追加後: 594 tests, 1265 assertions, 8 omissions。
   - Windows GUI text style 描画追加後: 596 tests, 1271 assertions, 8 omissions。
   - Windows GUI OSC 66 multicell text 描画追加後: 597 tests, 1275 assertions, 8 omissions。
+  - Windows GUI Unicode fallback font 追加後: 599 tests, 1281 assertions, 8 omissions。
+  - Windows GUI notification / URL open helper 追加後: 602 tests, 1286 assertions, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - `pane_test.rb`, `tab_test.rb` も ConPTY backend 統合後に通過済み。
 - [ ] Windows GUI 手動確認を実施する。
 - [x] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。
-- [ ] 未対応機能を明示したリリースノート草案を作る。
+- [x] 未対応機能を明示したリリースノート草案を作る。
+  - `docs/windows-release-notes-draft.md` を追加。
 
 ## 初回マイルストーンの完了条件
 
@@ -263,5 +278,6 @@
   - CI job は追加済み。リモート実行結果は未確認。
 - [ ] macOS の既存 GUI / PTY テストが壊れていない。
 - [x] AppKit 依存テストが macOS 限定として明示されている。
-- [ ] 次の作業者が ConPTY backend に着手できる状態になっている。
+- [x] 次の作業者が ConPTY backend に着手できる状態になっている。
+  - read / write / resize / cwd / env / close / Pane 統合は完了。残作業は Ctrl-C 相当の配送検証。
 
