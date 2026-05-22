@@ -16,10 +16,9 @@
 - `rake test:core` を追加し、Windows では OS 非依存コアテストだけを実行する default test に更新済み。2026-05-22 時点で pane / tab / pane_tree / preferences / shell_backend / cli / installer も core 対象に追加済み。
 - GitHub Actions に Windows core test job を追加済み。ただしリモート CI の成功はまだ未確認。
 - Windows ローカル確認済み:
-  - `ruby -S rake test:core`: 570 tests, 1233 assertions, 0 failures, 0 errors
-  - `ruby -S rake test`: 570 tests, 1233 assertions, 0 failures, 0 errors
+  - 2026-05-22: `ruby -S rake test:core`: 587 tests, 1251 assertions, 0 failures, 8 omissions
+  - 2026-05-22: `ruby -S rake test`: 585 tests, 1247 assertions, 0 failures, 8 omissions
   - `ruby -Ilib -e "require 'echoes'; puts Echoes::VERSION"`: `0.2.0`
-  - 2026-05-22: `ruby -S rake test:core`: 572 tests, 1235 assertions, 0 failures, 0 errors
 - 既知の未解決事項:
   - Windows ローカルでは `bundle exec rake ...` が `rubish` git checkout 不足で失敗する。Windows core CI は暫定的に Bundler を使わず `gem install rake test-unit` と `ruby -S rake test:core` で実行する。
   - macOS フルテストはこの作業環境では未実行。
@@ -135,17 +134,18 @@
 
 ## Phase 6: 設定と Preferences
 
-- [ ] `Preferences` を OS 別 backend に分ける。
-- [ ] macOS backend は既存 `NSUserDefaults` 実装を維持する。
+- [x] `Preferences` を OS 別 backend に分ける。
+  - `MacOSBackend` は `NSUserDefaults`、`JsonBackend` は JSON file persistence を担当する。
+- [x] macOS backend は既存 `NSUserDefaults` 実装を維持する。
 - [x] Windows backend の保存場所を決める。
-  - 候補: `%APPDATA%/Echoes/preferences.json`
+  - `%APPDATA%/Echoes/preferences.json`。`ECHOES_CONFIG_HOME` 指定時はその配下の `preferences.json`。
 - [x] `Configuration::CONFIG_PATH` の Windows での扱いを決める。
   - 互換維持: `~/.config/echoes/echoes.conf` も読む。
   - Windows 標準: `%APPDATA%/Echoes/echoes.conf` を読む。
 - [x] 設定ファイル探索順をドキュメント化する。
   - 探索順は `ECHOES_CONFIG_HOME/echoes.conf` が最優先。通常 Windows では `%APPDATA%/Echoes/echoes.conf`、次に legacy `~/.config/echoes/echoes.conf` を読む。
 - [x] Windows backend の preference 読み書きテストを追加する。
-  - テストでは `ECHOES_CONFIG_HOME` で repo 内の `tmp/test-config` に保存先を差し替える。
+  - platform backend の round-trip に加えて、`JsonBackend` の `ECHOES_CONFIG_HOME` / `%APPDATA%` 保存先選択を確認する。
 
 ## Phase 7: GUI Backend 設計
 
@@ -227,6 +227,7 @@
   - ConPTY backend adapter 追加後: 570 tests, 1233 assertions。
   - ConPTY handle cleanup 修正後: 572 tests, 1235 assertions。
   - Windows installer test を core 対象に追加後: 585 tests, 1247 assertions, 8 omissions。
+  - Preferences backend 分離テスト追加後: 587 tests, 1251 assertions, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - `pane_test.rb`, `tab_test.rb` も ConPTY backend 統合後に通過済み。

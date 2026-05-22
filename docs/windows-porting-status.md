@@ -2,7 +2,7 @@
 
 作成日: 2026-05-20
 
-このメモは、macOS 専用実装から Windows 対応へ進めるための引き継ぎ資料です。2026-05-22 時点では、ロード境界、Windows core test、shell backend 抽象、Windows ConPTY backend の最小 read/write/resize/cwd/env/close までは進んでいます。一方で Windows GUI、installer、embedded rubish mode、Ctrl-C 相当の配送は未完です。
+このメモは、macOS 専用実装から Windows 対応へ進めるための引き継ぎ資料です。2026-05-22 時点では、ロード境界、Windows core test、shell backend 抽象、Windows ConPTY backend の最小 read/write/resize/cwd/env/close、installer、preferences backend 分離までは進んでいます。一方で Windows GUI、embedded rubish mode、Ctrl-C 相当の配送は未完です。
 
 ## 現状
 
@@ -13,8 +13,9 @@
 - TTY モードは backend 注入に寄せていますが、Windows ではまだ GUI/通常ペインほど検証していません。
 - 組み込み rubish モードは `lib/echoes/embedded_shell.rb` と `lib/echoes/embedded_shell_helper.rb` で、`PTY.open`、制御 pipe、`Process.spawn`、`tcsetpgrp`、`TIOCSCTTY` を使ってジョブ制御を成立させています。
 - インストーラは OS 別に分岐済みです。macOS では `~/Applications` に `Echoes.app` / `EchoesEmbed.app` のラッパーを作り、Windows では `~/bin/echoes.bat` を生成します。
+- Preferences は OS 別 backend に分離済みです。macOS では `NSUserDefaults`、Windows では JSON file persistence を使います。
 - CI には Windows core test job を追加済みです。ただしリモート CI の成功は未確認です。
-- Windows ローカルでは `ruby -S rake test:core` が通過しています。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
+- Windows ローカルでは `ruby -S rake test:core` が通過しています。2026-05-22 時点では 587 tests, 1251 assertions, 8 omissions です。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
 
 ## Windows 対応の主なブロッカー
 
@@ -73,13 +74,13 @@ Windows では初期対応として `~/bin/echoes.bat` を生成します。こ�
 
 ### 6. 設定・永続化
 
-`lib/echoes/preferences.rb` は `NSUserDefaults` 固定です。`lib/echoes/configuration.rb` の DSL 設定は `~/.config/echoes/echoes.conf` を読むため Windows でも動く可能性はありますが、Windows らしい場所ではありません。
+`lib/echoes/preferences.rb` は OS 別 backend に分離済みです。`MacOSBackend` は既存の `NSUserDefaults` suite を維持し、`JsonBackend` は `%APPDATA%/Echoes/preferences.json` に保存します。テスト時や明示指定時は `ECHOES_CONFIG_HOME/preferences.json` を使います。JSON backend の保存先選択と round-trip はテスト済みです。
 
-必要対応:
+対応済み:
 
 - GUI preferences を OS 別 backend に分離する
-- Windows では `%APPDATA%/Echoes` などを候補にする
-- 既存 `~/.config/echoes/echoes.conf` 互換を残すか決める
+- Windows では `%APPDATA%/Echoes` を使う
+- `Configuration` の DSL 設定は Windows では `%APPDATA%/Echoes/echoes.conf`、次に既存 `~/.config/echoes/echoes.conf` を読む
 
 ### 7. 画像・フォント・描画
 
@@ -95,14 +96,14 @@ Windows 側では以下の代替が必要です。
 
 ### 8. テストが macOS / Unix コマンド前提
 
-`test/test_helper.rb` が `require "echoes"` するため、現状のままだと Windows では大半のテストがロード段階で失敗します。さらに以下のような前提があります。
+初期状態では `test/test_helper.rb` が `require "echoes"` した時点で AppKit 依存をロードし、Windows では大半のテストがロード段階で失敗していました。現在は core test のロード境界を分離済みですが、フルテストにはまだ以下のような macOS / Unix 前提が残っています。
 
 - `/bin/cat`, `/bin/sh`, `/bin/sleep`, `/bin/echo`, `/usr/bin/true`, `/usr/bin/env`, `/usr/bin/tput`
-- AppKit を直接触る `gui_test.rb`, `objc_test.rb`, `preferences_test.rb`
+- AppKit を直接触る `gui_test.rb`, `objc_test.rb`
 - `Echoes.app` / `EchoesEmbed.app` を前提にする macOS installer tests
 - macOS の `/tmp` 解決差を考慮したテストコメント
 
-Windows 対応では、純粋な parser / screen / cell / copy mode / pane tree などの OS 非依存テストを先に分離し、OS 依存テストには skip 条件または backend 別 test helper を入れる必要があります。現在は Windows installer tests も core 対象に含まれています。
+Windows 対応では、純粋な parser / screen / cell / copy mode / pane tree などの OS 非依存テストを先に分離し、OS 依存テストには skip 条件または backend 別 test helper を入れる必要があります。現在は preferences tests と Windows installer tests も core 対象に含まれています。
 
 ## 対応方針
 
