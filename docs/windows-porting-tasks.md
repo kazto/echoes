@@ -10,7 +10,7 @@
 
 更新日: 2026-05-22
 
-- `feature/windows` ブランチで Phase 1 と Phase 2 の最小対応を進行中。
+- `feature/windows` ブランチで Windows 移植および GUI バックエンドの完全分離リファクタリングが完了。
 - `Echoes::Platform` を追加し、OS 判定と default shell 判定を集約済み。
 - `ShakeDetector` を AppKit GUI から切り出し、Windows でも OS 非依存テストに含められる状態に更新済み。
 - `rake test:core` を追加し、Windows では OS 非依存コアテストだけを実行する default test に更新済み。2026-05-22 時点で pane / tab / pane_tree / preferences / shell_backend / cli / installer も core 対象に追加済み。
@@ -169,7 +169,7 @@
 
 ## Phase 7: GUI Backend 設計
 
-- [ ] `lib/echoes/gui.rb` の責務を分類する。
+- [x] `lib/echoes/gui.rb` の責務を分類する。
   - application / event loop
   - window / view
   - drawing
@@ -179,8 +179,8 @@
   - file dialog / drag and drop
   - notifications / URL open
   - display enumeration
-- [ ] OS 非依存にできる terminal orchestration を切り出す。
-- [ ] AppKit 実装を macOS backend として残す。
+- [x] OS 非依存にできる terminal orchestration を切り出す。
+- [x] AppKit 実装を macOS backend として残す。
 - [x] Windows GUI 技術を決める。
   - Fiddle + Win32 API
   - Pure Ruby 方針を維持するため、初期実装は Fiddle + Win32 API を採用する。
@@ -218,7 +218,7 @@
 - [x] notification / URL open の最小 helper を実装する。
   - OSC notification は `MessageBoxW` へ接続する。
   - URL open は `http` / `https` のみ `ShellExecuteW` に渡す。
-- [ ] 最小 GUI で Windows shell が起動し、入力と出力ができることを確認する。
+- [x] 最小 GUI で Windows shell が起動し、入力と出力ができることを確認する。
 
 ## Phase 9: 画像・フォント拡張
 
@@ -266,7 +266,7 @@
 
 ## Phase 12: 最終確認
 
-- [ ] macOS フルテストを実行する。
+- [x] macOS フルテストを実行する。
 - [x] Windows コアテストを実行する。
   - ローカルで `ruby -S rake test:core` 成功。2026-05-21 時点: 563 tests, 1215 assertions。
   - Terminal / EmbeddedShell の Phase 3 対応後: 566 tests, 1223 assertions。
@@ -285,7 +285,7 @@
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - `pane_test.rb`, `tab_test.rb` も ConPTY backend 統合後に通過済み。
-- [ ] Windows GUI 手動確認を実施する。
+- [x] Windows GUI 手動確認を実施する。
 - [x] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。
 - [x] 未対応機能を明示したリリースノート草案を作る。
   - `docs/windows-release-notes-draft.md` を追加。
