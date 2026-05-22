@@ -9,6 +9,7 @@
 - Ruby gem 形式のターミナルエミュレータです。CLI 起点は `exe/echoes` で、GUI 起動時だけ OS 別 GUI backend を lazy load します。
 - GUI は macOS AppKit 実装が中心で、Windows GUI はまだ最小実装段階です。
 - Windows GUI の初期方針は Pure Ruby を維持するため Fiddle + Win32 API です。Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard まで実装済みです。clipboard は `CF_UNICODETEXT` helper 経由で copy / paste と OSC 52 に対応済みです。
+- Windows の PNG decode は GDI+ を Fiddle で呼ぶ Pure Ruby 実装です。Kitty graphics と iTerm2 inline images は同じ GDI+ decoder で RGBA buffer へ変換します。GUI 上の image blit はまだ未実装です。
 - `require "echoes"` は Windows でも AppKit / CoreGraphics をロードしないように分離済みです。
 - 通常ペインは `ShellBackend` 経由で shell process を扱います。macOS では既存 PTY backend、Windows では ConPTY backend を選べます。
 - TTY モードは backend 注入に寄せていますが、Windows ではまだ GUI/通常ペインほど検証していません。
@@ -16,7 +17,7 @@
 - インストーラは OS 別に分岐済みです。macOS では `~/Applications` に `Echoes.app` / `EchoesEmbed.app` のラッパーを作り、Windows では `~/bin/echoes.bat` を生成します。
 - Preferences は OS 別 backend に分離済みです。macOS では `NSUserDefaults`、Windows では JSON file persistence を使います。
 - CI には Windows core test job を追加済みです。ただしリモート CI の成功は未確認です。
-- Windows ローカルでは `ruby -S rake test:core` が通過しています。2026-05-22 時点では 590 tests, 1254 assertions, 8 omissions です。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
+- Windows ローカルでは `ruby -S rake test:core` が通過しています。2026-05-22 時点では 592 tests, 1259 assertions, 8 omissions です。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
 
 ## Windows 対応の主なブロッカー
 
@@ -85,11 +86,11 @@ Windows では初期対応として `~/bin/echoes.bat` を生成します。こ�
 
 ### 7. 画像・フォント・描画
 
-Kitty graphics / iTerm2 images は AppKit / CoreGraphics の PNG decode と CGImage 描画に依存しています。`lib/echoes/kitty_graphics.rb` は AppKit decoder を遅延ロードする形ですが、Windows 実装はありません。GUI のフォント計測も AppKit の `NSFont` / `NSString#sizeWithAttributes:` / CoreText fallback に依存します。
+Kitty graphics / iTerm2 images は macOS では AppKit / CoreGraphics の PNG decode と CGImage 描画に依存しています。Windows では GDI+ decoder で PNG / raw RGB / raw RGBA を RGBA buffer に変換できますが、GUI 上の image blit はまだ未実装です。GUI の高度なフォント計測も AppKit の `NSFont` / `NSString#sizeWithAttributes:` / CoreText fallback に依存します。
 
 Windows 側では以下の代替が必要です。
 
-- PNG decode
+- PNG decode: GDI+ decoder 実装済み
 - RGBA buffer の描画
 - 等幅セル幅・行高の計測
 - Unicode fallback font の解決
