@@ -30,6 +30,11 @@ Dock, and Cmd-Space. Each shortcut is a one-line wrapper that
 each `gem update echoes` to refresh the path. `echoes uninstall`
 removes them.
 
+On Windows, `echoes install` writes an `echoes.bat` wrapper to
+`~/bin` by default. Add that directory to `PATH` to run `echoes` from
+Command Prompt or PowerShell. Windows GUI support is still in progress;
+the launcher is intended for the current development build.
+
 To run from a clone instead:
 
 ```sh

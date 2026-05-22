@@ -8,14 +8,16 @@ Gem::Specification.new do |spec|
   spec.authors = ["Akira Matsuda"]
   spec.email = ["ronnie@dio.jp"]
 
-  spec.summary = "A pure-Ruby AppKit-based macOS terminal emulator."
+  spec.summary = "A pure-Ruby terminal emulator with AppKit and ConPTY backends."
   spec.description = <<~DESC
-    Echoes is a pure-Ruby macOS terminal emulator with first-class
-    integrations for rubish (in-process shell) and rvim (in-process
-    vim editor) panes, plus a private OSC namespace for in-pane
-    Ruby tools that want to drive UI features (gradient backgrounds,
-    rectangular fills, proportional-font text) other terminals
-    can't. Written in pure Ruby on top of AppKit via Fiddle.
+    Echoes is a pure-Ruby terminal emulator with a macOS AppKit GUI
+    and an in-progress Windows ConPTY shell backend. It includes
+    first-class integrations for rubish (in-process shell) and rvim
+    (in-process vim editor) panes on supported platforms, plus a
+    private OSC namespace for in-pane Ruby tools that want to drive UI
+    features (gradient backgrounds, rectangular fills,
+    proportional-font text) other terminals can't. Written in pure
+    Ruby on top of native APIs via Fiddle.
   DESC
   spec.homepage = "https://github.com/amatsuda/echoes"
   spec.license = "MIT"
@@ -41,8 +43,9 @@ Gem::Specification.new do |spec|
 
         echoes install
 
-    This drops thin Echoes.app and EchoesEmbed.app shortcuts in
-    ~/Applications/ that exec into the real gem-bundled launchers.
+    On macOS this drops thin Echoes.app and EchoesEmbed.app shortcuts
+    in ~/Applications/ that exec into the real gem-bundled launchers.
+    On Windows this writes an echoes.bat wrapper to ~/bin by default.
     Re-run `echoes install` after each `gem update echoes` to refresh
     the shortcuts; `echoes uninstall` removes them.
   MSG

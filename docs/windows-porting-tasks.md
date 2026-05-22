@@ -13,7 +13,7 @@
 - `feature/windows` ブランチで Phase 1 と Phase 2 の最小対応を進行中。
 - `Echoes::Platform` を追加し、OS 判定と default shell 判定を集約済み。
 - `ShakeDetector` を AppKit GUI から切り出し、Windows でも OS 非依存テストに含められる状態に更新済み。
-- `rake test:core` を追加し、Windows では OS 非依存コアテストだけを実行する default test に更新済み。2026-05-21 時点で pane / tab / pane_tree / preferences / shell_backend / cli も core 対象に追加済み。
+- `rake test:core` を追加し、Windows では OS 非依存コアテストだけを実行する default test に更新済み。2026-05-22 時点で pane / tab / pane_tree / preferences / shell_backend / cli / installer も core 対象に追加済み。
 - GitHub Actions に Windows core test job を追加済み。ただしリモート CI の成功はまだ未確認。
 - Windows ローカル確認済み:
   - `ruby -S rake test:core`: 570 tests, 1233 assertions, 0 failures, 0 errors
@@ -52,7 +52,7 @@
   - `gui_test.rb` と `objc_test.rb` は macOS 限定に整理済み。
   - `preferences_test.rb` は JSON backend により Windows でも実行可能なため、macOS 限定にはしていない。
 - [x] `/bin/*` や `/usr/bin/*` 前提のテストを洗い出し、OS 条件付きにする。
-  - core 対象の shell command は `TestHelper::CAT_COMMAND` / `TRUE_COMMAND` 経由に整理済み。`editor_test` は `rvim` 依存、`installer_test` は macOS bundle 前提のため core 対象外。
+  - core 対象の shell command は `TestHelper::CAT_COMMAND` / `TRUE_COMMAND` 経由に整理済み。`editor_test` は `rvim` 依存のため core 対象外。
 - [x] parser / screen / cell / copy mode / pane tree など OS 非依存テストだけを Windows で走らせるコマンドを用意する。
   - `ruby -S rake test:core` を追加済み。
 
@@ -196,12 +196,16 @@
 
 ## Phase 10: Installer と配布
 
-- [ ] `echoes install` を OS 別に分岐する。
-- [ ] Windows 初期対応では、未対応メッセージにするか launcher 生成にするか決める。
-- [ ] launcher を生成する場合、`.cmd` または `.bat` の出力先を決める。
-- [ ] gemspec の summary / description / post install message を Windows 対応状況に合わせて更新する。
-- [ ] `README.md` の Requirements / Installation / Development を OS 別に更新する。
-- [ ] `.app` 専用の説明を macOS セクションに移す。
+- [x] `echoes install` を OS 別に分岐する。
+  - macOS では `.app` wrapper、Windows では `echoes.bat` wrapper を生成する。
+- [x] Windows 初期対応では、未対応メッセージにするか launcher 生成にするか決める。
+  - 初期対応では `.bat` launcher 生成を採用する。
+- [x] launcher を生成する場合、`.cmd` または `.bat` の出力先を決める。
+  - 既定では `~/bin/echoes.bat` に生成する。`target_dir:` 指定で差し替え可能。
+- [x] gemspec の summary / description / post install message を Windows 対応状況に合わせて更新する。
+- [x] `README.md` の Requirements / Installation / Development を OS 別に更新する。
+- [x] `.app` 専用の説明を macOS セクションに移す。
+  - README には macOS `.app` wrapper と Windows `echoes.bat` wrapper の説明を分けて記載済み。
 
 ## Phase 11: Embedded Rubish Mode
 
@@ -222,11 +226,12 @@
   - Terminal / EmbeddedShell の Phase 3 対応後: 566 tests, 1223 assertions。
   - ConPTY backend adapter 追加後: 570 tests, 1233 assertions。
   - ConPTY handle cleanup 修正後: 572 tests, 1235 assertions。
+  - Windows installer test を core 対象に追加後: 585 tests, 1247 assertions, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - `pane_test.rb`, `tab_test.rb` も ConPTY backend 統合後に通過済み。
 - [ ] Windows GUI 手動確認を実施する。
-- [ ] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。
+- [x] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。
 - [ ] 未対応機能を明示したリリースノート草案を作る。
 
 ## 初回マイルストーンの完了条件

@@ -12,7 +12,7 @@
 - 通常ペインは `ShellBackend` 経由で shell process を扱います。macOS では既存 PTY backend、Windows では ConPTY backend を選べます。
 - TTY モードは backend 注入に寄せていますが、Windows ではまだ GUI/通常ペインほど検証していません。
 - 組み込み rubish モードは `lib/echoes/embedded_shell.rb` と `lib/echoes/embedded_shell_helper.rb` で、`PTY.open`、制御 pipe、`Process.spawn`、`tcsetpgrp`、`TIOCSCTTY` を使ってジョブ制御を成立させています。
-- インストーラは `lib/echoes/installer.rb` が `~/Applications` に `Echoes.app` / `EchoesEmbed.app` のラッパーを作る macOS 専用です。
+- インストーラは OS 別に分岐済みです。macOS では `~/Applications` に `Echoes.app` / `EchoesEmbed.app` のラッパーを作り、Windows では `~/bin/echoes.bat` を生成します。
 - CI には Windows core test job を追加済みです。ただしリモート CI の成功は未確認です。
 - Windows ローカルでは `ruby -S rake test:core` が通過しています。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
 
@@ -67,15 +67,9 @@ Windows 対応では、組み込み rubish モードを初期スコープから�
 
 ### 5. `.app` バンドルとインストーラ
 
-`Echoes.app` と `EchoesEmbed.app` は bash launcher と `Info.plist` を持つ macOS app bundle です。`lib/echoes/installer.rb` は `~/Applications` へ app wrapper をコピーします。
+`Echoes.app` と `EchoesEmbed.app` は bash launcher と `Info.plist` を持つ macOS app bundle です。`lib/echoes/installer.rb` は macOS では `~/Applications` へ app wrapper をコピーします。
 
-Windows では別の配布・起動経路が必要です。候補:
-
-- gem executable のみをサポートする
-- `.bat` / `.cmd` launcher を生成する
-- 将来的に Windows 用 executable / installer を用意する
-
-`echoes install` は OS 別に分岐し、Windows では未対応メッセージまたは Windows launcher 生成に切り替える必要があります。
+Windows では初期対応として `~/bin/echoes.bat` を生成します。これは gem-bundled launcher を `ruby ... %*` で呼ぶ薄い wrapper です。将来的に Windows 用 executable / installer を用意する余地はありますが、現時点では `.bat` launcher を採用しています。
 
 ### 6. 設定・永続化
 
@@ -105,10 +99,10 @@ Windows 側では以下の代替が必要です。
 
 - `/bin/cat`, `/bin/sh`, `/bin/sleep`, `/bin/echo`, `/usr/bin/true`, `/usr/bin/env`, `/usr/bin/tput`
 - AppKit を直接触る `gui_test.rb`, `objc_test.rb`, `preferences_test.rb`
-- `Echoes.app` / `EchoesEmbed.app` を前提にする `installer_test.rb`
+- `Echoes.app` / `EchoesEmbed.app` を前提にする macOS installer tests
 - macOS の `/tmp` 解決差を考慮したテストコメント
 
-Windows 対応では、純粋な parser / screen / cell / copy mode / pane tree などの OS 非依存テストを先に分離し、OS 依存テストには skip 条件または backend 別 test helper を入れる必要があります。
+Windows 対応では、純粋な parser / screen / cell / copy mode / pane tree などの OS 非依存テストを先に分離し、OS 依存テストには skip 条件または backend 別 test helper を入れる必要があります。現在は Windows installer tests も core 対象に含まれています。
 
 ## 対応方針
 
