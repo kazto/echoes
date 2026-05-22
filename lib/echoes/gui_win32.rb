@@ -11,6 +11,10 @@ require 'uri'
 
 module Echoes
   class GUI
+    class << self
+      attr_accessor :window_class
+    end
+
     def self.pane_local_cwd(pane)
       uri_str = pane&.screen&.current_directory
       cwd_from_osc7_uri(uri_str)
