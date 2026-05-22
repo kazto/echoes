@@ -8,7 +8,7 @@
 
 ## 進捗メモ
 
-更新日: 2026-05-21
+更新日: 2026-05-22
 
 - `feature/windows` ブランチで Phase 1 と Phase 2 の最小対応を進行中。
 - `Echoes::Platform` を追加し、OS 判定と default shell 判定を集約済み。
@@ -19,9 +19,12 @@
   - `ruby -S rake test:core`: 570 tests, 1233 assertions, 0 failures, 0 errors
   - `ruby -S rake test`: 570 tests, 1233 assertions, 0 failures, 0 errors
   - `ruby -Ilib -e "require 'echoes'; puts Echoes::VERSION"`: `0.2.0`
+  - 2026-05-22: `ruby -S rake test:core`: 572 tests, 1235 assertions, 0 failures, 0 errors
 - 既知の未解決事項:
   - Windows ローカルでは `bundle exec rake ...` が `rubish` git checkout 不足で失敗する。Windows core CI は暫定的に Bundler を使わず `gem install rake test-unit` と `ruby -S rake test:core` で実行する。
   - macOS フルテストはこの作業環境では未実行。
+  - ConPTY backend は `CreateProcessW` まで進むが、まだ pipe 経由で `cmd.exe` の出力を取得できていない。
+  - 2026-05-22 追加調査: C# P/Invoke でも同じ API 経路を確認。ConPTY output pipe から初期 DECSET は読める一方、`cmd.exe` の banner / prompt は親 console へ出るため、Ruby Fiddle だけでなく process creation flags / std handle / console attachment 条件の追加調査が必要。
 
 ## Phase 0: 作業前確認
 
@@ -100,10 +103,16 @@
   - 次点候補: `powershell.exe`
 - [ ] read / write が既存 parser に接続できることを確認する。
   - 2026-05-21 の手動確認では `cmd.exe` 起動後に pipe から shell 出力を取得できていない。次作業で ConPTY attribute / startup info の調査が必要。
+  - 2026-05-22 の手動確認でも未解決。`PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE` の Fiddle signature を pointer-sized に修正し、process creation flags と pipe handle close 順序も調整したが、interactive `cmd.exe` の banner / prompt はまだ `ConPTY#read_available_output` から取得できていない。
+  - `STARTUPINFOEXW` はこの環境では `STARTUPINFOW=104 bytes`, `STARTUPINFOEXW=112 bytes`, `lpAttributeList offset=104` と確認済み。
+- [x] `WindowsConPTYBackend#pid` が process handle ではなく process id を返すようにする。
+  - `ConPTY#h_process_id` を追加し、`PROCESS_INFORMATION.dwProcessId` を保持するように更新済み。
 - [ ] resize が ConPTY に反映されることを確認する。
-- [ ] close 時に pipe / process / pseudoconsole handle を解放する。
+- [x] close 時に pipe / process / pseudoconsole handle を解放する。
+  - `ConPTY#close` を追加し、process / thread / pseudoconsole / pipe handles をゼロクリアまで含めて解放するように更新済み。
 - [ ] Ctrl-C 相当の配送方法を検証する。
-- [ ] 最小の Windows 手動確認手順を記録する。
+- [x] 最小の Windows 手動確認手順を記録する。
+  - `ruby "-Ilib" -r echoes/conpty -e "c=Echoes::ConPTY.new; c.spawn('cmd.exe', cols: 80, rows: 24); sleep 1; out=+''; out << c.read_available_output(4096).to_s; c.write(%Q(echo echoes-conpty\r\n)); sleep 1; out << c.read_available_output(4096).to_s; c.write(%Q(exit\r\n)); sleep 0.5; out << c.read_available_output(4096).to_s; c.kill; puts out.inspect; exit(out.include?('echoes-conpty') ? 0 : 1)"`
 
 ## Phase 5: Windows 通常ペイン統合
 
@@ -122,10 +131,11 @@
 - [ ] macOS backend は既存 `NSUserDefaults` 実装を維持する。
 - [x] Windows backend の保存場所を決める。
   - 候補: `%APPDATA%/Echoes/preferences.json`
-- [ ] `Configuration::CONFIG_PATH` の Windows での扱いを決める。
+- [x] `Configuration::CONFIG_PATH` の Windows での扱いを決める。
   - 互換維持: `~/.config/echoes/echoes.conf` も読む。
   - Windows 標準: `%APPDATA%/Echoes/echoes.conf` を読む。
-- [ ] 設定ファイル探索順をドキュメント化する。
+- [x] 設定ファイル探索順をドキュメント化する。
+  - 探索順は `ECHOES_CONFIG_HOME/echoes.conf` が最優先。通常 Windows では `%APPDATA%/Echoes/echoes.conf`、次に legacy `~/.config/echoes/echoes.conf` を読む。
 - [x] Windows backend の preference 読み書きテストを追加する。
   - テストでは `ECHOES_CONFIG_HOME` で repo 内の `tmp/test-config` に保存先を差し替える。
 
@@ -200,6 +210,7 @@
   - ローカルで `ruby -S rake test:core` 成功。2026-05-21 時点: 563 tests, 1215 assertions。
   - Terminal / EmbeddedShell の Phase 3 対応後: 566 tests, 1223 assertions。
   - ConPTY backend adapter 追加後: 570 tests, 1233 assertions。
+  - ConPTY handle cleanup 修正後: 572 tests, 1235 assertions。
 - [ ] Windows backend テストを実行する。
 - [ ] Windows GUI 手動確認を実施する。
 - [ ] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。

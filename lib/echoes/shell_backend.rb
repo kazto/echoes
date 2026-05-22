@@ -95,7 +95,7 @@ module Echoes
 
       @conpty = conpty || ConPTY.new
       @conpty.spawn(command.is_a?(Array) ? command.join(" ") : command, cols: cols, rows: rows)
-      @pid = @conpty.h_process.to_i
+      @pid = @conpty.h_process_id.to_i
     end
 
     def write(bytes)
