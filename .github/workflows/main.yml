@@ -40,7 +40,6 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '4.0'
-      - name: Install core test dependencies
-        run: gem install rake test-unit
+          bundler-cache: true
       - name: Run core tests
-        run: ruby -S rake test:core
+        run: bundle exec rake test:core

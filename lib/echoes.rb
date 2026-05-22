@@ -37,7 +37,7 @@ module Echoes
   def load_gui_backend
     if Platform.windows?
       require_relative "echoes/win32"
-      require_relative "echoes/gui_win32"
+      require_relative "echoes/gui"
       require_relative "echoes/gui/win32_window"
       GUI.window_class = GUI::Win32Window
     elsif Platform.macos?

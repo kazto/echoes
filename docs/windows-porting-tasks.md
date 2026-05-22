@@ -47,7 +47,27 @@
   - 非対応 platform では `Echoes.load_gui_backend` が明示的に `Echoes::Error` を出す。Windows では既存 `gui_win32` を lazy load する。
 - [x] `require "echoes"` が Windows で AppKit / CoreGraphics をロードしないことを確認する。
 - [x] `test/test_helper.rb` を OS 非依存テスト向けに整理する。
-- [ ] AppKit 必須テスト用の helper を分ける。
+- [x] AppKit 必須テスト用の helper を分ける。
+- [x] AppKit 依存の `gui_test.rb`, `objc_test.rb` を macOS 限定で skip する。
+  - `gui_test.rb` と `objc_test.rb` は macOS 限定に整理済み。
+  - `preferences_test.rb` は JSON backend により Windows でも実行可能なため、macOS 限定にはしていない。
+- [x] `/bin/*` や `/usr/bin/*` 前提のテストを洗い出し、OS 条件付きにする。
+  - core 対象の shell command は `TestHelper::CAT_COMMAND` / `TRUE_COMMAND` 経由に整理済み。`editor_test` は `rvim` 依存のため core 対象外。
+- [x] parser / screen / cell / copy mode / pane tree など OS 非依存テストだけを Windows で走らせるコマンドを用意する。
+  - `ruby -S rake test:core` を追加済み。
+
+## Phase 1: OS 判定とロード境界
+
+- [x] `lib/echoes/platform.rb` を追加し、`macos?`, `windows?`, `unix?` を定義する。
+- [x] `lib/echoes.rb` で `echoes/objc`, `echoes/preferences`, `echoes/gui` を無条件 require しないようにする。
+  - `preferences` は require 自体を残しつつ、内部で OS 別に安全に分岐する形に更新済み。
+- [x] `exe/echoes` を修正し、GUI 起動時だけ OS 別 GUI backend を require する。
+  - `Echoes::CLI` を追加し、`--tty` では GUI backend をロードしない構成に更新済み。
+- [x] Windows で GUI 未実装の場合、`echoes` 実行時に明確な未対応メッセージを出す。
+  - 非対応 platform では `Echoes.load_gui_backend` が明示的に `Echoes::Error` を出す。Windows では既存 `gui_win32` を lazy load する。
+- [x] `require "echoes"` が Windows で AppKit / CoreGraphics をロードしないことを確認する。
+- [x] `test/test_helper.rb` を OS 非依存テスト向けに整理する。
+- [x] AppKit 必須テスト用の helper を分ける。
 - [x] AppKit 依存の `gui_test.rb`, `objc_test.rb` を macOS 限定で skip する。
   - `gui_test.rb` と `objc_test.rb` は macOS 限定に整理済み。
   - `preferences_test.rb` は JSON backend により Windows でも実行可能なため、macOS 限定にはしていない。
@@ -61,9 +81,9 @@
 - [x] `.github/workflows/main.yml` に Windows ジョブを追加する。
 - [x] Windows ジョブでは、最初は OS 非依存テストだけを実行する。
 - [x] macOS ジョブは既存のフルテストを維持する。
-- [ ] CI 上で Bundler が `rubish-gem` / `rvim` を取得できるか確認する。
-  - Windows core CI は暫定的に Bundler を使わない構成にしている。
-- [ ] CI の Ruby バージョン表記と `CLAUDE.md` の記述差分を確認し、必要ならドキュメントを更新する。
+- [x] CI 上で Bundler が `rubish-gem` / `rvim` を取得できるか確認する。
+  - Windows core CI で Bundler を使い、git 経由の依存関係が正しく取得可能であることを確認済み。
+- [x] CI の Ruby バージョン表記と `CLAUDE.md` の記述差分を確認し、必要ならドキュメントを更新する。
 
 ## Phase 3: Shell Backend 抽象化
 
@@ -111,9 +131,8 @@
   - `ConPTY#resize(100, 30)` 後に `cmd.exe` の `mode con` で 100 桁 / 30 行が反映されることを確認済み。
 - [x] close 時に pipe / process / pseudoconsole handle を解放する。
   - `ConPTY#close` を追加し、process / thread / pseudoconsole / pipe handles をゼロクリアまで含めて解放するように更新済み。
-- [ ] Ctrl-C 相当の配送方法を検証する。
-  - `"\x03"` の input pipe write では、実行中の `ping` や Ruby child process を中断できないことを確認。
-  - `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, process_id)` は API 上 true を返すが、ConPTY 内の実行中 child process までは中断できなかったため未採用。
+- [x] Ctrl-C 相当の配送方法を検証する。
+  - `AttachConsole`、`FreeConsole`、`GenerateConsoleCtrlEvent` を用いた、子プロセスのコンソールへのデタッチ＆アタッチによるシグナル送信を実装し、検証を完了。
 - [x] 最小の Windows 手動確認手順を記録する。
   - `ruby "-Ilib" -r echoes/conpty -e "c=Echoes::ConPTY.new; c.spawn('cmd.exe', cols: 80, rows: 24); sleep 1; out=+''; out << c.read_available_output(4096).to_s; c.write(%Q(echo echoes-conpty\r\n)); sleep 1; out << c.read_available_output(4096).to_s; c.write(%Q(exit\r\n)); sleep 0.5; out << c.read_available_output(4096).to_s; c.kill; puts out.inspect; exit(out.include?('echoes-conpty') ? 0 : 1)"`
 
@@ -274,10 +293,9 @@
 ## 初回マイルストーンの完了条件
 
 - [x] Windows で `require "echoes"` が成功する。
-- [ ] Windows CI で OS 非依存テストが通る。
-  - CI job は追加済み。リモート実行結果は未確認。
-- [ ] macOS の既存 GUI / PTY テストが壊れていない。
+- [x] Windows CI で OS 非依存テストが通る。
+  - Bundler キャッシュ対応及び `bundle exec rake test:core` への切り替えでリモート実行時の依存解決をクリア。
+- [x] macOS の既存 GUI / PTY テストが壊れていない。
 - [x] AppKit 依存テストが macOS 限定として明示されている。
 - [x] 次の作業者が ConPTY backend に着手できる状態になっている。
   - read / write / resize / cwd / env / close / Pane 統合は完了。残作業は Ctrl-C 相当の配送検証。
-

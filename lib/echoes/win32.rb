@@ -72,6 +72,10 @@ module Echoes
     GlobalLock        = new_func(KERNEL32, 'GlobalLock', [P], P)
     GlobalUnlock      = new_func(KERNEL32, 'GlobalUnlock', [P], I)
     GlobalSize        = new_func(KERNEL32, 'GlobalSize', [P], S)
+    AttachConsole            = new_func(KERNEL32, 'AttachConsole', [U], I)
+    FreeConsole              = new_func(KERNEL32, 'FreeConsole', [], I)
+    GenerateConsoleCtrlEvent = new_func(KERNEL32, 'GenerateConsoleCtrlEvent', [U, U], I)
+    SetConsoleCtrlHandler    = new_func(KERNEL32, 'SetConsoleCtrlHandler', [P, I], I)
 
     # --- Imm32 (IME) Functions ---
     ImmGetContext            = new_func(IMM32, 'ImmGetContext', [P], P)
@@ -99,6 +103,8 @@ module Echoes
     SW_SHOWNORMAL      = 1
     MB_OK              = 0x00000000
     MB_ICONINFORMATION = 0x00000040
+    CTRL_C_EVENT       = 0
+    CTRL_BREAK_EVENT   = 1
 
     # Windows Messages
     WM_DESTROY         = 0x0002
@@ -251,6 +257,33 @@ module Echoes
         i += 2
       end
       nil
+    end
+
+    def self.send_ctrl_c(process_id)
+      return false unless AttachConsole && FreeConsole && GenerateConsoleCtrlEvent
+
+      # Detach from our current console session first
+      FreeConsole.call
+
+      # Attach to the target process's console session
+      if AttachConsole.call(process_id) != 0
+        begin
+          # Disable Ctrl-C handling in our own process during signaling
+          SetConsoleCtrlHandler.call(nil, 1) if SetConsoleCtrlHandler
+
+          # Generate Ctrl-C event in target console (0 signals all processes attached to it)
+          GenerateConsoleCtrlEvent.call(CTRL_C_EVENT, 0)
+        ensure
+          # Detach from the target console session
+          FreeConsole.call
+
+          # Restore Ctrl-C handling for our process
+          SetConsoleCtrlHandler.call(nil, 0) if SetConsoleCtrlHandler
+        end
+        true
+      else
+        false
+      end
     end
   end
 end

@@ -96,6 +96,46 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     assert_true(conpty.killed)
   end
 
+  test "ConPTY backend interrupt calls Echoes::Win32.send_ctrl_c" do
+    conpty = FakeConPTY.new
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "powershell.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    called_with_pid = nil
+    mock_result = true
+    # Ensure Win32 module is loaded
+    require "echoes/win32"
+    
+    # Stub Echoes::Win32.send_ctrl_c
+    Echoes::Win32.define_singleton_method(:send_ctrl_c) do |pid|
+      called_with_pid = pid
+      mock_result
+    end
+
+    begin
+      # Case 1: send_ctrl_c succeeds, should not write \x03
+      backend.interrupt
+      assert_equal(backend.pid, called_with_pid)
+      assert_empty(conpty.writes)
+
+      # Case 2: send_ctrl_c fails, should fall back to writing \x03
+      mock_result = false
+      backend.interrupt
+      assert_equal(["\x03"], conpty.writes)
+    ensure
+      # Restore send_ctrl_c
+      class << Echoes::Win32
+        remove_method :send_ctrl_c if respond_to?(:send_ctrl_c)
+      end
+      load "echoes/win32.rb"
+    end
+  end
+
   test "Windows ConPTY backend talks to cmd.exe" do
     omit("Windows only") unless TestHelper::IS_WINDOWS
 

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "appkit_test_helper"
 require "shellwords"
 require "tmpdir"
 
@@ -251,31 +252,7 @@ end
 
 if Echoes::Platform.macos?
   class Echoes::GUIFileDropTest < Test::Unit::TestCase
-    def create_pasteboard_with_file_urls(*paths)
-      pb = ObjC::MSG_PTR_1.call(
-        ObjC.cls('NSPasteboard'),
-        ObjC.sel('pasteboardWithName:'),
-        ObjC.nsstring("com.echoes.test.#{object_id}")
-      )
-
-      urls = paths.map do |path|
-        ObjC::MSG_PTR_1.call(
-          ObjC.cls('NSURL'),
-          ObjC.sel('fileURLWithPath:'),
-          ObjC.nsstring(path)
-        )
-      end
-
-      ns_array = ObjC::MSG_PTR.call(ObjC.cls('NSMutableArray'), ObjC.sel('array'))
-      urls.each do |url|
-        ObjC::MSG_VOID_1.call(ns_array, ObjC.sel('addObject:'), url)
-      end
-
-      ObjC::MSG_VOID.call(pb, ObjC.sel('clearContents'))
-      ObjC::MSG_PTR_1.call(pb, ObjC.sel('writeObjects:'), ns_array)
-
-      pb
-    end
+    include AppKitTestHelper
 
     ObjC = Echoes::ObjC
 

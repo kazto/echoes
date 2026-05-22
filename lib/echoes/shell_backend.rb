@@ -122,7 +122,10 @@ module Echoes
     end
 
     def interrupt
-      write("\x03")
+      require_relative "win32"
+      unless Echoes::Win32.send_ctrl_c(@pid)
+        write("\x03")
+      end
     rescue IOError, SystemCallError
     end
 

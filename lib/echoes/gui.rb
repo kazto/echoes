@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 require 'pty' unless Echoes::Platform.windows?
+# frozen_string_literal: true
+
+require 'pty' unless Echoes::Platform.windows?
 require 'shellwords'
 require 'socket'
 require 'uri'
@@ -11,6 +14,8 @@ module Echoes
     class << self
       attr_accessor :window_class
     end
+    attr_reader :tabs
+
     CRASH_LOG = File.join(Dir.home, '.local', 'share', 'echoes', 'crash.log')
 
     def log_crash(exception, context: nil)
@@ -28,6 +33,10 @@ module Echoes
     end
 
     def initialize(command: Echoes.config.shell, rows: Echoes.config.rows, cols: Echoes.config.cols, font_size: nil)
+      if Echoes::Platform.windows? && ENV['ECHOES_EMBED'] == '1'
+        raise Error, 'Embedded rubish mode is not supported on Windows yet'
+      end
+
       # Advertise ourselves the way other terminals do (iTerm2,
       # WezTerm, Ghostty, …). Child shells and any program they
       # spawn inherit these via the normal env-inheritance path.
@@ -1170,15 +1179,25 @@ module Echoes
     end
 
     def copy_to_clipboard
-      sr, sc, er, ec = selection_range
-      return unless sr
+      if Echoes::Platform.windows?
+        sr, sc, er, ec = selection_range
+        return unless sr
 
-      text = selected_text_from_buffer(sr, sc, er, ec)
-      return if text.empty?
+        text = selected_text_from_buffer(sr, sc, er, ec)
+        return if text.empty?
 
-      pb = ObjC::MSG_PTR.call(ObjC.cls('NSPasteboard'), ObjC.sel('generalPasteboard'))
-      ObjC::MSG_PTR.call(pb, ObjC.sel('clearContents'))
-      ObjC::MSG_PTR_2.call(pb, ObjC.sel('setString:forType:'), ObjC.nsstring(text), ObjC::NSPasteboardTypeString)
+        Win32.set_clipboard_text(@hwnd, text)
+      else
+        sr, sc, er, ec = selection_range
+        return unless sr
+
+        text = selected_text_from_buffer(sr, sc, er, ec)
+        return if text.empty?
+
+        pb = ObjC::MSG_PTR.call(ObjC.cls('NSPasteboard'), ObjC.sel('generalPasteboard'))
+        ObjC::MSG_PTR.call(pb, ObjC.sel('clearContents'))
+        ObjC::MSG_PTR_2.call(pb, ObjC.sel('setString:forType:'), ObjC.nsstring(text), ObjC::NSPasteboardTypeString)
+      end
     end
 
     # Native macOS completion popup. Called from `key_down` when Tab
@@ -1328,34 +1347,60 @@ module Echoes
     end
 
     def handle_clipboard(action, text)
-      pb = ObjC::MSG_PTR.call(ObjC.cls('NSPasteboard'), ObjC.sel('generalPasteboard'))
-      case action
-      when :set
-        ObjC::MSG_PTR.call(pb, ObjC.sel('clearContents'))
-        ObjC::MSG_PTR_2.call(pb, ObjC.sel('setString:forType:'), ObjC.nsstring(text), ObjC::NSPasteboardTypeString)
-        nil
-      when :get
-        ns_str = ObjC::MSG_PTR_1.call(pb, ObjC.sel('stringForType:'), ObjC::NSPasteboardTypeString)
-        return nil if ns_str.null?
-        ObjC.to_ruby_string(ns_str)
+      if Echoes::Platform.windows?
+        case action
+        when :set
+          Win32.set_clipboard_text(@hwnd, text)
+          nil
+        when :get
+          Win32.get_clipboard_text(@hwnd)
+        end
+      else
+        pb = ObjC::MSG_PTR.call(ObjC.cls('NSPasteboard'), ObjC.sel('generalPasteboard'))
+        case action
+        when :set
+          ObjC::MSG_PTR.call(pb, ObjC.sel('clearContents'))
+          ObjC::MSG_PTR_2.call(pb, ObjC.sel('setString:forType:'), ObjC.nsstring(text), ObjC::NSPasteboardTypeString)
+          nil
+        when :get
+          ns_str = ObjC::MSG_PTR_1.call(pb, ObjC.sel('stringForType:'), ObjC::NSPasteboardTypeString)
+          return nil if ns_str.null?
+          ObjC.to_ruby_string(ns_str)
+        end
       end
     end
 
     def paste_from_clipboard
-      pb = ObjC::MSG_PTR.call(ObjC.cls('NSPasteboard'), ObjC.sel('generalPasteboard'))
-      ns_str = ObjC::MSG_PTR_1.call(pb, ObjC.sel('stringForType:'), ObjC::NSPasteboardTypeString)
-      return if ns_str.null?
+      if Echoes::Platform.windows?
+        str = Win32.get_clipboard_text(@hwnd)
+        return if str.nil? || str.empty?
 
-      str = ObjC.to_ruby_string(ns_str)
-      return if str.empty?
+        pane = current_tab&.active_pane
+        return unless pane
 
-      pane = current_tab.active_pane
-      if pane.screen.bracketed_paste_mode?
-        pane.write_input("\e[200~")
-        pane.write_input(str)
-        pane.write_input("\e[201~")
+        if pane.screen.bracketed_paste_mode?
+          pane.write_input("\e[200~")
+          pane.write_input(str)
+          pane.write_input("\e[201~")
+        else
+          pane.write_input(str)
+        end
       else
-        pane.write_input(str)
+        pb = ObjC::MSG_PTR.call(ObjC.cls('NSPasteboard'), ObjC.sel('generalPasteboard'))
+        ns_str = ObjC::MSG_PTR_1.call(pb, ObjC.sel('stringForType:'), ObjC::NSPasteboardTypeString)
+        return if ns_str.null?
+
+        str = ObjC.to_ruby_string(ns_str)
+        return if str.empty?
+
+        pane = current_tab.active_pane
+        if pane.screen.bracketed_paste_mode?
+          pane.write_input("\e[200~")
+          pane.write_input(str)
+          pane.write_input("\e[201~")
+        else
+          pane.write_input(str)
+        end
       end
     rescue Errno::EIO, IOError
     end
@@ -1689,10 +1734,16 @@ module Echoes
     end
 
     def open_url(url)
-      ns_url = ObjC::MSG_PTR_1.call(ObjC.cls('NSURL'), ObjC.sel('URLWithString:'), ObjC.nsstring(url))
-      return if ns_url.null?
-      workspace = ObjC::MSG_PTR.call(ObjC.cls('NSWorkspace'), ObjC.sel('sharedWorkspace'))
-      ObjC::MSG_PTR_1.call(workspace, ObjC.sel('openURL:'), ns_url)
+      if Echoes::Platform.windows?
+        uri = URI.parse(url.to_s) rescue nil
+        return false unless uri && %w[http https].include?(uri.scheme)
+        !!Win32.open_url(uri.to_s)
+      else
+        ns_url = ObjC::MSG_PTR_1.call(ObjC.cls('NSURL'), ObjC.sel('URLWithString:'), ObjC.nsstring(url))
+        return if ns_url.null?
+        workspace = ObjC::MSG_PTR.call(ObjC.cls('NSWorkspace'), ObjC.sel('sharedWorkspace'))
+        ObjC::MSG_PTR_1.call(workspace, ObjC.sel('openURL:'), ns_url)
+      end
     end
 
     def row_at(tab, abs_row)
@@ -1819,16 +1870,31 @@ module Echoes
     # at the effective rendered size — Screen rounds up to whole
     # cells from there.
     def measure_glyph(text, family, scale, frac_n, frac_d)
-      effective_scale = scale.to_f
-      if frac_d > 0 && frac_n > 0
-        effective_scale *= frac_n.to_f / frac_d.to_f
+      if Echoes::Platform.windows?
+        hdc = Win32::GetDC.call(@hwnd || 0)
+        return 0.0 if !hdc || Win32.null_pointer?(hdc)
+
+        font = create_multicell_font({scale: scale, frac_n: frac_n, frac_d: frac_d, family: family}, bold: false, italic: false)
+        old_font = Win32::SelectObject.call(hdc, font)
+        begin
+          text_extent(hdc, text).first.to_f
+        ensure
+          Win32::SelectObject.call(hdc, old_font) if old_font
+          Win32::DeleteObject.call(font) if font
+          Win32::ReleaseDC.call(@hwnd || 0, hdc)
+        end
+      else
+        effective_scale = scale.to_f
+        if frac_d > 0 && frac_n > 0
+          effective_scale *= frac_n.to_f / frac_d.to_f
+        end
+        font = ObjC.retain(create_nsfont(@font_size * effective_scale, family: family))
+        ns = ObjC.nsstring(text)
+        attrs = ObjC.nsdict(ObjC::NSFontAttributeName => font)
+        width = ObjC::MSG_RET_D_1.call(ns, ObjC.sel('sizeWithAttributes:'), attrs)
+        ObjC.release(font)
+        width
       end
-      font = ObjC.retain(create_nsfont(@font_size * effective_scale, family: family))
-      ns = ObjC.nsstring(text)
-      attrs = ObjC.nsdict(ObjC::NSFontAttributeName => font)
-      width = ObjC::MSG_RET_D_1.call(ns, ObjC.sel('sizeWithAttributes:'), attrs)
-      ObjC.release(font)
-      width
     end
 
     # Single point that wires every host-callback a Screen needs
@@ -1837,6 +1903,10 @@ module Echoes
     # initial setup, create_tab, split_horizontal/vertical, and the
     # post-config update path.
     def wire_screen_handlers(pane)
+      if @window && @window.respond_to?(:wire_screen_handlers)
+        @window.wire_screen_handlers(pane)
+        return
+      end
       screen = pane.screen
       screen.clipboard_handler = method(:handle_clipboard)
       screen.glyph_measurer    = method(:measure_glyph)
@@ -1899,6 +1969,10 @@ module Echoes
     # `brew install terminal-notifier` is the recommended setup.
     def post_notification(pane, title, message)
       effective_title = (title && !title.empty? && title) || pane&.title || 'Echoes'
+      if Echoes::Platform.windows?
+        Win32.show_notification(@hwnd, effective_title, message)
+        return
+      end
       if (tn = terminal_notifier_path)
         pid = Process.spawn(tn, '-title', effective_title.to_s, '-message', message.to_s,
                             in: '/dev/null', out: '/dev/null', err: '/dev/null')
@@ -2584,6 +2658,153 @@ module Echoes
         ObjC::MSG_VOID.call(ns, ObjC.sel('setFill'))
         ObjC::NSRectFill.call(x, y, w, h)
         ObjC.release(ns)
+      end
+    end
+
+    if Echoes::Platform.windows?
+      # Windows test and fallback compatibility helpers
+      
+      def font_for_cell(cell)
+        fallback_family = fallback_font_family_for_char(cell.char.to_s)
+        return styled_base_font(cell) unless fallback_family
+
+        key = [fallback_family, cell.bold ? 700 : 400, !!cell.italic]
+        @font_cache[key] ||= create_font(
+          weight: key[1],
+          italic: key[2],
+          family: fallback_family
+        )
+      end
+
+      def styled_base_font(cell)
+        if cell.bold && cell.italic
+          @bold_italic_hfont || @bold_hfont || @italic_hfont || @hfont
+        elsif cell.bold
+          @bold_hfont || @hfont
+        elsif cell.italic
+          @italic_hfont || @hfont
+        else
+          @hfont
+        end
+      end
+
+      def fallback_font_family_for_char(char)
+        return nil if char.nil? || char.empty? || char.ascii_only?
+
+        cp = char.codepoints.first
+        case cp
+        when 0x1F000..0x1FAFF, 0x2600..0x27BF
+          "Segoe UI Emoji"
+        when 0x2500..0x25FF, 0x2190..0x21FF, 0x2300..0x23FF, 0x2B00..0x2BFF
+          "Segoe UI Symbol"
+        when 0x3040..0x30FF, 0x3400..0x4DBF, 0x4E00..0x9FFF, 0xF900..0xFAFF
+          "Yu Gothic UI"
+        when 0xAC00..0xD7AF, 0x1100..0x11FF, 0x3130..0x318F
+          "Malgun Gothic"
+        else
+          nil
+        end
+      end
+
+      def same_font_run_range(row, start)
+        first = row[start]
+        return [start, 0] unless first
+
+        family = fallback_font_family_for_char(first.char.to_s)
+        length = 1
+        while (start + length) < row.length
+          cell = row[start + length]
+          break unless cell
+          break if fallback_font_family_for_char(cell.char.to_s) != family
+
+          length += 1
+        end
+        [start, length]
+      end
+
+      def create_font(weight: 400, italic: false, height: nil, family: nil)
+        font_height = height || (@font_size ? @font_size.to_i : 16)
+        font_name = Win32.to_wstring(family || Echoes.config.font_family || "Consolas")
+        Win32::CreateFontW.call(
+          font_height, 0, 0, 0,
+          weight, italic ? 1 : 0, 0, 0,
+          1, 0, 0, 0,
+          0x01 | 0x10,
+          Fiddle::Pointer[font_name]
+        )
+      end
+
+      def create_multicell_font(mc, bold:, italic:)
+        scale = effective_multicell_scale(mc)
+        base_height = @font_size ? @font_size.to_i : 16
+        create_font(
+          weight: bold ? 700 : 400,
+          italic: italic,
+          height: [(base_height * scale).round, 1].max,
+          family: mc[:family]
+        )
+      end
+
+      def decoration_rects(x, y, width, height: @cell_height, underline:, strikethrough:)
+        rects = []
+        rects << [x, y + height - 2, x + width, y + height - 1] if underline
+        rects << [x, y + (height / 2), x + width, y + (height / 2) + 1] if strikethrough
+        rects
+      end
+
+      def effective_multicell_scale(mc)
+        scale = mc[:scale].to_f
+        if mc[:frac_d].to_i > 0 && mc[:frac_n].to_i > 0
+          scale *= mc[:frac_n].to_f / mc[:frac_d].to_f
+        end
+        scale
+      end
+
+      def aligned_text_origin(x, y, block_w, block_h, text_w, text_h, halign:, valign:)
+        draw_x = case halign
+                 when 1 then x + block_w - text_w
+                 when 2 then x + (block_w - text_w) / 2
+                 else x
+                 end
+        draw_y = case valign
+                 when 1 then y + block_h - text_h
+                 when 2 then y + (block_h - text_h) / 2
+                 else y
+                 end
+        [draw_x, draw_y]
+      end
+
+      def rgba_to_bgra(rgba, width, height)
+        return nil unless rgba && rgba.bytesize == width * height * 4
+
+        bgra = String.new(capacity: rgba.bytesize, encoding: Encoding::BINARY)
+        rgba.scan(/.{4}/m) do |px|
+          bgra << px.getbyte(2) << px.getbyte(1) << px.getbyte(0) << px.getbyte(3)
+        end
+        bgra
+      end
+
+      def bitmap_info_header(width, height, image_size)
+        [
+          40, width, -height, 1, 32, Win32::BI_RGB, image_size, 0, 0, 0, 0
+        ].pack('LllvvLLllLL')
+      end
+
+      def selection_range
+        pane = current_tab&.active_pane
+        copy_mode = pane&.copy_mode
+        return nil unless copy_mode && copy_mode.active && copy_mode.selecting?
+
+        (sr, sc), (er, ec) = [copy_mode.selection_start, copy_mode.selection_end].sort_by { |p| [p[0], p[1]] }
+        [sr, sc, er, ec]
+      end
+
+      def text_extent(hdc, text)
+        size_ptr = Fiddle::Pointer.malloc(8, Fiddle::RUBY_FREE)
+        size_ptr[0, 8] = "\x00" * 8
+        wstr = Win32.to_wstring(text)
+        Win32::GetTextExtentPoint32W.call(hdc, Fiddle::Pointer[wstr], wstr.bytesize / 2 - 1, size_ptr)
+        [size_ptr[0, 4].unpack1('L'), size_ptr[4, 4].unpack1('L')]
       end
     end
   end

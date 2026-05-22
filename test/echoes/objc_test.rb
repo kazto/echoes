@@ -1,9 +1,8 @@
 # frozen_string_literal: true
 
-require "test_helper"
+require "appkit_test_helper"
 
 if Echoes::Platform.macos?
-  Echoes.load_gui_backend
 
   class Echoes::ObjCTest < Test::Unit::TestCase
     test "to_ruby_string returns UTF-8 encoding" do
