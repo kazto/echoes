@@ -47,8 +47,8 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
 
     attr_reader :pipe_out_r, :pipe_in_w, :h_process, :h_process_id
 
-    def spawn(command, cols:, rows:)
-      @spawn_args = [command, cols, rows]
+    def spawn(command, cols:, rows:, env: nil)
+      @spawn_args = [command, cols, rows, env]
     end
 
     def resize(cols, rows)
@@ -82,7 +82,7 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
       conpty: conpty
     )
 
-    assert_equal(["powershell.exe", 80, 24], conpty.spawn_args)
+    assert_equal(["powershell.exe", 80, 24, nil], conpty.spawn_args)
     assert_equal(444, backend.pid)
     assert_equal("xxxxx", backend.read_available_output(5))
 

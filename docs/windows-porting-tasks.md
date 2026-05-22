@@ -23,8 +23,7 @@
 - 既知の未解決事項:
   - Windows ローカルでは `bundle exec rake ...` が `rubish` git checkout 不足で失敗する。Windows core CI は暫定的に Bundler を使わず `gem install rake test-unit` と `ruby -S rake test:core` で実行する。
   - macOS フルテストはこの作業環境では未実行。
-  - ConPTY backend は `CreateProcessW` まで進むが、まだ pipe 経由で `cmd.exe` の出力を取得できていない。
-  - 2026-05-22 追加調査: C# P/Invoke でも同じ API 経路を確認。ConPTY output pipe から初期 DECSET は読める一方、`cmd.exe` の banner / prompt は親 console へ出るため、Ruby Fiddle だけでなく process creation flags / std handle / console attachment 条件の追加調査が必要。
+  - 2026-05-22 追加調査: ConPTY backend で `cmd.exe` の初期出力、入力 echo、コマンド出力を pipe 経由で取得できることを確認。stdout/stderr を pseudoconsole output pipe に明示し、stdin は ConPTY に任せる必要がある。
 
 ## Phase 0: 作業前確認
 
@@ -101,28 +100,36 @@
   - 優先候補: `ENV["COMSPEC"]`
   - 次点候補: `pwsh`
   - 次点候補: `powershell.exe`
-- [ ] read / write が既存 parser に接続できることを確認する。
+- [x] read / write が既存 parser に接続できることを確認する。
   - 2026-05-21 の手動確認では `cmd.exe` 起動後に pipe から shell 出力を取得できていない。次作業で ConPTY attribute / startup info の調査が必要。
   - 2026-05-22 の手動確認でも未解決。`PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE` の Fiddle signature を pointer-sized に修正し、process creation flags と pipe handle close 順序も調整したが、interactive `cmd.exe` の banner / prompt はまだ `ConPTY#read_available_output` から取得できていない。
   - `STARTUPINFOEXW` はこの環境では `STARTUPINFOW=104 bytes`, `STARTUPINFOEXW=112 bytes`, `lpAttributeList offset=104` と確認済み。
+  - 解決: `STARTF_USESTDHANDLES` で stdout / stderr だけを ConPTY output pipe に向け、stdin は ConPTY に任せることで `cmd.exe` の banner / prompt / `echo` 出力を `ConPTY#read_available_output` から取得できた。
 - [x] `WindowsConPTYBackend#pid` が process handle ではなく process id を返すようにする。
   - `ConPTY#h_process_id` を追加し、`PROCESS_INFORMATION.dwProcessId` を保持するように更新済み。
-- [ ] resize が ConPTY に反映されることを確認する。
+- [x] resize が ConPTY に反映されることを確認する。
+  - `ConPTY#resize(100, 30)` 後に `cmd.exe` の `mode con` で 100 桁 / 30 行が反映されることを確認済み。
 - [x] close 時に pipe / process / pseudoconsole handle を解放する。
   - `ConPTY#close` を追加し、process / thread / pseudoconsole / pipe handles をゼロクリアまで含めて解放するように更新済み。
 - [ ] Ctrl-C 相当の配送方法を検証する。
+  - `"\x03"` の input pipe write では、実行中の `ping` や Ruby child process を中断できないことを確認。
+  - `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, process_id)` は API 上 true を返すが、ConPTY 内の実行中 child process までは中断できなかったため未採用。
 - [x] 最小の Windows 手動確認手順を記録する。
   - `ruby "-Ilib" -r echoes/conpty -e "c=Echoes::ConPTY.new; c.spawn('cmd.exe', cols: 80, rows: 24); sleep 1; out=+''; out << c.read_available_output(4096).to_s; c.write(%Q(echo echoes-conpty\r\n)); sleep 1; out << c.read_available_output(4096).to_s; c.write(%Q(exit\r\n)); sleep 0.5; out << c.read_available_output(4096).to_s; c.kill; puts out.inspect; exit(out.include?('echoes-conpty') ? 0 : 1)"`
 
 ## Phase 5: Windows 通常ペイン統合
 
-- [ ] `Pane` で Windows の場合に ConPTY backend を選ぶ。
-- [ ] Windows の default shell を設定する。
-- [ ] cwd 指定が Windows backend に渡るようにする。
-- [ ] env 指定が Windows backend に渡るようにする。
-- [ ] `Pane#read_available_output` が Windows backend でも非ブロッキングに動くことを確認する。
-- [ ] `Pane#resize` が Windows backend でも例外なく動くことを確認する。
-- [ ] `Pane#close` が Windows backend でもプロセスを残さないことを確認する。
+- [x] `Pane` で Windows の場合に ConPTY backend を選ぶ。
+  - `Pane` は Windows では `ShellBackend.for_platform(windows_backend: :conpty)` を使う。
+- [x] Windows の default shell を設定する。
+  - `Platform.default_shell` で `ENV["COMSPEC"]`, `pwsh`, `powershell.exe` の順に解決する。
+- [x] cwd 指定が Windows backend に渡るようにする。
+  - `Pane` の `cwd:` 指定は spawn 時の `Dir.chdir` により ConPTY child に反映されることを確認済み。
+- [x] env 指定が Windows backend に渡るようにする。
+  - `CreateProcessW` 用の UTF-16 environment block を Pure Ruby で構築し、`CREATE_UNICODE_ENVIRONMENT` 付きで渡す。
+- [x] `Pane#read_available_output` が Windows backend でも非ブロッキングに動くことを確認する。
+- [x] `Pane#resize` が Windows backend でも例外なく動くことを確認する。
+- [x] `Pane#close` が Windows backend でもプロセスを残さないことを確認する。
 - [ ] Windows backend 用の最小統合テストを追加する。
 
 ## Phase 6: 設定と Preferences
@@ -211,7 +218,8 @@
   - Terminal / EmbeddedShell の Phase 3 対応後: 566 tests, 1223 assertions。
   - ConPTY backend adapter 追加後: 570 tests, 1233 assertions。
   - ConPTY handle cleanup 修正後: 572 tests, 1235 assertions。
-- [ ] Windows backend テストを実行する。
+- [x] Windows backend テストを実行する。
+  - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`, `pane_test.rb`, `tab_test.rb` が通過。
 - [ ] Windows GUI 手動確認を実施する。
 - [ ] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。
 - [ ] 未対応機能を明示したリリースノート草案を作る。

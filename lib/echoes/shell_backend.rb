@@ -91,11 +91,12 @@ module Echoes
     def initialize(command:, env:, rows:, cols:, px_width: 0, px_height: 0, conpty: nil)
       require_relative "conpty"
 
-      raise ArgumentError, "WindowsConPTYBackend does not support explicit env yet" if env
-
       @conpty = conpty || ConPTY.new
-      @conpty.spawn(command.is_a?(Array) ? command.join(" ") : command, cols: cols, rows: rows)
+      @conpty.spawn(command.is_a?(Array) ? command.join(" ") : command, cols: cols, rows: rows, env: env)
       @pid = @conpty.h_process_id.to_i
+      @closed = false
+      @read_io = WindowsConPTYIO.new(self, readable: true, rows: rows, cols: cols)
+      @write_io = WindowsConPTYIO.new(self, readable: false, rows: rows, cols: cols)
     end
 
     def write(bytes)
@@ -108,6 +109,8 @@ module Echoes
 
     def resize(rows, cols, px_width: 0, px_height: 0)
       @conpty.resize(cols, rows)
+      @read_io.winsize = [rows, cols]
+      @write_io.winsize = [rows, cols]
     end
 
     def refresh_size(rows, cols, px_width: 0, px_height: 0)
@@ -124,7 +127,50 @@ module Echoes
     end
 
     def close
+      @closed = true
       @conpty.kill
+    end
+
+    def closed?
+      @closed
+    end
+  end
+
+  class WindowsConPTYIO
+    attr_accessor :winsize
+
+    def initialize(backend, readable:, rows:, cols:)
+      @backend = backend
+      @readable = readable
+      @winsize = [rows, cols]
+    end
+
+    def readpartial(max)
+      raise IOError, "not opened for reading" unless @readable
+      data = @backend.read_available_output(max)
+      raise IO::WaitReadable if data.empty?
+      data
+    end
+
+    def write(bytes)
+      raise IOError, "not opened for writing" if @readable
+      @backend.write(bytes)
+    end
+
+    def print(*args)
+      write(args.join)
+    end
+
+    def flush
+      nil
+    end
+
+    def close
+      @backend.close
+    end
+
+    def closed?
+      @backend.closed?
     end
   end
 

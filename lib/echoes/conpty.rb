@@ -39,6 +39,7 @@ module Echoes
     CreateProcessW       = new_func('CreateProcessW', [P, P, P, P, I, U, P, P, P, P], I)
     CloseHandle          = new_func('CloseHandle', [P], I)
     GetLastError         = new_func('GetLastError', [], U)
+    SetHandleInformation = new_func('SetHandleInformation', [P, U, U], I)
     GetExitCodeProcess   = new_func('GetExitCodeProcess', [P, P], I)
     TerminateProcess     = new_func('TerminateProcess', [P, U], I)
     ReadFile             = new_func('ReadFile', [P, P, U, P, P], I)
@@ -50,7 +51,10 @@ module Echoes
     PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016
     PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
     EXTENDED_STARTUPINFO_PRESENT       = 0x00080000
+    CREATE_UNICODE_ENVIRONMENT         = 0x00000400
     DETACHED_PROCESS                   = 0x00000008
+    STARTF_USESTDHANDLES               = 0x00000100
+    HANDLE_FLAG_INHERIT                = 0x00000001
     STILL_ACTIVE                        = 259
 
     # Size of COORD: {short X, short Y} (4 bytes total)
@@ -70,7 +74,12 @@ module Echoes
     end
 
     # Spawns the specified shell process (e.g. powershell.exe) under a new Pseudo Console
-    def spawn(command_line, cols: 80, rows: 24)
+    def spawn(command_line, cols: 80, rows: 24, env: nil)
+      sec_attr = Fiddle::Pointer.malloc(24, Fiddle::RUBY_FREE)
+      sec_attr[0, 24] = "\x00" * 24
+      sec_attr[0, 4] = [24].pack('L') # nLength
+      sec_attr[16, 4] = [1].pack('L') # bInheritHandle
+
       # Create pipes for ConPTY communication
       # pipe_in: host writes to pipe_in_w -> ConPTY reads from pipe_in_r
       # pipe_out: ConPTY writes to pipe_out_w -> host reads from pipe_out_r
@@ -81,8 +90,8 @@ module Echoes
       h_pipe_in_r = h_pipe_in_w = h_pipe_out_r = h_pipe_out_w = 0
 
       begin
-        raise_last_error("CreatePipe") unless CreatePipe.call(pipe_in_r, pipe_in_w, nil, 0) != 0
-        raise_last_error("CreatePipe") unless CreatePipe.call(pipe_out_r, pipe_out_w, nil, 0) != 0
+        raise_last_error("CreatePipe") unless CreatePipe.call(pipe_in_r, pipe_in_w, sec_attr, 0) != 0
+        raise_last_error("CreatePipe") unless CreatePipe.call(pipe_out_r, pipe_out_w, sec_attr, 0) != 0
 
         # Extract 64-bit integer HANDLE values safely
         h_pipe_in_r  = pipe_in_r[0, 8].unpack1('Q')
@@ -92,6 +101,11 @@ module Echoes
 
         @pipe_in_w = h_pipe_in_w
         @pipe_out_r = h_pipe_out_r
+
+        # The child needs the pseudoconsole-side handles, but not the host-side
+        # ends that Echoes reads and writes.
+        raise_last_error("SetHandleInformation") unless SetHandleInformation.call(h_pipe_in_w, HANDLE_FLAG_INHERIT, 0) != 0
+        raise_last_error("SetHandleInformation") unless SetHandleInformation.call(h_pipe_out_r, HANDLE_FLAG_INHERIT, 0) != 0
 
         # 2. Create the Pseudo Console
         h_pc_ptr = Fiddle::Pointer.malloc(8, Fiddle::RUBY_FREE)
@@ -138,6 +152,9 @@ module Echoes
           si_ex = Fiddle::Pointer.malloc(startup_info_ex_size, Fiddle::RUBY_FREE)
           si_ex[0, startup_info_ex_size] = "\x00" * startup_info_ex_size
           si_ex[0, 4] = [startup_info_ex_size].pack('L') # STARTUPINFOEXW cbSize
+          si_ex[60, 4] = [STARTF_USESTDHANDLES].pack('L')
+          si_ex[88, Fiddle::SIZEOF_VOIDP] = [h_pipe_out_w].pack(Fiddle::SIZEOF_VOIDP == 8 ? 'Q' : 'L')
+          si_ex[96, Fiddle::SIZEOF_VOIDP] = [h_pipe_out_w].pack(Fiddle::SIZEOF_VOIDP == 8 ? 'Q' : 'L')
           si_ex[startup_info_size, Fiddle::SIZEOF_VOIDP] = [attr_list.to_i].pack(Fiddle::SIZEOF_VOIDP == 8 ? 'Q' : 'L')
 
           # Build PROCESS_INFORMATION (24 bytes)
@@ -145,15 +162,19 @@ module Echoes
           pi[0, 24] = "\x00" * 24
 
           cmd_w = cmd_to_wstring(command_line)
+          env_w = env_to_wstrings(env)
 
           # Spawn
+          creation_flags = EXTENDED_STARTUPINFO_PRESENT
+          creation_flags |= CREATE_UNICODE_ENVIRONMENT if env
+
           success = CreateProcessW.call(
             nil,
             cmd_w,
             nil, nil,
-            0,
-            EXTENDED_STARTUPINFO_PRESENT,
-            nil, nil,
+            1,
+            creation_flags,
+            env_w, nil,
             si_ex,
             pi
           )
@@ -263,6 +284,16 @@ module Echoes
 
     def cmd_to_wstring(str)
       data = (str + "\x00").encode('UTF-16LE')
+      buffer = Fiddle::Pointer.malloc(data.bytesize, Fiddle::RUBY_FREE)
+      buffer[0, data.bytesize] = data
+      buffer
+    end
+
+    def env_to_wstrings(env)
+      return nil unless env
+
+      entries = env.map { |key, value| "#{key}=#{value}" }.sort_by(&:downcase)
+      data = (entries.join("\x00") + "\x00\x00").encode('UTF-16LE')
       buffer = Fiddle::Pointer.malloc(data.bytesize, Fiddle::RUBY_FREE)
       buffer[0, data.bytesize] = data
       buffer

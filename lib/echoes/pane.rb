@@ -80,12 +80,17 @@ module Echoes
           # array form is what the OSC 7772 ;open-window handler
           # uses so user-supplied argv isn't subject to shell quoting.
           spawn_args = command.is_a?(Array) ? command : [command]
-          @shell_backend = ShellBackend.for_platform.new(command: spawn_args,
-                                                         env: env,
-                                                         rows: rows,
-                                                         cols: cols,
-                                                         px_width: pty_pixel_width(cols),
-                                                         px_height: pty_pixel_height(rows))
+          backend_class = if Platform.windows?
+                            ShellBackend.for_platform(windows_backend: :conpty)
+                          else
+                            ShellBackend.for_platform
+                          end
+          @shell_backend = backend_class.new(command: spawn_args,
+                                             env: env,
+                                             rows: rows,
+                                             cols: cols,
+                                             px_width: pty_pixel_width(cols),
+                                             px_height: pty_pixel_height(rows))
           @pty_read = @shell_backend.read_io
           @pty_write = @shell_backend.write_io
           @pty_pid = @shell_backend.pid
