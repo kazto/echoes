@@ -636,6 +636,10 @@ module Echoes
         end
       end
 
+      screen.placements.each do |pl|
+        blit_kitty_placement(hdc, pl, px, py, pane_rows)
+      end
+
       # IMEインライン変換の描画
       if is_active && @marked_text && pane.scroll_offset == 0
         mx = px + screen.cursor.col * @cell_width
@@ -684,6 +688,52 @@ module Echoes
           end
         end
       end
+    end
+
+    private def blit_kitty_placement(hdc, pl, px, py, pane_rows)
+      return unless Win32::StretchDIBits
+
+      img = pl[:image]
+      return unless img && img[:rgba] && img[:width].to_i > 0 && img[:height].to_i > 0
+      return if pl[:anchor_row] + pl[:cell_rows] <= 0
+      return if pl[:anchor_row] >= pane_rows
+
+      width = img[:width].to_i
+      height = img[:height].to_i
+      bitmap = rgba_to_bgra(img[:rgba], width, height)
+      return unless bitmap
+
+      bitmap_info = bitmap_info_header(width, height, bitmap.bytesize)
+      x = px + pl[:anchor_col] * @cell_width + pl[:x_off].to_i
+      y = py + pl[:anchor_row] * @cell_height + pl[:y_off].to_i
+      draw_w = pl[:cell_cols] * @cell_width
+      draw_h = pl[:cell_rows] * @cell_height
+
+      Win32::StretchDIBits.call(
+        hdc,
+        x, y, draw_w, draw_h,
+        0, 0, width, height,
+        Fiddle::Pointer[bitmap],
+        Fiddle::Pointer[bitmap_info],
+        Win32::DIB_RGB_COLORS,
+        Win32::SRCCOPY
+      )
+    end
+
+    private def bitmap_info_header(width, height, image_size)
+      [
+        40, width, -height, 1, 32, Win32::BI_RGB, image_size, 0, 0, 0, 0
+      ].pack('LllvvLLllLL')
+    end
+
+    private def rgba_to_bgra(rgba, width, height)
+      return nil unless rgba && rgba.bytesize == width * height * 4
+
+      bgra = String.new(capacity: rgba.bytesize, encoding: Encoding::BINARY)
+      rgba.scan(/.{4}/m) do |px|
+        bgra << px.getbyte(2) << px.getbyte(1) << px.getbyte(0) << px.getbyte(3)
+      end
+      bgra
     end
 
     def self.capture_format_for(path)

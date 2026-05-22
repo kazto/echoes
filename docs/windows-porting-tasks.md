@@ -16,7 +16,7 @@
 - `rake test:core` を追加し、Windows では OS 非依存コアテストだけを実行する default test に更新済み。2026-05-22 時点で pane / tab / pane_tree / preferences / shell_backend / cli / installer も core 対象に追加済み。
 - GitHub Actions に Windows core test job を追加済み。ただしリモート CI の成功はまだ未確認。
 - Windows ローカル確認済み:
-  - 2026-05-22: `ruby -S rake test:core`: 592 tests, 1259 assertions, 0 failures, 8 omissions
+  - 2026-05-22: `ruby -S rake test:core`: 594 tests, 1265 assertions, 0 failures, 8 omissions
   - 2026-05-22: `ruby -S rake test`: 585 tests, 1247 assertions, 0 failures, 8 omissions
   - `ruby -Ilib -e "require 'echoes'; puts Echoes::VERSION"`: `0.2.0`
 - 既知の未解決事項:
@@ -197,12 +197,12 @@
 
 - [x] Windows 用 PNG decode 方針を決める。
   - Pure Ruby から Fiddle で GDI+ を呼び、PNG を RGBA buffer に変換する。
-- [x] Kitty graphics の Windows decode backend を追加する。
+- [x] Kitty graphics の Windows decode / render backend を追加する。
   - `kitty_graphics_win32.rb` の GDI+ decoder で PNG / raw RGB / raw RGBA を `{rgba:, width:, height:}` に揃える。
-  - Windows render backend は GUI の image blit 実装がまだ未完。
-- [x] iTerm2 images の Windows decode backend を追加する。
+  - `gui_win32.rb` は `screen.placements` の RGBA buffer を GDI `StretchDIBits` で描画する。
+- [x] iTerm2 images の Windows decode / render backend を追加する。
   - iTerm2 inline images は Kitty graphics と同じ GDI+ PNG decoder を使う。
-  - Windows render backend は GUI の image blit 実装がまだ未完。
+  - render は Kitty graphics と同じ `screen.placements` / GDI blit 経路を使う。
 - [ ] Unicode fallback font の解決を実装する。
 - [ ] bold / italic / underline / strikethrough の描画差を確認する。
 - [ ] OSC 66 proportional text の Windows 対応可否を判断する。
@@ -244,6 +244,7 @@
   - Windows GUI clipboard helper 追加後: 589 tests, 1253 assertions, 8 omissions。
   - Windows GUI copy/paste 経路テスト追加後: 590 tests, 1254 assertions, 8 omissions。
   - Windows GDI+ PNG decoder 追加後: 592 tests, 1259 assertions, 8 omissions。
+  - Windows GUI image blit 追加後: 594 tests, 1265 assertions, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - `pane_test.rb`, `tab_test.rb` も ConPTY backend 統合後に通過済み。

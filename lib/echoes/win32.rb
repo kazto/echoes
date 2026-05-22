@@ -81,6 +81,7 @@ module Echoes
     ExtTextOutW       = new_func(GDI32, 'ExtTextOutW', [P, I, I, U, P, P, I, P], I)
     CreateFontW       = new_func(GDI32, 'CreateFontW', [I, I, I, I, I, L, L, L, L, L, L, L, L, P], P)
     GetTextExtentPoint32W = new_func(GDI32, 'GetTextExtentPoint32W', [P, P, I, P], I)
+    StretchDIBits     = new_func(GDI32, 'StretchDIBits', [P, I, I, I, I, I, I, I, I, P, P, U, L], I)
 
     # Win32 Constants
     CS_VREDRAW         = 0x0001
@@ -113,6 +114,9 @@ module Echoes
     # Background modes
     TRANSPARENT        = 1
     OPAQUE             = 2
+    SRCCOPY            = 0x00CC0020
+    DIB_RGB_COLORS     = 0
+    BI_RGB             = 0
 
     # Clipboard formats
     CF_UNICODETEXT     = 13

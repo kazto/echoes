@@ -76,6 +76,25 @@ if Echoes::Platform.windows?
       assert_equal "ell", captured
     end
 
+    test "Windows image blit converts RGBA bytes to BGRA for GDI" do
+      gui = Echoes::GUI.allocate
+      rgba = "\x01\x02\x03\x04\x10\x20\x30\x40".b
+
+      assert_equal "\x03\x02\x01\x04\x30\x20\x10\x40".b,
+                   gui.send(:rgba_to_bgra, rgba, 2, 1)
+    end
+
+    test "Windows bitmap info uses a negative height for top-down pixels" do
+      gui = Echoes::GUI.allocate
+      header = gui.send(:bitmap_info_header, 2, 3, 24)
+
+      assert_equal 40, header[0, 4].unpack1('L')
+      assert_equal 2, header[4, 4].unpack1('l')
+      assert_equal(-3, header[8, 4].unpack1('l'))
+      assert_equal 32, header[14, 2].unpack1('v')
+      assert_equal 24, header[20, 4].unpack1('L')
+    end
+
     private
 
     def with_win32_clipboard_text(text)
