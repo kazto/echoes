@@ -47,6 +47,9 @@ module Echoes
       @font_cache = {}
       @hwnd = nil
       @hfont = nil
+      @bold_hfont = nil
+      @italic_hfont = nil
+      @bold_italic_hfont = nil
       @cell_width = nil
       @cell_height = nil
       @running = false
@@ -90,10 +93,7 @@ module Echoes
         case msg
         when Win32::WM_DESTROY
           @running = false
-          if @hfont
-            Win32::DeleteObject.call(@hfont)
-            @hfont = nil
-          end
+          delete_font_handles
           if @active_border_brush
             Win32::DeleteObject.call(@active_border_brush)
           end
@@ -333,15 +333,10 @@ module Echoes
       Win32::RegisterClassExW.call(wnd_class)
 
       # Font の作成
-      font_height = @font_size ? @font_size.to_i : 16
-      font_name = Win32.to_wstring("Consolas")
-      @hfont = Win32::CreateFontW.call(
-        font_height, 0, 0, 0,
-        400, 0, 0, 0,
-        1, 0, 0, 0,
-        0x01 | 0x10,
-        Fiddle::Pointer[font_name]
-      )
+      @hfont = create_font
+      @bold_hfont = create_font(weight: 700)
+      @italic_hfont = create_font(italic: true)
+      @bold_italic_hfont = create_font(weight: 700, italic: true)
 
       # 2. Create the window
       window_title = Win32.to_wstring(Echoes.config.window_title)
@@ -404,13 +399,45 @@ module Echoes
       end
 
       # Cleanup
-      if @hfont
-        Win32::DeleteObject.call(@hfont)
-      end
+      delete_font_handles
       Win32::DeleteObject.call(bg_brush)
     end
 
     private
+
+    private def create_font(weight: 400, italic: false, height: nil, family: nil)
+      font_height = height || (@font_size ? @font_size.to_i : 16)
+      font_name = Win32.to_wstring(family || Echoes.config.font_family || "Consolas")
+      Win32::CreateFontW.call(
+        font_height, 0, 0, 0,
+        weight, italic ? 1 : 0, 0, 0,
+        1, 0, 0, 0,
+        0x01 | 0x10,
+        Fiddle::Pointer[font_name]
+      )
+    end
+
+    private def delete_font_handles
+      [:@hfont, :@bold_hfont, :@italic_hfont, :@bold_italic_hfont].each do |ivar|
+        handle = instance_variable_get(ivar)
+        next unless handle
+
+        Win32::DeleteObject.call(handle)
+        instance_variable_set(ivar, nil)
+      end
+    end
+
+    private def font_for_cell(cell)
+      if cell.bold && cell.italic
+        @bold_italic_hfont || @bold_hfont || @italic_hfont || @hfont
+      elsif cell.bold
+        @bold_hfont || @hfont
+      elsif cell.italic
+        @italic_hfont || @hfont
+      else
+        @hfont
+      end
+    end
 
     def build_color_table
       ansi_rgb = [
@@ -495,6 +522,7 @@ module Echoes
 
     private def wire_screen_handlers(pane)
       pane.screen.clipboard_handler = method(:handle_clipboard)
+      pane.screen.glyph_measurer = method(:measure_glyph)
       pane.screen.cell_pixel_width = @cell_width if @cell_width
       pane.screen.cell_pixel_height = @cell_height if @cell_height
       pane.refresh_pty_pixel_size if @cell_width && @cell_height
@@ -546,6 +574,21 @@ module Echoes
       [sr, sc, er, ec]
     end
 
+    private def measure_glyph(text, family, scale, frac_n, frac_d)
+      hdc = Win32::GetDC.call(@hwnd || 0)
+      return 0.0 if !hdc || Win32.null_pointer?(hdc)
+
+      font = create_multicell_font({scale: scale, frac_n: frac_n, frac_d: frac_d, family: family}, bold: false, italic: false)
+      old_font = Win32::SelectObject.call(hdc, font)
+      begin
+        text_extent(hdc, text).first.to_f
+      ensure
+        Win32::SelectObject.call(hdc, old_font) if old_font
+        Win32::DeleteObject.call(font) if font
+        Win32::ReleaseDC.call(@hwnd || 0, hdc)
+      end
+    end
+
     private def draw_pane_content(hdc, pane, px, py, pw, ph, is_active)
       screen = pane.screen
       scrollback = screen.scrollback
@@ -566,7 +609,14 @@ module Echoes
         c = 0
         while c < pane_cols
           cell = row[c]
-          next unless cell
+          unless cell
+            c += 1
+            next
+          end
+          if cell.multicell == :cont
+            c += 1
+            next
+          end
 
           fg_val = cell.fg
           bg_val = cell.bg
@@ -590,17 +640,27 @@ module Echoes
             fg_color, bg_color = bg_color, fg_color
           end
 
+          if cell.multicell.is_a?(Hash)
+            draw_multicell_text(hdc, cell, px + c * @cell_width, y, fg_color, bg_color)
+            c += cell.multicell[:cols].to_i.clamp(1, pane_cols - c)
+            next
+          end
+
           run_length = 1
           run_str = cell.char || " "
 
           while (c + run_length) < pane_cols
             next_cell = row[c + run_length]
             break unless next_cell
+            break if next_cell.multicell
 
             n_fg_val = next_cell.fg
             n_bg_val = next_cell.bg
             n_inverse = next_cell.inverse
             n_bold = next_cell.bold
+            n_italic = next_cell.italic
+            n_underline = next_cell.underline
+            n_strikethrough = next_cell.strikethrough
 
             if n_inverse
               n_fg_val, n_bg_val = n_bg_val, n_fg_val
@@ -618,7 +678,12 @@ module Echoes
               n_fg_color, n_bg_color = n_bg_color, n_fg_color
             end
 
-            break if n_fg_color != fg_color || n_bg_color != bg_color || n_bold != cell.bold
+            break if n_fg_color != fg_color ||
+                     n_bg_color != bg_color ||
+                     n_bold != cell.bold ||
+                     n_italic != cell.italic ||
+                     n_underline != cell.underline ||
+                     n_strikethrough != cell.strikethrough
 
             run_str += next_cell.char || " "
             run_length += 1
@@ -630,7 +695,22 @@ module Echoes
           cx = px + c * @cell_width
           wstr = Win32.to_wstring(run_str)
           wlen = wstr.bytesize / 2 - 1
-          Win32::TextOutW.call(hdc, cx, y, Fiddle::Pointer[wstr], wlen)
+          run_font = font_for_cell(cell)
+          previous_font = Win32::SelectObject.call(hdc, run_font)
+          begin
+            Win32::TextOutW.call(hdc, cx, y, Fiddle::Pointer[wstr], wlen)
+          ensure
+            Win32::SelectObject.call(hdc, previous_font)
+          end
+          draw_text_decorations(
+            hdc,
+            cx,
+            y,
+            run_length * @cell_width,
+            fg_color,
+            underline: cell.underline,
+            strikethrough: cell.strikethrough
+          )
 
           c += run_length
         end
@@ -688,6 +768,122 @@ module Echoes
           end
         end
       end
+    end
+
+    private def draw_multicell_text(hdc, cell, x, y, fg_color, bg_color)
+      mc = cell.multicell
+      return if mc[:sixel]
+
+      block_w = mc[:cols].to_i * @cell_width
+      block_h = mc[:rows].to_i * @cell_height
+      fill_rect_color(hdc, x, y, x + block_w, y + block_h, bg_color)
+
+      text = cell.char.to_s
+      return if text.empty? || text == " "
+
+      font = create_multicell_font(mc, bold: cell.bold, italic: cell.italic)
+      old_font = Win32::SelectObject.call(hdc, font)
+      old_bk_mode = Win32::SetBkMode.call(hdc, Win32::TRANSPARENT)
+      begin
+        text_w, text_h = text_extent(hdc, text)
+        draw_x, draw_y = aligned_text_origin(
+          x, y, block_w, block_h, text_w, text_h,
+          halign: mc[:halign],
+          valign: mc[:valign]
+        )
+        Win32::SetTextColor.call(hdc, fg_color)
+        wstr = Win32.to_wstring(text)
+        Win32::TextOutW.call(hdc, draw_x, draw_y, Fiddle::Pointer[wstr], wstr.bytesize / 2 - 1)
+        draw_text_decorations(
+          hdc,
+          draw_x,
+          draw_y,
+          text_w,
+          fg_color,
+          underline: cell.underline,
+          strikethrough: cell.strikethrough,
+          height: text_h
+        )
+      ensure
+        Win32::SetBkMode.call(hdc, old_bk_mode)
+        Win32::SelectObject.call(hdc, old_font) if old_font
+        Win32::DeleteObject.call(font) if font
+      end
+    end
+
+    private def create_multicell_font(mc, bold:, italic:)
+      scale = effective_multicell_scale(mc)
+      base_height = @font_size ? @font_size.to_i : 16
+      create_font(
+        weight: bold ? 700 : 400,
+        italic: italic,
+        height: [(base_height * scale).round, 1].max,
+        family: mc[:family]
+      )
+    end
+
+    private def effective_multicell_scale(mc)
+      scale = mc[:scale].to_f
+      if mc[:frac_d].to_i > 0 && mc[:frac_n].to_i > 0
+        scale *= mc[:frac_n].to_f / mc[:frac_d].to_f
+      end
+      scale
+    end
+
+    private def text_extent(hdc, text)
+      size_ptr = Fiddle::Pointer.malloc(8, Fiddle::RUBY_FREE)
+      size_ptr[0, 8] = "\x00" * 8
+      wstr = Win32.to_wstring(text)
+      Win32::GetTextExtentPoint32W.call(hdc, Fiddle::Pointer[wstr], wstr.bytesize / 2 - 1, size_ptr)
+      [size_ptr[0, 4].unpack1('L'), size_ptr[4, 4].unpack1('L')]
+    end
+
+    private def aligned_text_origin(x, y, block_w, block_h, text_w, text_h, halign:, valign:)
+      draw_x = case halign
+               when 1 then x + block_w - text_w
+               when 2 then x + (block_w - text_w) / 2
+               else x
+               end
+      draw_y = case valign
+               when 1 then y + block_h - text_h
+               when 2 then y + (block_h - text_h) / 2
+               else y
+               end
+      [draw_x, draw_y]
+    end
+
+    private def fill_rect_color(hdc, left, top, right, bottom, color)
+      brush = Win32::CreateSolidBrush.call(color)
+      begin
+        rect_ptr = Fiddle::Pointer.malloc(Win32::RECT_SIZE, Fiddle::RUBY_FREE)
+        rect_ptr[0, Win32::RECT_SIZE] = [left, top, right, bottom].pack('l4')
+        Win32::FillRect.call(hdc, rect_ptr, brush)
+      ensure
+        Win32::DeleteObject.call(brush) if brush
+      end
+    end
+
+    private def draw_text_decorations(hdc, x, y, width, color, underline:, strikethrough:, height: @cell_height)
+      rects = decoration_rects(x, y, width, height: height, underline: underline, strikethrough: strikethrough)
+      return if rects.empty?
+
+      brush = Win32::CreateSolidBrush.call(color)
+      begin
+        rects.each do |rect|
+          rect_ptr = Fiddle::Pointer.malloc(Win32::RECT_SIZE, Fiddle::RUBY_FREE)
+          rect_ptr[0, Win32::RECT_SIZE] = rect.pack('l4')
+          Win32::FillRect.call(hdc, rect_ptr, brush)
+        end
+      ensure
+        Win32::DeleteObject.call(brush) if brush
+      end
+    end
+
+    private def decoration_rects(x, y, width, height: @cell_height, underline:, strikethrough:)
+      rects = []
+      rects << [x, y + height - 2, x + width, y + height - 1] if underline
+      rects << [x, y + (height / 2), x + width, y + (height / 2) + 1] if strikethrough
+      rects
     end
 
     private def blit_kitty_placement(hdc, pl, px, py, pane_rows)

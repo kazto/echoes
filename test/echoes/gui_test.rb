@@ -22,6 +22,7 @@ if Echoes::Platform.windows?
       def active = true
       def selecting? = true
     end
+    StubCellStyle = Struct.new(:bold, :italic)
 
     test "embedded mode raises a clear unsupported error" do
       old = ENV["ECHOES_EMBED"]
@@ -93,6 +94,40 @@ if Echoes::Platform.windows?
       assert_equal(-3, header[8, 4].unpack1('l'))
       assert_equal 32, header[14, 2].unpack1('v')
       assert_equal 24, header[20, 4].unpack1('L')
+    end
+
+    test "Windows text style selects bold and italic fonts" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hfont, 1)
+      gui.instance_variable_set(:@bold_hfont, 2)
+      gui.instance_variable_set(:@italic_hfont, 3)
+      gui.instance_variable_set(:@bold_italic_hfont, 4)
+
+      assert_equal 1, gui.send(:font_for_cell, StubCellStyle.new(false, false))
+      assert_equal 2, gui.send(:font_for_cell, StubCellStyle.new(true, false))
+      assert_equal 3, gui.send(:font_for_cell, StubCellStyle.new(false, true))
+      assert_equal 4, gui.send(:font_for_cell, StubCellStyle.new(true, true))
+    end
+
+    test "Windows text decoration rects cover underline and strikethrough" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@cell_height, 16)
+
+      assert_equal [[10, 24, 34, 25], [10, 18, 34, 19]],
+                   gui.send(:decoration_rects, 10, 10, 24, underline: true, strikethrough: true)
+      assert_equal [[10, 38, 34, 39]],
+                   gui.send(:decoration_rects, 10, 10, 24, height: 30, underline: true, strikethrough: false)
+      assert_equal [], gui.send(:decoration_rects, 10, 10, 24, underline: false, strikethrough: false)
+    end
+
+    test "Windows multicell helpers scale and align text inside the reserved block" do
+      gui = Echoes::GUI.allocate
+
+      assert_equal 1.5, gui.send(:effective_multicell_scale, {scale: 3, frac_n: 1, frac_d: 2})
+      assert_equal [25, 18],
+                   gui.send(:aligned_text_origin, 10, 10, 60, 24, 30, 8, halign: 2, valign: 2)
+      assert_equal [40, 26],
+                   gui.send(:aligned_text_origin, 10, 10, 60, 24, 30, 8, halign: 1, valign: 1)
     end
 
     private

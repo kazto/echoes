@@ -204,8 +204,10 @@
   - iTerm2 inline images は Kitty graphics と同じ GDI+ PNG decoder を使う。
   - render は Kitty graphics と同じ `screen.placements` / GDI blit 経路を使う。
 - [ ] Unicode fallback font の解決を実装する。
-- [ ] bold / italic / underline / strikethrough の描画差を確認する。
-- [ ] OSC 66 proportional text の Windows 対応可否を判断する。
+- [x] bold / italic / underline / strikethrough の描画差を確認する。
+  - Windows GUI は GDI font を regular / bold / italic / bold-italic で切り替え、underline / strikethrough はセル幅に合わせて `FillRect` で描画する。
+- [x] OSC 66 proportional text の Windows 対応可否を判断する。
+  - 対応する。Windows GUI は multicell text anchor を GDI font / `TextOutW` で描画し、family 指定がある場合は `GetTextExtentPoint32W` を使う glyph measurer で予約幅を決める。
 
 ## Phase 10: Installer と配布
 
@@ -245,6 +247,8 @@
   - Windows GUI copy/paste 経路テスト追加後: 590 tests, 1254 assertions, 8 omissions。
   - Windows GDI+ PNG decoder 追加後: 592 tests, 1259 assertions, 8 omissions。
   - Windows GUI image blit 追加後: 594 tests, 1265 assertions, 8 omissions。
+  - Windows GUI text style 描画追加後: 596 tests, 1271 assertions, 8 omissions。
+  - Windows GUI OSC 66 multicell text 描画追加後: 597 tests, 1275 assertions, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - `pane_test.rb`, `tab_test.rb` も ConPTY backend 統合後に通過済み。

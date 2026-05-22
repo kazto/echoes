@@ -2,13 +2,13 @@
 
 作成日: 2026-05-20
 
-このメモは、macOS 専用実装から Windows 対応へ進めるための引き継ぎ資料です。2026-05-22 時点では、ロード境界、Windows core test、shell backend 抽象、Windows ConPTY backend の最小 read/write/resize/cwd/env/close、installer、preferences backend 分離までは進んでいます。一方で Windows GUI、embedded rubish mode、Ctrl-C 相当の配送は未完です。
+このメモは、macOS 専用実装から Windows 対応へ進めるための引き継ぎ資料です。2026-05-22 時点では、ロード境界、Windows core test、shell backend 抽象、Windows ConPTY backend の最小 read/write/resize/cwd/env/close、installer、preferences backend 分離、Windows GUI の最小描画・入力までは進んでいます。一方で Windows GUI の手動確認、embedded rubish mode、Ctrl-C 相当の配送は未完です。
 
 ## 現状
 
 - Ruby gem 形式のターミナルエミュレータです。CLI 起点は `exe/echoes` で、GUI 起動時だけ OS 別 GUI backend を lazy load します。
 - GUI は macOS AppKit 実装が中心で、Windows GUI はまだ最小実装段階です。
-- Windows GUI の初期方針は Pure Ruby を維持するため Fiddle + Win32 API です。Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard まで実装済みです。clipboard は `CF_UNICODETEXT` helper 経由で copy / paste と OSC 52 に対応済みです。
+- Windows GUI の初期方針は Pure Ruby を維持するため Fiddle + Win32 API です。Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard まで実装済みです。clipboard は `CF_UNICODETEXT` helper 経由で copy / paste と OSC 52 に対応済みです。text drawing は regular / bold / italic / bold-italic font selection、underline / strikethrough、OSC 66 multicell text 描画に対応済みです。
 - Windows の PNG decode は GDI+ を Fiddle で呼ぶ Pure Ruby 実装です。Kitty graphics と iTerm2 inline images は同じ GDI+ decoder で RGBA buffer へ変換し、Win32 GUI は GDI `StretchDIBits` で `screen.placements` を描画します。
 - `require "echoes"` は Windows でも AppKit / CoreGraphics をロードしないように分離済みです。
 - 通常ペインは `ShellBackend` 経由で shell process を扱います。macOS では既存 PTY backend、Windows では ConPTY backend を選べます。
@@ -17,7 +17,7 @@
 - インストーラは OS 別に分岐済みです。macOS では `~/Applications` に `Echoes.app` / `EchoesEmbed.app` のラッパーを作り、Windows では `~/bin/echoes.bat` を生成します。
 - Preferences は OS 別 backend に分離済みです。macOS では `NSUserDefaults`、Windows では JSON file persistence を使います。
 - CI には Windows core test job を追加済みです。ただしリモート CI の成功は未確認です。
-- Windows ローカルでは `ruby -S rake test:core` が通過しています。2026-05-22 時点では 594 tests, 1265 assertions, 8 omissions です。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
+- Windows ローカルでは `ruby -S rake test:core` が通過しています。2026-05-22 時点では 597 tests, 1275 assertions, 8 omissions です。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
 
 ## Windows 対応の主なブロッカー
 
@@ -86,7 +86,7 @@ Windows では初期対応として `~/bin/echoes.bat` を生成します。こ�
 
 ### 7. 画像・フォント・描画
 
-Kitty graphics / iTerm2 images は macOS では AppKit / CoreGraphics の PNG decode と CGImage 描画に依存しています。Windows では GDI+ decoder で PNG / raw RGB / raw RGBA を RGBA buffer に変換し、GUI 上では GDI `StretchDIBits` で描画します。GUI の高度なフォント計測はまだ AppKit の `NSFont` / `NSString#sizeWithAttributes:` / CoreText fallback に依存します。
+Kitty graphics / iTerm2 images は macOS では AppKit / CoreGraphics の PNG decode と CGImage 描画に依存しています。Windows では GDI+ decoder で PNG / raw RGB / raw RGBA を RGBA buffer に変換し、GUI 上では GDI `StretchDIBits` で描画します。基本的な text style は GDI font selection と `FillRect` decoration で描画します。OSC 66 / OSC 7772 multicell text は GDI font と `TextOutW` で描画し、family 指定時の予約幅は `GetTextExtentPoint32W` で測ります。GUI の高度なフォント計測はまだ AppKit の `NSFont` / `NSString#sizeWithAttributes:` / CoreText fallback に依存します。
 
 Windows 側では以下の代替が必要です。
 
@@ -94,7 +94,8 @@ Windows 側では以下の代替が必要です。
 - RGBA buffer の描画: GDI `StretchDIBits` 実装済み
 - 等幅セル幅・行高の計測
 - Unicode fallback font の解決
-- underline / strikethrough / bold / italic / ligature の扱い
+- underline / strikethrough / bold / italic: 実装済み
+- ligature の扱い
 
 Clipboard は Win32 `CF_UNICODETEXT` 経由の helper を追加済みです。
 
