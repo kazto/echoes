@@ -72,6 +72,7 @@ module Echoes
 
     def create_tab(editor_file: nil)
       tab = Tab.new(command: @command, rows: @rows, cols: @cols, editor_file: editor_file)
+      tab.panes.each { |pane| wire_screen_handlers(pane) }
       @tabs << tab
       @active_tab = @tabs.size - 1
       tab
@@ -219,10 +220,8 @@ module Echoes
 
         when Win32::WM_CHAR
           char_code = wparam.to_i
-          warn "echoes debug: WM_CHAR char_code=#{char_code}"
           unless [0x08, 0x09, 0x0D, 0x1B].include?(char_code)
             utf8_char = [char_code].pack('S').force_encoding('UTF-16LE').encode('UTF-8') rescue nil
-            warn "echoes debug: WM_CHAR utf8_char=#{utf8_char.inspect}"
             if utf8_char && (tab = current_tab) && (pane = tab.active_pane)
               pane.write_input(utf8_char)
             end
@@ -231,45 +230,59 @@ module Echoes
 
         when Win32::WM_KEYDOWN
           vk = wparam.to_i
-          warn "echoes debug: WM_KEYDOWN vk=#{vk}"
           ctrl_pressed = (Win32::GetKeyState.call(0x11) & 0x8000) != 0
+          shift_pressed = (Win32::GetKeyState.call(0x10) & 0x8000) != 0
+
+          handled_key = false
+          if ctrl_pressed && shift_pressed
+            case vk
+            when 0x43 # C
+              copy_to_clipboard
+              handled_key = true
+            when 0x56 # V
+              paste_from_clipboard
+              handled_key = true
+            end
+          end
 
           escape_sequence = nil
-          case vk
-          when 0x26 # VK_UP
-            escape_sequence = "\e[A"
-          when 0x28 # VK_DOWN
-            escape_sequence = "\e[B"
-          when 0x27 # VK_RIGHT
-            escape_sequence = "\e[C"
-          when 0x25 # VK_LEFT
-            escape_sequence = "\e[D"
-          when 0x24 # VK_HOME
-            escape_sequence = "\e[H"
-          when 0x23 # VK_END
-            escape_sequence = "\e[F"
-          when 0x21 # VK_PRIOR (PgUp)
-            escape_sequence = "\e[5~"
-          when 0x22 # VK_NEXT (PgDn)
-            escape_sequence = "\e[6~"
-          when 0x2E # VK_DELETE
-            escape_sequence = "\e[3~"
-          when 0x08 # VK_BACK
-            escape_sequence = "\x7F"
-          when 0x09 # VK_TAB
-            escape_sequence = "\t"
-          when 0x0D # VK_RETURN
-            escape_sequence = "\r"
-          when 0x1B # VK_ESCAPE
-            escape_sequence = "\e"
-          end
+          unless handled_key
+            case vk
+            when 0x26 # VK_UP
+              escape_sequence = "\e[A"
+            when 0x28 # VK_DOWN
+              escape_sequence = "\e[B"
+            when 0x27 # VK_RIGHT
+              escape_sequence = "\e[C"
+            when 0x25 # VK_LEFT
+              escape_sequence = "\e[D"
+            when 0x24 # VK_HOME
+              escape_sequence = "\e[H"
+            when 0x23 # VK_END
+              escape_sequence = "\e[F"
+            when 0x21 # VK_PRIOR (PgUp)
+              escape_sequence = "\e[5~"
+            when 0x22 # VK_NEXT (PgDn)
+              escape_sequence = "\e[6~"
+            when 0x2E # VK_DELETE
+              escape_sequence = "\e[3~"
+            when 0x08 # VK_BACK
+              escape_sequence = "\x7F"
+            when 0x09 # VK_TAB
+              escape_sequence = "\t"
+            when 0x0D # VK_RETURN
+              escape_sequence = "\r"
+            when 0x1B # VK_ESCAPE
+              escape_sequence = "\e"
+            end
 
-          if ctrl_pressed && vk >= 0x41 && vk <= 0x5A
-            escape_sequence = (vk - 0x40).chr
-          end
+            if ctrl_pressed && vk >= 0x41 && vk <= 0x5A
+              escape_sequence = (vk - 0x40).chr
+            end
 
-          if escape_sequence && (tab = current_tab) && (pane = tab.active_pane)
-            pane.write_input(escape_sequence)
+            if escape_sequence && (tab = current_tab) && (pane = tab.active_pane)
+              pane.write_input(escape_sequence)
+            end
           end
           0
 
@@ -478,6 +491,59 @@ module Echoes
         (val[2] << 16) | (val[1] << 8) | val[0]
       else default
       end
+    end
+
+    private def wire_screen_handlers(pane)
+      pane.screen.clipboard_handler = method(:handle_clipboard)
+      pane.screen.cell_pixel_width = @cell_width if @cell_width
+      pane.screen.cell_pixel_height = @cell_height if @cell_height
+      pane.refresh_pty_pixel_size if @cell_width && @cell_height
+    end
+
+    private def handle_clipboard(action, text)
+      case action
+      when :set
+        Win32.set_clipboard_text(@hwnd, text)
+        nil
+      when :get
+        Win32.get_clipboard_text(@hwnd)
+      end
+    end
+
+    private def paste_from_clipboard
+      str = Win32.get_clipboard_text(@hwnd)
+      return if str.nil? || str.empty?
+
+      pane = current_tab&.active_pane
+      return unless pane
+
+      if pane.screen.bracketed_paste_mode?
+        pane.write_input("\e[200~")
+        pane.write_input(str)
+        pane.write_input("\e[201~")
+      else
+        pane.write_input(str)
+      end
+    rescue Errno::EIO, IOError
+    end
+
+    private def copy_to_clipboard
+      sr, sc, er, ec = selection_range
+      return unless sr
+
+      text = selected_text_from_buffer(sr, sc, er, ec)
+      return if text.empty?
+
+      Win32.set_clipboard_text(@hwnd, text)
+    end
+
+    private def selection_range
+      pane = current_tab&.active_pane
+      copy_mode = pane&.copy_mode
+      return nil unless copy_mode && copy_mode.active && copy_mode.selecting?
+
+      (sr, sc), (er, ec) = [copy_mode.selection_start, copy_mode.selection_end].sort_by { |p| [p[0], p[1]] }
+      [sr, sc, er, ec]
     end
 
     private def draw_pane_content(hdc, pane, px, py, pw, ph, is_active)

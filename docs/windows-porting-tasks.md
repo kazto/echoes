@@ -16,7 +16,7 @@
 - `rake test:core` を追加し、Windows では OS 非依存コアテストだけを実行する default test に更新済み。2026-05-22 時点で pane / tab / pane_tree / preferences / shell_backend / cli / installer も core 対象に追加済み。
 - GitHub Actions に Windows core test job を追加済み。ただしリモート CI の成功はまだ未確認。
 - Windows ローカル確認済み:
-  - 2026-05-22: `ruby -S rake test:core`: 587 tests, 1251 assertions, 0 failures, 8 omissions
+  - 2026-05-22: `ruby -S rake test:core`: 590 tests, 1254 assertions, 0 failures, 8 omissions
   - 2026-05-22: `ruby -S rake test`: 585 tests, 1247 assertions, 0 failures, 8 omissions
   - `ruby -Ilib -e "require 'echoes'; puts Echoes::VERSION"`: `0.2.0`
 - 既知の未解決事項:
@@ -161,28 +161,36 @@
   - display enumeration
 - [ ] OS 非依存にできる terminal orchestration を切り出す。
 - [ ] AppKit 実装を macOS backend として残す。
-- [ ] Windows GUI 技術を決める。
+- [x] Windows GUI 技術を決める。
   - Fiddle + Win32 API
-  - toolkit 採用
-  - native helper 採用
-- [ ] Windows GUI の最小機能セットを決める。
+  - Pure Ruby 方針を維持するため、初期実装は Fiddle + Win32 API を採用する。
+  - toolkit / native helper は現時点では採用しない。
+- [x] Windows GUI の最小機能セットを決める。
   - window
   - text drawing
   - keyboard input
   - resize
   - timer
   - clipboard
+  - 初期最小機能は Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard とする。
 - [ ] IME、drag and drop、file dialog、multi-display、notification の対応順を決める。
 
 ## Phase 8: Windows GUI 最小実装
 
-- [ ] Windows window / event loop を実装する。
-- [ ] セルグリッドの描画を実装する。
-- [ ] 等幅フォントの測定を実装する。
-- [ ] 基本キー入力を `Pane` に渡す。
-- [ ] resize イベントを `Pane#resize` に渡す。
-- [ ] timer / repaint loop を実装する。
-- [ ] clipboard copy / paste を実装する。
+- [x] Windows window / event loop を実装する。
+  - `CreateWindowExW` と `PeekMessageW` ベースの non-blocking message loop を実装済み。
+- [x] セルグリッドの描画を実装する。
+  - GDI `TextOutW` で screen grid を描画する。
+- [x] 等幅フォントの測定を実装する。
+  - `CreateFontW` と `GetTextExtentPoint32W` で初期 cell metrics を取得する。
+- [x] 基本キー入力を `Pane` に渡す。
+  - `WM_CHAR` と `WM_KEYDOWN` の基本キー / 矢印 / Ctrl キー入力を `Pane#write_input` に渡す。
+- [x] resize イベントを `Pane#resize` に渡す。
+  - `WM_SIZE` から rows / cols を再計算して active tab を resize する。
+- [x] timer / repaint loop を実装する。
+  - message loop 内で shell output を polling し、出力時に `InvalidateRect` / `UpdateWindow` する。
+- [x] clipboard copy / paste を実装する。
+  - `CF_UNICODETEXT` を使う Win32 clipboard helper を追加し、OSC 52 と Ctrl+Shift+C/V 経路から利用する。
 - [ ] 最小 GUI で Windows shell が起動し、入力と出力ができることを確認する。
 
 ## Phase 9: 画像・フォント拡張
@@ -228,6 +236,8 @@
   - ConPTY handle cleanup 修正後: 572 tests, 1235 assertions。
   - Windows installer test を core 対象に追加後: 585 tests, 1247 assertions, 8 omissions。
   - Preferences backend 分離テスト追加後: 587 tests, 1251 assertions, 8 omissions。
+  - Windows GUI clipboard helper 追加後: 589 tests, 1253 assertions, 8 omissions。
+  - Windows GUI copy/paste 経路テスト追加後: 590 tests, 1254 assertions, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - `pane_test.rb`, `tab_test.rb` も ConPTY backend 統合後に通過済み。

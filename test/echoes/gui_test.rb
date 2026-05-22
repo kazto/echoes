@@ -8,6 +8,21 @@ Echoes.load_gui_backend if Echoes::Platform.windows? || Echoes::Platform.macos?
 
 if Echoes::Platform.windows?
   class Echoes::GUIWindowsTest < Test::Unit::TestCase
+    StubPane = Struct.new(:screen, :writes, :copy_mode) do
+      def write_input(str)
+        writes << str
+      end
+    end
+    StubTab = Struct.new(:active_pane) do
+      def screen
+        active_pane.screen
+      end
+    end
+    StubCopyMode = Struct.new(:selection_start, :selection_end) do
+      def active = true
+      def selecting? = true
+    end
+
     test "embedded mode raises a clear unsupported error" do
       old = ENV["ECHOES_EMBED"]
       ENV["ECHOES_EMBED"] = "1"
@@ -17,6 +32,72 @@ if Echoes::Platform.windows?
       assert_match(/Embedded rubish mode is not supported on Windows/, error.message)
     ensure
       ENV["ECHOES_EMBED"] = old
+    end
+
+    test "Win32 UTF-16 scanner finds the terminating null pair on code unit boundaries" do
+      raw = "a\x00b\x00\x00\x00ignored".b
+      assert_equal 4, Echoes::Win32.utf16_nul_index(raw)
+    end
+
+    test "Windows paste wraps clipboard text in bracketed paste markers" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      screen.bracketed_paste_mode = true
+      pane = StubPane.new(screen, [])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.instance_variable_set(:@hwnd, nil)
+
+      with_win32_clipboard_text("hello") do
+        gui.send(:paste_from_clipboard)
+      end
+
+      assert_equal ["\e[200~", "hello", "\e[201~"], pane.writes
+    end
+
+    test "Windows copy writes selected text to the clipboard" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      "hello".chars.each_with_index do |char, index|
+        screen.grid[0][index].char = char
+      end
+      copy_mode = StubCopyMode.new([0, 1], [0, 3])
+      pane = StubPane.new(screen, [], copy_mode)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.instance_variable_set(:@cols, 10)
+      gui.instance_variable_set(:@hwnd, nil)
+
+      captured = nil
+      with_win32_clipboard_setter(->(_hwnd, text) { captured = text }) do
+        gui.send(:copy_to_clipboard)
+      end
+
+      assert_equal "ell", captured
+    end
+
+    private
+
+    def with_win32_clipboard_text(text)
+      singleton = class << Echoes::Win32; self; end
+      original = Echoes::Win32.method(:get_clipboard_text)
+      singleton.send(:remove_method, :get_clipboard_text)
+      singleton.define_method(:get_clipboard_text) { |_hwnd| text }
+      yield
+    ensure
+      singleton.send(:remove_method, :get_clipboard_text)
+      singleton.define_method(:get_clipboard_text) { |hwnd| original.call(hwnd) }
+    end
+
+    def with_win32_clipboard_setter(setter)
+      singleton = class << Echoes::Win32; self; end
+      original = Echoes::Win32.method(:set_clipboard_text)
+      singleton.send(:remove_method, :set_clipboard_text)
+      singleton.define_method(:set_clipboard_text) { |hwnd, text| setter.call(hwnd, text) }
+      yield
+    ensure
+      singleton.send(:remove_method, :set_clipboard_text)
+      singleton.define_method(:set_clipboard_text) { |hwnd, text| original.call(hwnd, text) }
     end
   end
 end

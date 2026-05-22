@@ -18,6 +18,7 @@ module Echoes
     V  = Fiddle::TYPE_VOID
     D  = Fiddle::TYPE_DOUBLE
     U  = Fiddle::TYPE_INT # UINT
+    S  = Fiddle::TYPE_SIZE_T
 
     # Fiddle functions setup helper
     def self.new_func(lib, name, args, ret)
@@ -56,6 +57,13 @@ module Echoes
     EmptyClipboard    = new_func(USER32, 'EmptyClipboard', [], I)
     SetClipboardData  = new_func(USER32, 'SetClipboardData', [U, P], P)
     GetClipboardData  = new_func(USER32, 'GetClipboardData', [U], P)
+
+    # --- Kernel32 Functions ---
+    GlobalAlloc       = new_func(KERNEL32, 'GlobalAlloc', [U, S], P)
+    GlobalFree        = new_func(KERNEL32, 'GlobalFree', [P], P)
+    GlobalLock        = new_func(KERNEL32, 'GlobalLock', [P], P)
+    GlobalUnlock      = new_func(KERNEL32, 'GlobalUnlock', [P], I)
+    GlobalSize        = new_func(KERNEL32, 'GlobalSize', [P], S)
 
     # --- Imm32 (IME) Functions ---
     ImmGetContext            = new_func(IMM32, 'ImmGetContext', [P], P)
@@ -108,6 +116,8 @@ module Echoes
 
     # Clipboard formats
     CF_UNICODETEXT     = 13
+    GMEM_MOVEABLE      = 0x0002
+    GMEM_ZEROINIT      = 0x0040
 
     # Struct sizes
     WNDCLASSEXW_SIZE   = 80
@@ -125,6 +135,91 @@ module Echoes
     def self.from_wstring(ptr)
       return nil if ptr.null?
       ptr.to_str.force_encoding('UTF-16LE').encode('UTF-8').split("\x00", 2).first
+    end
+
+    def self.clipboard_available?
+      [
+        OpenClipboard, CloseClipboard, EmptyClipboard, SetClipboardData,
+        GetClipboardData, GlobalAlloc, GlobalFree, GlobalLock, GlobalUnlock,
+        GlobalSize
+      ].all?
+    end
+
+    def self.set_clipboard_text(hwnd, text)
+      return false unless clipboard_available?
+
+      wide = to_wstring(text.to_s)
+      handle = nil
+      return false if OpenClipboard.call(hwnd) == 0
+
+      begin
+        return false if EmptyClipboard.call == 0
+
+        handle = GlobalAlloc.call(GMEM_MOVEABLE | GMEM_ZEROINIT, wide.bytesize)
+        return false if null_pointer?(handle)
+
+        dest = GlobalLock.call(handle)
+        return false if null_pointer?(dest)
+
+        begin
+          dest[0, wide.bytesize] = wide
+        ensure
+          GlobalUnlock.call(handle)
+        end
+
+        stored = SetClipboardData.call(CF_UNICODETEXT, handle)
+        if null_pointer?(stored)
+          false
+        else
+          handle = nil
+          true
+        end
+      ensure
+        GlobalFree.call(handle) if handle && !null_pointer?(handle)
+        CloseClipboard.call
+      end
+    end
+
+    def self.get_clipboard_text(hwnd)
+      return nil unless clipboard_available?
+      return nil if OpenClipboard.call(hwnd) == 0
+
+      begin
+        handle = GetClipboardData.call(CF_UNICODETEXT)
+        return nil if null_pointer?(handle)
+
+        ptr = GlobalLock.call(handle)
+        return nil if null_pointer?(ptr)
+
+        begin
+          bytes = GlobalSize.call(handle)
+          return nil if bytes <= 0
+
+          raw = ptr[0, bytes]
+          nul_at = utf16_nul_index(raw)
+          raw = raw[0...nul_at] if nul_at
+          return "" if raw.empty?
+          raw.force_encoding('UTF-16LE').encode('UTF-8')
+        ensure
+          GlobalUnlock.call(handle)
+        end
+      ensure
+        CloseClipboard.call
+      end
+    end
+
+    def self.null_pointer?(ptr)
+      ptr.nil? || (ptr.respond_to?(:null?) ? ptr.null? : ptr.to_i == 0)
+    end
+
+    def self.utf16_nul_index(raw)
+      max = raw.bytesize - 1
+      i = 0
+      while i < max
+        return i if raw.getbyte(i) == 0 && raw.getbyte(i + 1) == 0
+        i += 2
+      end
+      nil
     end
   end
 end

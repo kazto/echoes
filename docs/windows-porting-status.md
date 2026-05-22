@@ -8,6 +8,7 @@
 
 - Ruby gem 形式のターミナルエミュレータです。CLI 起点は `exe/echoes` で、GUI 起動時だけ OS 別 GUI backend を lazy load します。
 - GUI は macOS AppKit 実装が中心で、Windows GUI はまだ最小実装段階です。
+- Windows GUI の初期方針は Pure Ruby を維持するため Fiddle + Win32 API です。Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard まで実装済みです。clipboard は `CF_UNICODETEXT` helper 経由で copy / paste と OSC 52 に対応済みです。
 - `require "echoes"` は Windows でも AppKit / CoreGraphics をロードしないように分離済みです。
 - 通常ペインは `ShellBackend` 経由で shell process を扱います。macOS では既存 PTY backend、Windows では ConPTY backend を選べます。
 - TTY モードは backend 注入に寄せていますが、Windows ではまだ GUI/通常ペインほど検証していません。
@@ -15,7 +16,7 @@
 - インストーラは OS 別に分岐済みです。macOS では `~/Applications` に `Echoes.app` / `EchoesEmbed.app` のラッパーを作り、Windows では `~/bin/echoes.bat` を生成します。
 - Preferences は OS 別 backend に分離済みです。macOS では `NSUserDefaults`、Windows では JSON file persistence を使います。
 - CI には Windows core test job を追加済みです。ただしリモート CI の成功は未確認です。
-- Windows ローカルでは `ruby -S rake test:core` が通過しています。2026-05-22 時点では 587 tests, 1251 assertions, 8 omissions です。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
+- Windows ローカルでは `ruby -S rake test:core` が通過しています。2026-05-22 時点では 590 tests, 1254 assertions, 8 omissions です。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
 
 ## Windows 対応の主なブロッカー
 
@@ -43,7 +44,7 @@
 - notification / URL open
 - display enumeration / fullscreen window
 
-Windows 側の候補は未実装です。Ruby から直接 Win32 API を Fiddle で呼ぶか、既存 GUI toolkit を使うかを先に決める必要があります。現在の機能量を考えると、描画と入力イベントを抽象化せずに Windows を足すと保守不能になります。
+Windows 側は Pure Ruby 方針を維持するため、Fiddle + Win32 API で進めます。現在の機能量を考えると、描画と入力イベントを抽象化せずに Windows を足すと保守不能になるため、既存 AppKit 実装の責務分類と共通化は引き続き必要です。
 
 ### 3. PTY とプロセス制御が Unix/macOS 前提
 
@@ -94,6 +95,8 @@ Windows 側では以下の代替が必要です。
 - Unicode fallback font の解決
 - underline / strikethrough / bold / italic / ligature の扱い
 
+Clipboard は Win32 `CF_UNICODETEXT` 経由の helper を追加済みです。
+
 ### 8. テストが macOS / Unix コマンド前提
 
 初期状態では `test/test_helper.rb` が `require "echoes"` した時点で AppKit 依存をロードし、Windows では大半のテストがロード段階で失敗していました。現在は core test のロード境界を分離済みですが、フルテストにはまだ以下のような macOS / Unix 前提が残っています。
@@ -132,8 +135,8 @@ Windows 対応では、純粋な parser / screen / cell / copy mode / pane tree 
 ### フェーズ 4: GUI backend の設計と実装
 
 - `GUI` の責務を、terminal state orchestration と AppKit rendering/event handling に分離する。
-- Windows の GUI 技術を決める。Fiddle で Win32 + DirectWrite/GDI を叩く場合は既存 AppKit 実装に近いが実装量が大きい。toolkit 採用の場合は依存と配布方法の判断が必要。
-- 最小版は、window、text drawing、keyboard input、clipboard、resize、timer から始める。
+- Windows の GUI 技術は Fiddle + Win32 API とする。Pure Ruby 方針を維持し、toolkit / native helper は現時点では採用しない。
+- 最小版は、window、text drawing、keyboard input、clipboard、resize、timer から始める。これらは Win32 backend に実装済みで、clipboard は `CF_UNICODETEXT` helper と Ctrl+Shift+C/V 経路を追加済み。残る確認は実 GUI 上で Windows shell の起動、入力、出力、resize、copy/paste を手動確認すること。
 - IME、drag and drop、file dialog、multi-display presentation window、native notification は後続に回す。
 
 ### フェーズ 5: インストール・CI・ドキュメント
