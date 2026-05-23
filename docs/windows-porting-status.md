@@ -56,7 +56,7 @@ Windows ConPTY backend で対応済み、または残っている責務は次の
 - 疑似コンソールの作成とリサイズ: 実装済み。`cmd.exe mode con` で resize 反映を確認済み。
 - 子プロセス起動 (`cmd.exe`, PowerShell, pwsh など): 初期 shell 解決と `cmd.exe` 起動は確認済み。
 - stdin/stdout pipe の読み書き: 実装済み。stdout/stderr を ConPTY output pipe に明示し、stdin は ConPTY に任せる構成。
-- Ctrl-C 相当の配送: 未解決。`\x03` write と `GenerateConsoleCtrlEvent` は期待通りに効いていません。
+- Ctrl-C 相当の配送: 実装済み。`Win32.send_ctrl_c` は `AttachConsole` / `FreeConsole` / `GenerateConsoleCtrlEvent` を使い、失敗時は `\x03` write にフォールバックする。テスト (`shell_backend_test.rb`) で動作確認済み。
 - cwd / env / PATH の扱い: cwd と explicit env は確認済み。
 - 終了検知とリソース解放: close / process exit は確認済み。
 
@@ -163,4 +163,4 @@ Windows 対応では、純粋な parser / screen / cell / copy mode / pane tree 
 - `lib/echoes/gui.rb` は 1 ファイルに多くの責務が集まっています。Windows 対応のために直接分岐を増やすと急速に読みにくくなるため、先に境界を作るべきです。
 - embedded rubish mode は通常シェルより移植難度が高いです。Windows 初期対応の対象外にしても、通常ペインが動けば価値があります。
 - OSC / parser / screen / copy mode / pane tree は比較的 OS 非依存です。ここを Windows CI で守れる状態にすると、その後の移植作業が進めやすくなります。
-- `syslog` は gemspec に dependency としてありますが、現ソース上では利用箇所が見当たりませんでした。Windows 対応時に不要なら削除候補です。
+- `syslog` は gemspec から削除済み（コード内で使用されていないため）。

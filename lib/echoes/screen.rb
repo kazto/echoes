@@ -149,6 +149,10 @@ module Echoes
       cell.char = c
       cell.width = w
 
+      if ENV['SCREEN_DEBUG'] && (c == 'A' || c == '0' || (@cursor.row < 3 && @cursor.col < 3))
+        $stderr.puts "[SCREEN] put_char '#{c}' at (#{@cursor.row}, #{@cursor.col})"
+      end
+
       if w == 2 && @cursor.col + 1 < @cols
         # Mark the next cell as a continuation (width 0)
         next_cell = @grid[@cursor.row][@cursor.col + 1]
@@ -388,6 +392,7 @@ module Echoes
     end
 
     def move_cursor(row, col)
+      $stderr.puts "[SCREEN] move_cursor to (#{row}, #{col})" if ENV['SCREEN_DEBUG']
       @pending_wrap = false
       if @origin_mode
         @cursor.row = (row + @scroll_top).clamp(@scroll_top, @scroll_bottom)
@@ -434,17 +439,20 @@ module Echoes
     end
 
     def carriage_return
+      $stderr.puts "[SCREEN] carriage_return: cursor from (#{@cursor.row}, #{@cursor.col})" if ENV['SCREEN_DEBUG']
       @pending_wrap = false
       @cursor.col = 0
     end
 
     def line_feed
+      $stderr.puts "[SCREEN] line_feed: cursor from (#{@cursor.row}, #{@cursor.col}) to " if ENV['SCREEN_DEBUG']
       @pending_wrap = false
       if @cursor.row == @scroll_bottom
         scroll_up(1)
       else
         @cursor.row = [@cursor.row + 1, @rows - 1].min
       end
+      $stderr.puts "(#{@cursor.row}, #{@cursor.col})" if ENV['SCREEN_DEBUG']
     end
 
     def reverse_index
@@ -500,6 +508,7 @@ module Echoes
         erase_in_line(1)
         (0...@cursor.row).each { |r| clear_row(r); @line_wrapped[r] = false; mark_dirty(r) }
       when 2
+        $stderr.puts "[SCREEN] erase_in_display(2): cursor at (#{@cursor.row}, #{@cursor.col}), clearing #{@rows} rows" if ENV['SCREEN_DEBUG']
         (0...@rows).each { |r| clear_row(r); @line_wrapped[r] = false }
         @placements.clear
         mark_all_dirty

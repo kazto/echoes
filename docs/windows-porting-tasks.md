@@ -23,6 +23,8 @@
   - Windows ローカルでは `bundle exec rake ...` が `rubish` git checkout 不足で失敗する。Windows core CI は暫定的に Bundler を使わず `gem install rake test-unit` と `ruby -S rake test:core` で実行する。
   - macOS フルテストはこの作業環境では未実行。
   - 2026-05-22 追加調査: ConPTY backend で `cmd.exe` の初期出力、入力 echo、コマンド出力を pipe 経由で取得できることを確認。stdout/stderr を pseudoconsole output pipe に明示し、stdin は ConPTY に任せる必要がある。
+- 2026-05-23: Windows ローカル確認済み `ruby -S rake test:core`: 603 tests, 1289 assertions, 0 failures, 8 omissions
+- 2026-05-23: `syslog` 依存を gemspec から削除（コード内で未使用）
 
 ## Phase 0: 作業前確認
 

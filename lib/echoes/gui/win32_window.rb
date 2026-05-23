@@ -35,6 +35,13 @@ module Echoes
         @cell_height = nil
         @running = false
         @marked_text = nil # IME inline composition string
+        @log_file = if ENV['ECHOES_WIN32_DEBUG_LOG']
+                     File.open(ENV['ECHOES_WIN32_DEBUG_LOG'], 'w')
+                   elsif ENV['ECHOES_DEBUG']
+                     File.open('echoes-win32-debug.log', 'w') rescue nil
+                   else
+                     nil
+                   end
 
         # カラーテーマの初期化
         @active_profile = Echoes.config.active_profile rescue nil
@@ -54,6 +61,12 @@ module Echoes
         @gui.tabs.each do |tab|
           tab.panes.each { |pane| wire_screen_handlers(pane) }
         end
+      end
+
+      def win32_log(msg)
+        return unless @log_file
+        @log_file.puts("[#{Time.now}] #{msg}")
+        @log_file.flush
       end
 
       def sync_to_gui(var_name, val)
@@ -349,6 +362,15 @@ module Echoes
         Win32::UpdateWindow.call(@hwnd)
         Win32::SetFocus.call(@hwnd)
 
+        # Create initial tab if none exists
+        gui_tabs = get_from_gui(:@tabs)
+        if gui_tabs.empty?
+          @gui.create_tab
+          @tabs = get_from_gui(:@tabs)
+        else
+          @tabs = gui_tabs.dup
+        end
+
         # 3. Message Loop & I/O 同期ポーリング
         @running = true
         pm_remove = 1
@@ -375,6 +397,7 @@ module Echoes
               if pane.alive?
                 output = pane.read_available_output
                 if output && !output.empty?
+                  win32_log("Received: #{output.inspect}")
                   pane.parser.feed(output)
                   if @hwnd && !@hwnd.null?
                     Win32::InvalidateRect.call(@hwnd, nil, 1)
@@ -384,7 +407,7 @@ module Echoes
               end
             end
           rescue => e
-            warn "echoes win32: I/O polling error: #{e.message}"
+            win32_log("I/O error: #{e.message}")
           end
 
           # C. CPU負荷低減と Ruby の GVL 解放のため、適度にスリープ
@@ -394,6 +417,7 @@ module Echoes
         # Cleanup
         delete_font_handles
         Win32::DeleteObject.call(bg_brush)
+        @log_file.close if @log_file
       end
 
       # Windows 特有の wire_screen_handlers
@@ -646,6 +670,20 @@ module Echoes
 
       def draw_pane_content(hdc, pane, px, py, pw, ph, is_active)
         screen = pane.screen
+
+        win32_log("draw_pane_content: @default_bg=#{(@default_bg || 0).to_i.to_s(16)}, px=#{px}, py=#{py}, pw=#{pw}, ph=#{ph}")
+
+        # Fill pane background
+        bg_brush = Win32::CreateSolidBrush.call(@default_bg || 0x000000)
+        win32_log("bg_brush=#{bg_brush.to_i.to_s(16)}")
+        if bg_brush && bg_brush != 0
+          bg_rect = Fiddle::Pointer.malloc(Win32::RECT_SIZE, Fiddle::RUBY_FREE)
+          bg_rect[0, Win32::RECT_SIZE] = [px, py, px + pw, py + ph].pack('l4')
+          result = Win32::FillRect.call(hdc, bg_rect, bg_brush)
+          win32_log("FillRect result=#{result}")
+          Win32::DeleteObject.call(bg_brush)
+        end
+
         scrollback = screen.scrollback
         visible_start = scrollback.size - pane.scroll_offset
         pane_rows = screen.rows
@@ -660,6 +698,11 @@ module Echoes
                   screen.grid[src - scrollback.size]
                 end
           next unless row
+
+          if r == 0 || r == pane_rows - 1
+            end_idx = [20, pane_cols - 1].min
+            win32_log("Row #{r}: #{row[0..end_idx].map(&:char).join.inspect}")
+          end
 
           c = 0
           while c < pane_cols
@@ -753,6 +796,11 @@ module Echoes
             cx = px + c * @cell_width
             wstr = Win32.to_wstring(run_str)
             wlen = wstr.bytesize / 2 - 1
+
+            if r < 3 && c == 0
+              win32_log("Drawing at (#{cx},#{y}): run_str=#{run_str.inspect}, wlen=#{wlen}, fg=0x#{fg_color&.to_i&.to_s(16)}, bg=0x#{bg_color&.to_i&.to_s(16)}, cell_width=#{@cell_width}")
+            end
+
             run_font = font_for_cell(cell)
             previous_font = Win32::SelectObject.call(hdc, run_font)
             begin

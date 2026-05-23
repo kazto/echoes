@@ -4,6 +4,8 @@
 
 **Goal:** `lib/echoes/gui.rb` (macOS) と `lib/echoes/gui_win32.rb` (Windows) をリファクタリングし、OS非依存の共通GUIコアと、委譲先となるOS固有の `MacWindow` / `Win32Window` クラスに完全に分離します。
 
+**Status:** ✅ COMPLETED - 2026-05-23
+
 **Architecture:** `Echoes::GUI` がタブ・ペイン状態、選択範囲、および検索マッチングなどの状態管理を担当し、実際のネイティブウィンドウ生成、OSメッセージループ、および描画処理は `GUI.window_class` としてロードされるプラットフォーム別コンポーネントに委譲（Delegate）します。両者は定められたAPI契約を通じて双方向に通知し合います。
 
 **Tech Stack:** Ruby (Fiddle, Thread, OS-native API wrappers)

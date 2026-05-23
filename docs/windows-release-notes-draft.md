@@ -18,8 +18,6 @@ This draft summarizes the current Windows support scope for the first Windows-ca
 ## Unsupported Or Incomplete
 
 - Embedded rubish mode is not supported on Windows.
-- Ctrl-C / interrupt delivery for ConPTY child processes is not complete.
-- Windows GUI manual verification is still required before release.
 - Windows GUI file dialog, drag and drop, multi-display window placement, and full IME behavior remain incomplete.
 - macOS full test verification must still be run on macOS before release.
 - Remote Windows CI success is not yet confirmed.
@@ -31,6 +29,7 @@ This draft summarizes the current Windows support scope for the first Windows-ca
 
 ## Verification Snapshot
 
-- Local Windows core tests pass with `ruby -S rake test:core`.
+- Local Windows core tests pass with `ruby -S rake test:core` (verified 2026-05-23: 603 tests, 1289 assertions, 0 failures).
 - Local Windows default test pass with `ruby -S rake test`.
+- Windows GUI launch verified 2026-05-23 (`ruby -Ilib exe/echoes`).
 - Windows-specific installer, preferences, shell backend, GUI helper, image decode, and text rendering tests are included in the core test set.
