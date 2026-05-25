@@ -93,6 +93,7 @@ module Echoes
         case msg
         when Win32::WM_DESTROY
           @running = false
+          close_tabs
           delete_font_handles
           if @active_border_brush
             Win32::DeleteObject.call(@active_border_brush)
@@ -257,19 +258,7 @@ module Echoes
         when Win32::WM_SIZE
           width = lparam.to_i & 0xFFFF
           height = (lparam.to_i >> 16) & 0xFFFF
-
-          if @cell_width && @cell_width > 0 && @cell_height && @cell_height > 0
-            cols = (width / @cell_width).to_i
-            rows = (height / @cell_height).to_i
-
-            if cols > 0 && rows > 0 && (cols != @cols || rows != @rows)
-              @cols = cols
-              @rows = rows
-              if (tab = current_tab)
-                tab.resize(rows, cols)
-              end
-            end
-          end
+          handle_window_resize_pixels(width, height)
           0
 
         else
@@ -356,6 +345,7 @@ module Echoes
       end
 
       # Cleanup
+      close_tabs
       delete_font_handles
       Win32::DeleteObject.call(bg_brush)
     end
@@ -397,6 +387,27 @@ module Echoes
         Win32::InvalidateRect.call(@hwnd, nil, 1)
         Win32::UpdateWindow.call(@hwnd)
       end
+      true
+    end
+
+    private def close_tabs
+      tabs = @tabs || []
+      @tabs = []
+      tabs.each { |tab| tab.close rescue nil }
+      @active_tab = 0
+    end
+
+    private def handle_window_resize_pixels(width, height)
+      return false unless @cell_width && @cell_width > 0 && @cell_height && @cell_height > 0
+
+      cols = (width / @cell_width).to_i
+      rows = (height / @cell_height).to_i
+      return false if cols <= 0 || rows <= 0
+      return false if cols == @cols && rows == @rows
+
+      @cols = cols
+      @rows = rows
+      current_tab&.resize(rows, cols)
       true
     end
 

@@ -18,6 +18,16 @@ if Echoes::Platform.windows?
         active_pane.screen
       end
     end
+    StubResizableTab = Struct.new(:resizes) do
+      def resize(rows, cols)
+        resizes << [rows, cols]
+      end
+    end
+    StubClosableTab = Struct.new(:closed) do
+      def close
+        self.closed += 1
+      end
+    end
     StubCopyMode = Struct.new(:selection_start, :selection_end) do
       def active = true
       def selecting? = true
@@ -125,6 +135,58 @@ if Echoes::Platform.windows?
       assert_false gui.send(:poll_active_pane_output)
       assert_equal ["unread"], dead_pane.outputs
       assert_equal [], parser.fed
+    end
+
+    test "Windows resize updates rows and cols from pixel dimensions" do
+      tab = StubResizableTab.new([])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@tabs, [tab])
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      gui.instance_variable_set(:@cols, 80)
+      gui.instance_variable_set(:@rows, 24)
+
+      assert_true gui.send(:handle_window_resize_pixels, 1_000, 600)
+
+      assert_equal 125, gui.instance_variable_get(:@cols)
+      assert_equal 37, gui.instance_variable_get(:@rows)
+      assert_equal [[37, 125]], tab.resizes
+    end
+
+    test "Windows resize ignores missing cell metrics and unchanged sizes" do
+      tab = StubResizableTab.new([])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@tabs, [tab])
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@cols, 80)
+      gui.instance_variable_set(:@rows, 24)
+
+      assert_false gui.send(:handle_window_resize_pixels, 640, 384)
+
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      assert_false gui.send(:handle_window_resize_pixels, 640, 384)
+
+      assert_equal 80, gui.instance_variable_get(:@cols)
+      assert_equal 24, gui.instance_variable_get(:@rows)
+      assert_equal [], tab.resizes
+    end
+
+    test "Windows GUI cleanup closes tabs once and clears the tab list" do
+      tab1 = StubClosableTab.new(0)
+      tab2 = StubClosableTab.new(0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@tabs, [tab1, tab2])
+      gui.instance_variable_set(:@active_tab, 1)
+
+      gui.send(:close_tabs)
+      gui.send(:close_tabs)
+
+      assert_equal 1, tab1.closed
+      assert_equal 1, tab2.closed
+      assert_equal [], gui.instance_variable_get(:@tabs)
+      assert_equal 0, gui.instance_variable_get(:@active_tab)
     end
 
     test "Windows copy writes selected text to the clipboard" do

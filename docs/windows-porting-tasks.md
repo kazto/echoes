@@ -25,6 +25,56 @@
   - 2026-05-22 追加調査: ConPTY backend で `cmd.exe` の初期出力、入力 echo、コマンド出力を pipe 経由で取得できることを確認。stdout/stderr を pseudoconsole output pipe に明示し、stdin は ConPTY に任せる必要がある。
   - 2026-05-25 追加調査: `cmd.exe` が初回入力時に返す `ESC[?25l ESC[2J ESC[m ESC[H` 系の repaint prefix と、Backspace 時に返す home erase repaint を backend で補正し、`d` 入力後と `dir` 入力後の Backspace が parser 上でプロンプト行を壊さないことを確認。
 
+## 引き継ぎ用残タスクまとめ
+
+更新日: 2026-05-25
+
+直近で優先する作業:
+
+- [ ] 現在の未コミット差分をレビューしてコミットする。
+  - 対象: `lib/echoes/gui_win32.rb`, `test/echoes/gui_test.rb`, `docs/windows-porting-tasks.md`。
+  - 内容: Win32 GUI の tab cleanup、resize helper、pane background clear などのテスト化とドキュメント更新。
+  - 未追跡の `claude-zai.bat` はこの作業では触っていない。
+- [ ] `feature/windows` の未 push commits を push する。
+  - 2026-05-25 時点で `origin/feature/windows` より ahead。最新状態は `git status --short --branch` と `git log --oneline origin/feature/windows..HEAD` で確認する。
+- [ ] Windows GUI を手動起動して、最小操作を確認する。
+  - 起動直後に `cmd.exe` banner / prompt が表示される。
+  - `d` を 1 文字入力しても prompt が消えない。
+  - `dir` 入力後、Backspace 3 回で prompt 末尾へ戻り、カーソルが行頭へ飛ばない。
+  - Enter でコマンド出力が表示される。
+  - resize 後も表示が崩れず、終了後に `cmd.exe` / ConPTY process が残らない。
+- [ ] Windows GUI 手動確認の結果を `Phase 8` と `Phase 12` に反映する。
+  - 問題なければ `最小 GUI で Windows shell が起動し、入力と出力ができることを確認する` と `Windows GUI 手動確認を実施する` を完了にする。
+  - 問題が残る場合は、再現手順とスクリーンショットをこの節へ追記する。
+
+リリース前に必要な確認:
+
+- [ ] Windows CI の実行結果を確認する。
+  - CI job は追加済みだが、リモート実行結果は未確認。
+  - Windows では Bundler を避ける暫定構成なので、CI の Ruby version と dependency install が現状に合っているか確認する。
+- [ ] macOS 側のフルテストを実行する。
+  - 少なくとも `bundle exec rake test` または既存 macOS CI と同等のコマンドで、AppKit GUI / PTY 既存挙動が壊れていないことを確認する。
+  - `Pane` backend 抽象化後の macOS `pane_test`, `tab_test`, GUI 関連テストの通過を明記する。
+- [ ] README / `docs/windows-porting-status.md` / リリースノート草案を最終状態に合わせる。
+  - Windows で対応済みの範囲: 通常 shell, ConPTY, 最小 Win32 GUI, clipboard, resize, image rendering。
+  - 未対応または制限あり: embedded rubish mode, Ctrl-C interruption, IME の完全対応, drag and drop, file dialog, notification, Unicode fallback font。
+
+後続の実装タスク:
+
+- [ ] Ctrl-C / command interruption の Windows 仕様を決める。
+  - `"\x03"` input pipe write と `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, process_id)` は、実行中 child process の中断には不十分だった。
+  - 候補: ConPTY child process tree の制御方法を再調査する、job object / process group / helper process を検討する、初期リリースでは制限事項として明記する。
+- [ ] Unicode fallback font を実装する。
+  - 現在は GDI font family に依存している。CJK / emoji / symbols の fallback が必要。
+  - 候補: DirectWrite へ寄せる、GDI font linking を調査する、当面は推奨フォントをドキュメント化する。
+- [ ] IME、drag and drop、file dialog、multi-display、notification の対応順を決める。
+  - IME は composition 表示の最小実装があるが、確定文字列・候補 UI・日本語入力の実機確認が必要。
+  - drag and drop / file dialog / notification は Windows GUI では未整理。
+- [ ] GUI backend 設計整理を進める。
+  - `lib/echoes/gui.rb` の責務分類、OS 非依存 terminal orchestration の切り出し、AppKit backend と Win32 backend の境界整理が未完了。
+- [ ] Embedded Rubish Mode の Windows 対応方針を再検討する。
+  - 初期 Windows 対応では対象外。対象にする場合は helper process の pty / process control / history / cwd 通知を設計する。
+
 ## Phase 0: 作業前確認
 
 - [ ] `bundle exec rake test` を macOS で実行し、現行ベースラインを確認する。
@@ -181,6 +231,7 @@
 
 - [x] Windows window / event loop を実装する。
   - `CreateWindowExW` と `PeekMessageW` ベースの non-blocking message loop を実装済み。
+  - `WM_DESTROY` / run loop 終了時に tabs を close し、ConPTY / shell process を残さない cleanup を追加済み。
 - [x] セルグリッドの描画を実装する。
   - GDI `TextOutW` で screen grid を描画する。
   - 各 pane 描画前に default background で pane 全体をクリアし、行が短くなった場合の残像を避ける。
@@ -191,6 +242,7 @@
   - Win32 special key mapping を `windows_key_sequence` に切り出し、Backspace が `DEL(0x7F)` として送られることを含めてテストで固定済み。
 - [x] resize イベントを `Pane#resize` に渡す。
   - `WM_SIZE` から rows / cols を再計算して active tab を resize する。
+  - pixel size から cell rows / cols への変換を `handle_window_resize_pixels` に切り出し、cell metrics 未確定時と同一サイズ時に no-op になることをテスト済み。
 - [x] timer / repaint loop を実装する。
   - message loop 内で shell output を polling し、出力時に `InvalidateRect` / `UpdateWindow` する。
   - active pane output polling を `poll_active_pane_output` に切り出し、parser feed / empty output / inactive pane の挙動をテストで固定済み。
@@ -258,6 +310,8 @@
   - Win32 key mapping テスト追加後: 604 tests, 1298 assertions, 8 omissions。
   - Win32 output polling テスト追加後: 606 tests, 1305 assertions, 8 omissions。
   - Win32 pane background clear テスト追加後: 607 tests, 1306 assertions, 8 omissions。
+  - Win32 GUI tab cleanup テスト追加後: 608 tests, 1310 assertions, 8 omissions。
+  - Win32 resize helper テスト追加後: 610 tests, 1319 assertions, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - 2026-05-25: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 12 tests, 21 assertions, 0 failures。
