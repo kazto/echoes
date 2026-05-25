@@ -28,6 +28,7 @@
   - 2026-05-25 追加調査: ConPTY Ctrl-C / child process cleanup の詳細検証（後述）。
   - 2026-05-25 追加調査: Windows GUI 手動 smoke を実施。起動、`d` 入力、`dir` 入力後の Backspace、Enter 後の出力、resize 後の表示維持、終了後 cleanup を確認。resize 時に ConPTY が返す full-screen repaint を backend で破棄する補正を追加。`ruby -S rake test:core`: 611 tests, 1320 assertions, 0 failures, 8 omissions。
   - 2026-05-25 追加調査: `CreateToolhelp32Snapshot` ベースの process tree cleanup を追加。`ConPTY#kill` で root `cmd.exe` の子孫を深い順に `TerminateProcess` してから root を終了する。marker 付き `ruby -e "sleep 60"` を `cmd.exe` 配下で起動し、`ConPTY#kill` 後に `Win32_Process` で残存しないことを確認。
+  - 2026-05-25 追加調査: Windows GUI の GDI font fallback を追加。`GetGlyphIndicesW` で base font に glyph がない文字を検出し、`Yu Gothic UI` / `Meiryo` / `Segoe UI Emoji` / `Segoe UI Symbol` / `MS Gothic` へ run 単位で切り替える。emoji は GDI が glyph を報告しない場合でも `Segoe UI Emoji` を優先する。
 
 ## 引き継ぎ用残タスクまとめ
 
@@ -59,7 +60,7 @@
   - `Pane` backend 抽象化後の macOS `pane_test`, `tab_test`, GUI 関連テストの通過を明記する。
 - [ ] README / `docs/windows-porting-status.md` / リリースノート草案を最終状態に合わせる。
   - Windows で対応済みの範囲: 通常 shell, ConPTY, 最小 Win32 GUI, clipboard, resize, image rendering。
-  - 未対応または制限あり: embedded rubish mode, Ctrl-C interruption, IME の完全対応, drag and drop, file dialog, notification, Unicode fallback font。
+  - 未対応または制限あり: embedded rubish mode, Ctrl-C interruption, IME の完全対応, drag and drop, file dialog, notification, color emoji / complex shaping。
 
 後続の実装タスク:
 
@@ -75,9 +76,10 @@
     - Ctrl-C での実行中コマンド中断は、初期リリースでは制限事項として明記する。
     - child process cleanup は `CreateToolhelp32Snapshot` でプロセスツリーを列挙して `TerminateProcess` する helper を追加済み。
     - 将来的に ConPTY 以外の仕組み (WinPTY helper 等) を検討する。
-- [ ] Unicode fallback font を実装する。
-  - 現在は GDI font family に依存している。CJK / emoji / symbols の fallback が必要。
-  - 候補: DirectWrite へ寄せる、GDI font linking を調査する、当面は推奨フォントをドキュメント化する。
+- [x] Unicode fallback font を実装する。
+  - GDI renderer のまま、`GetGlyphIndicesW` で glyph 不在を検出して fallback font run に分割する。
+  - CJK は `Yu Gothic UI` / `Meiryo` / `MS Gothic`、emoji / symbols は `Segoe UI Emoji` / `Segoe UI Symbol` を優先する。
+  - 制限: color emoji / complex shaping は GDI 依存。完全対応が必要なら DirectWrite 移行を後続で検討する。
 - [ ] IME、drag and drop、file dialog、multi-display、notification の対応順を決める。
   - IME は composition 表示の最小実装があるが、確定文字列・候補 UI・日本語入力の実機確認が必要。
   - drag and drop / file dialog / notification は Windows GUI では未整理。
@@ -276,7 +278,9 @@
 - [x] iTerm2 images の Windows decode / render backend を追加する。
   - iTerm2 inline images は Kitty graphics と同じ GDI+ PNG decoder を使う。
   - render は Kitty graphics と同じ `screen.placements` / GDI blit 経路を使う。
-- [ ] Unicode fallback font の解決を実装する。
+- [x] Unicode fallback font の解決を実装する。
+  - `GetGlyphIndicesW` ベースで fallback font を選び、同じ text run 内でも font ごとに分割して `TextOutW` する。
+  - 実 GDI smoke で Consolas から CJK / emoji fallback font が選ばれることを確認済み。
 - [x] bold / italic / underline / strikethrough の描画差を確認する。
   - Windows GUI は GDI font を regular / bold / italic / bold-italic で切り替え、underline / strikethrough はセル幅に合わせて `FillRect` で描画する。
 - [x] OSC 66 proportional text の Windows 対応可否を判断する。
@@ -329,6 +333,7 @@
   - Win32 GUI tab cleanup テスト追加後: 608 tests, 1310 assertions, 8 omissions。
   - Win32 resize helper テスト追加後: 610 tests, 1319 assertions, 8 omissions。
   - ConPTY process tree cleanup テスト追加後: 612 tests, 1321 assertions, 0 failures, 8 omissions。
+  - Windows GUI font fallback テスト追加後: 615 tests, 1325 assertions, 0 failures, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - 2026-05-25: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 12 tests, 21 assertions, 0 failures。

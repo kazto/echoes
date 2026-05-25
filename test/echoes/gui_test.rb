@@ -242,6 +242,55 @@ if Echoes::Platform.windows?
       assert_equal 4, gui.send(:font_for_cell, StubCellStyle.new(true, true))
     end
 
+    test "Windows font fallback selects a candidate that has the glyph" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hfont, :base)
+      gui.instance_variable_set(:@font_fallback_candidates, ["Yu Gothic UI", "Segoe UI Emoji"])
+
+      created = []
+      gui.define_singleton_method(:create_font) do |family: nil, **_kwargs|
+        created << family
+        :"font:#{family}"
+      end
+      gui.define_singleton_method(:font_has_glyph?) do |font, char|
+        font == :"font:Segoe UI Emoji" && char == "😀"
+      end
+
+      assert_equal :"font:Segoe UI Emoji", gui.send(:font_for_text, :base, "😀")
+      assert_equal ["Yu Gothic UI", "Segoe UI Emoji"], created
+    end
+
+    test "Windows font fallback prefers emoji font when GDI cannot confirm emoji glyphs" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hfont, :base)
+      gui.instance_variable_set(:@font_fallback_candidates, ["Segoe UI Emoji"])
+
+      gui.define_singleton_method(:create_font) { |family: nil, **_kwargs| :"font:#{family}" }
+      gui.define_singleton_method(:font_has_glyph?) { |_font, _char| false }
+
+      assert_equal :"font:Segoe UI Emoji", gui.send(:font_for_text, :base, "😀")
+    end
+
+    test "Windows font fallback splits text runs by fallback font" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hfont, :base)
+      gui.instance_variable_set(:@font_fallback_candidates, ["Yu Gothic UI"])
+
+      gui.define_singleton_method(:create_font) { |family: nil, **_kwargs| :"font:#{family}" }
+      gui.define_singleton_method(:font_has_glyph?) do |font, char|
+        font == :base ? char.ascii_only? : char == "漢"
+      end
+
+      assert_equal(
+        [
+          ["A", :base],
+          ["漢", :"font:Yu Gothic UI"],
+          ["B", :base]
+        ],
+        gui.send(:font_runs_for_text, :base, "A漢B")
+      )
+    end
+
     test "Windows text decoration rects cover underline and strikethrough" do
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@cell_height, 16)

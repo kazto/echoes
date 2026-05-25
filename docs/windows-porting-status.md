@@ -8,7 +8,7 @@
 
 - Ruby gem 形式のターミナルエミュレータです。CLI 起点は `exe/echoes` で、GUI 起動時だけ OS 別 GUI backend を lazy load します。
 - GUI は macOS AppKit 実装が中心で、Windows GUI はまだ最小実装段階です。
-- Windows GUI の初期方針は Pure Ruby を維持するため Fiddle + Win32 API です。Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard まで実装済みです。clipboard は `CF_UNICODETEXT` helper 経由で copy / paste と OSC 52 に対応済みです。text drawing は regular / bold / italic / bold-italic font selection、underline / strikethrough、OSC 66 multicell text 描画に対応済みです。
+- Windows GUI の初期方針は Pure Ruby を維持するため Fiddle + Win32 API です。Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard まで実装済みです。clipboard は `CF_UNICODETEXT` helper 経由で copy / paste と OSC 52 に対応済みです。text drawing は regular / bold / italic / bold-italic font selection、underline / strikethrough、OSC 66 multicell text 描画、GDI font fallback に対応済みです。
 - Windows の PNG decode は GDI+ を Fiddle で呼ぶ Pure Ruby 実装です。Kitty graphics と iTerm2 inline images は同じ GDI+ decoder で RGBA buffer へ変換し、Win32 GUI は GDI `StretchDIBits` で `screen.placements` を描画します。
 - `require "echoes"` は Windows でも AppKit / CoreGraphics をロードしないように分離済みです。
 - 通常ペインは `ShellBackend` 経由で shell process を扱います。macOS では既存 PTY backend、Windows では ConPTY backend を選べます。
@@ -88,14 +88,14 @@ Windows では初期対応として `~/bin/echoes.bat` を生成します。こ�
 
 Kitty graphics / iTerm2 images は macOS では AppKit / CoreGraphics の PNG decode と CGImage 描画に依存しています。Windows では GDI+ decoder で PNG / raw RGB / raw RGBA を RGBA buffer に変換し、GUI 上では GDI `StretchDIBits` で描画します。基本的な text style は GDI font selection と `FillRect` decoration で描画します。OSC 66 / OSC 7772 multicell text は GDI font と `TextOutW` で描画し、family 指定時の予約幅は `GetTextExtentPoint32W` で測ります。GUI の高度なフォント計測はまだ AppKit の `NSFont` / `NSString#sizeWithAttributes:` / CoreText fallback に依存します。
 
-Windows 側では以下の代替が必要です。
+Windows 側では以下を実装済み、または後続対応とします。
 
 - PNG decode: GDI+ decoder 実装済み
 - RGBA buffer の描画: GDI `StretchDIBits` 実装済み
-- 等幅セル幅・行高の計測
-- Unicode fallback font の解決
+- 等幅セル幅・行高の計測: 実装済み
+- Unicode fallback font の解決: `GetGlyphIndicesW` で base font に glyph がない文字を検出し、`Yu Gothic UI` / `Meiryo` / `Segoe UI Emoji` / `Segoe UI Symbol` / `MS Gothic` へ run 単位で切り替える。color emoji / complex shaping は GDI 依存の制限あり。
 - underline / strikethrough / bold / italic: 実装済み
-- ligature の扱い
+- ligature の扱い: 後続対応
 
 Clipboard は Win32 `CF_UNICODETEXT` 経由の helper を追加済みです。
 

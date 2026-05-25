@@ -50,6 +50,14 @@ module Echoes
       @bold_hfont = nil
       @italic_hfont = nil
       @bold_italic_hfont = nil
+      @fallback_font_cache = {}
+      @font_fallback_candidates = [
+        "Yu Gothic UI",
+        "Meiryo",
+        "Segoe UI Emoji",
+        "Segoe UI Symbol",
+        "MS Gothic"
+      ]
       @cell_width = nil
       @cell_height = nil
       @running = false
@@ -431,6 +439,8 @@ module Echoes
         Win32::DeleteObject.call(handle)
         instance_variable_set(ivar, nil)
       end
+      (@fallback_font_cache || {}).each_value { |handle| Win32::DeleteObject.call(handle) if handle }
+      @fallback_font_cache = {}
     end
 
     private def font_for_cell(cell)
@@ -442,6 +452,77 @@ module Echoes
         @italic_hfont || @hfont
       else
         @hfont
+      end
+    end
+
+    private def font_for_text(base_font, text, bold: false, italic: false)
+      return base_font if text.to_s.each_char.all? { |char| font_has_glyph?(base_font, char) }
+
+      (@font_fallback_candidates || []).each do |family|
+        font = fallback_font(family, bold: bold, italic: italic)
+        return font if text.to_s.each_char.all? { |char| font_has_glyph?(font, char) }
+      end
+
+      if text.to_s.each_char.any? { |char| emoji_codepoint?(char.ord) }
+        return fallback_font("Segoe UI Emoji", bold: bold, italic: italic)
+      end
+
+      base_font
+    end
+
+    private def emoji_codepoint?(codepoint)
+      (0x1F000..0x1FAFF).cover?(codepoint) ||
+        (0x2600..0x27BF).cover?(codepoint)
+    end
+
+    private def font_runs_for_text(base_font, text, bold: false, italic: false)
+      runs = []
+      text.to_s.each_char do |char|
+        font = font_for_text(base_font, char, bold: bold, italic: italic)
+        if runs.last && runs.last[1] == font
+          runs.last[0] << char
+        else
+          runs << [char.dup, font]
+        end
+      end
+      runs
+    end
+
+    private def fallback_font(family, bold: false, italic: false)
+      @fallback_font_cache ||= {}
+      key = [family, bold, italic]
+      @fallback_font_cache[key] ||= create_font(
+        family: family,
+        weight: bold ? 700 : 400,
+        italic: italic
+      )
+    end
+
+    private def font_has_glyph?(font, char)
+      return true unless Win32::GetGlyphIndicesW
+
+      hdc = Win32::GetDC.call(@hwnd || 0)
+      return true if !hdc || Win32.null_pointer?(hdc)
+
+      previous_font = Win32::SelectObject.call(hdc, font)
+      begin
+        wstr = Win32.to_wstring(char)
+        glyph_count = wstr.bytesize / 2 - 1
+        glyph = Fiddle::Pointer.malloc(glyph_count * 2, Fiddle::RUBY_FREE)
+        glyph[0, glyph_count * 2] = "\x00" * (glyph_count * 2)
+        result = Win32::GetGlyphIndicesW.call(
+          hdc,
+          Fiddle::Pointer[wstr],
+          glyph_count,
+          glyph,
+          Win32::GGI_MARK_NONEXISTING_GLYPHS
+        )
+        result != -1 &&
+          result != 0xFFFFFFFF &&
+          glyph[0, glyph_count * 2].unpack('v*').all? { |index| index != 0xFFFF }
+      ensure
+        Win32::SelectObject.call(hdc, previous_font) if previous_font
+        Win32::ReleaseDC.call(@hwnd || 0, hdc)
       end
     end
 
@@ -701,14 +782,18 @@ module Echoes
           Win32::SetBkColor.call(hdc, bg_color)
 
           cx = px + c * @cell_width
-          wstr = Win32.to_wstring(run_str)
-          wlen = wstr.bytesize / 2 - 1
           run_font = font_for_cell(cell)
-          previous_font = Win32::SelectObject.call(hdc, run_font)
-          begin
-            Win32::TextOutW.call(hdc, cx, y, Fiddle::Pointer[wstr], wlen)
-          ensure
-            Win32::SelectObject.call(hdc, previous_font)
+          run_x = cx
+          font_runs_for_text(run_font, run_str, bold: cell.bold, italic: cell.italic).each do |text, font|
+            wstr = Win32.to_wstring(text)
+            wlen = wstr.bytesize / 2 - 1
+            previous_font = Win32::SelectObject.call(hdc, font)
+            begin
+              Win32::TextOutW.call(hdc, run_x, y, Fiddle::Pointer[wstr], wlen)
+            ensure
+              Win32::SelectObject.call(hdc, previous_font)
+            end
+            run_x += text.length * @cell_width
           end
           draw_text_decorations(
             hdc,
