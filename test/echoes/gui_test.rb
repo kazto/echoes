@@ -47,6 +47,13 @@ if Echoes::Platform.windows?
       def cursor_style = 0
     end
     StubDrawPane = Struct.new(:screen, :scroll_offset)
+    StubHandlerScreen = Struct.new(:clipboard_handler, :glyph_measurer, :cell_pixel_width,
+                                   :cell_pixel_height, :notification_handler)
+    StubHandlerPane = Struct.new(:screen) do
+      def refresh_pty_pixel_size
+        @refreshed = true
+      end
+    end
 
     test "embedded mode raises a clear unsupported error" do
       old = ENV["ECHOES_EMBED"]
@@ -328,6 +335,32 @@ if Echoes::Platform.windows?
       gui.send(:draw_pane_content, :hdc, pane, 10, 20, 80, 48, true)
 
       assert_equal [[10, 20, 90, 68, 0x112233]], fills
+    end
+
+    test "Windows screen handlers wire OSC notifications" do
+      screen = StubHandlerScreen.new
+      pane = StubHandlerPane.new(screen)
+      gui = Echoes::GUI.allocate
+      delivered = []
+      gui.define_singleton_method(:post_notification) do |source_pane, title, message|
+        delivered << [source_pane, title, message]
+      end
+
+      gui.send(:wire_screen_handlers, pane)
+      screen.notification_handler.call("Build", "Done")
+
+      assert_equal [[pane, "Build", "Done"]], delivered
+    end
+
+    test "Windows notification title falls back to window title" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hwnd, :hwnd)
+      titles = []
+      gui.define_singleton_method(:set_window_title) { |title| titles << title }
+
+      gui.send(:post_notification, nil, nil, "Build complete")
+
+      assert_equal ["Echoes - Build complete"], titles
     end
 
     private

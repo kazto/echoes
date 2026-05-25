@@ -610,9 +610,24 @@ module Echoes
     private def wire_screen_handlers(pane)
       pane.screen.clipboard_handler = method(:handle_clipboard)
       pane.screen.glyph_measurer = method(:measure_glyph)
+      pane.screen.notification_handler = ->(title, message) { post_notification(pane, title, message) }
       pane.screen.cell_pixel_width = @cell_width if @cell_width
       pane.screen.cell_pixel_height = @cell_height if @cell_height
       pane.refresh_pty_pixel_size if @cell_width && @cell_height
+    end
+
+    private def post_notification(pane, title, message)
+      effective_title = (title && !title.empty? && title) || pane&.title || Echoes.config.window_title
+      text = message.to_s.empty? ? effective_title.to_s : "#{effective_title} - #{message}"
+      set_window_title(text)
+    rescue StandardError => e
+      warn "echoes notification: #{e.class}: #{e.message}"
+    end
+
+    private def set_window_title(title)
+      return if !@hwnd || Win32.null_pointer?(@hwnd)
+
+      Win32::SetWindowTextW.call(@hwnd, Fiddle::Pointer[Win32.to_wstring(title.to_s)])
     end
 
     private def handle_clipboard(action, text)

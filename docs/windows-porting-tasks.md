@@ -29,6 +29,7 @@
   - 2026-05-25 追加調査: Windows GUI 手動 smoke を実施。起動、`d` 入力、`dir` 入力後の Backspace、Enter 後の出力、resize 後の表示維持、終了後 cleanup を確認。resize 時に ConPTY が返す full-screen repaint を backend で破棄する補正を追加。`ruby -S rake test:core`: 611 tests, 1320 assertions, 0 failures, 8 omissions。
   - 2026-05-25 追加調査: `CreateToolhelp32Snapshot` ベースの process tree cleanup を追加。`ConPTY#kill` で root `cmd.exe` の子孫を深い順に `TerminateProcess` してから root を終了する。marker 付き `ruby -e "sleep 60"` を `cmd.exe` 配下で起動し、`ConPTY#kill` 後に `Win32_Process` で残存しないことを確認。
   - 2026-05-25 追加調査: Windows GUI の GDI font fallback を追加。`GetGlyphIndicesW` で base font に glyph がない文字を検出し、`Yu Gothic UI` / `Meiryo` / `Segoe UI Emoji` / `Segoe UI Symbol` / `MS Gothic` へ run 単位で切り替える。emoji は GDI が glyph を報告しない場合でも `Segoe UI Emoji` を優先する。
+  - 2026-05-25 追加調査: Windows GUI の OSC 9 / OSC 777 notification handler を追加。初期実装では native toast ではなく、通知 title / message を Win32 window title に反映する最小境界とする。
 
 ## 引き継ぎ用残タスクまとめ
 
@@ -60,7 +61,7 @@
   - `Pane` backend 抽象化後の macOS `pane_test`, `tab_test`, GUI 関連テストの通過を明記する。
 - [ ] README / `docs/windows-porting-status.md` / リリースノート草案を最終状態に合わせる。
   - Windows で対応済みの範囲: 通常 shell, ConPTY, 最小 Win32 GUI, clipboard, resize, image rendering。
-  - 未対応または制限あり: embedded rubish mode, Ctrl-C interruption, IME の完全対応, drag and drop, file dialog, notification, color emoji / complex shaping。
+  - 未対応または制限あり: embedded rubish mode, Ctrl-C interruption, IME の完全対応, drag and drop, file dialog, native toast notification, color emoji / complex shaping。
 
 後続の実装タスク:
 
@@ -80,9 +81,9 @@
   - GDI renderer のまま、`GetGlyphIndicesW` で glyph 不在を検出して fallback font run に分割する。
   - CJK は `Yu Gothic UI` / `Meiryo` / `MS Gothic`、emoji / symbols は `Segoe UI Emoji` / `Segoe UI Symbol` を優先する。
   - 制限: color emoji / complex shaping は GDI 依存。完全対応が必要なら DirectWrite 移行を後続で検討する。
-- [ ] IME、drag and drop、file dialog、multi-display、notification の対応順を決める。
+- [ ] IME、drag and drop、file dialog、multi-display、native toast notification の対応順を決める。
   - IME は composition 表示の最小実装があるが、確定文字列・候補 UI・日本語入力の実機確認が必要。
-  - drag and drop / file dialog / notification は Windows GUI では未整理。
+  - drag and drop / file dialog / native toast notification は Windows GUI では未整理。OSC notification は window title 反映の最小境界のみ実装済み。
 - [ ] GUI backend 設計整理を進める。
   - `lib/echoes/gui.rb` の責務分類、OS 非依存 terminal orchestration の切り出し、AppKit backend と Win32 backend の境界整理が未完了。
 - [ ] Embedded Rubish Mode の Windows 対応方針を再検討する。
@@ -243,7 +244,7 @@
   - timer
   - clipboard
   - 初期最小機能は Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard とする。
-- [ ] IME、drag and drop、file dialog、multi-display、notification の対応順を決める。
+- [ ] IME、drag and drop、file dialog、multi-display、native toast notification の対応順を決める。
 
 ## Phase 8: Windows GUI 最小実装
 
@@ -266,6 +267,9 @@
   - active pane output polling を `poll_active_pane_output` に切り出し、parser feed / empty output / inactive pane の挙動をテストで固定済み。
 - [x] clipboard copy / paste を実装する。
   - `CF_UNICODETEXT` を使う Win32 clipboard helper を追加し、OSC 52 と Ctrl+Shift+C/V 経路から利用する。
+- [x] OSC notification の最小境界を実装する。
+  - OSC 9 / OSC 777 notification request を screen handler 経由で受け、Win32 window title に `title - message` として反映する。
+  - native toast notification は後続対応に回す。
 - [ ] 最小 GUI で Windows shell が起動し、入力と出力ができることを確認する。
 
 ## Phase 9: 画像・フォント拡張
@@ -334,6 +338,7 @@
   - Win32 resize helper テスト追加後: 610 tests, 1319 assertions, 8 omissions。
   - ConPTY process tree cleanup テスト追加後: 612 tests, 1321 assertions, 0 failures, 8 omissions。
   - Windows GUI font fallback テスト追加後: 615 tests, 1325 assertions, 0 failures, 8 omissions。
+  - Windows GUI notification handler テスト追加後: 617 tests, 1327 assertions, 0 failures, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - 2026-05-25: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 12 tests, 21 assertions, 0 failures。
