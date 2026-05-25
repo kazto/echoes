@@ -591,6 +591,8 @@ module Echoes
       pane_rows = screen.rows
       pane_cols = screen.cols
 
+      clear_pane_background(hdc, px, py, pw, ph)
+
       pane_rows.times do |r|
         y = py + r * @cell_height
         src = visible_start + r
@@ -763,6 +765,10 @@ module Echoes
           end
         end
       end
+    end
+
+    private def clear_pane_background(hdc, px, py, pw, ph)
+      fill_rect_color(hdc, px, py, px + pw, py + ph, @default_bg)
     end
 
     private def draw_multicell_text(hdc, cell, x, y, fg_color, bg_color)

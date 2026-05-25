@@ -183,6 +183,7 @@
   - `CreateWindowExW` と `PeekMessageW` ベースの non-blocking message loop を実装済み。
 - [x] セルグリッドの描画を実装する。
   - GDI `TextOutW` で screen grid を描画する。
+  - 各 pane 描画前に default background で pane 全体をクリアし、行が短くなった場合の残像を避ける。
 - [x] 等幅フォントの測定を実装する。
   - `CreateFontW` と `GetTextExtentPoint32W` で初期 cell metrics を取得する。
 - [x] 基本キー入力を `Pane` に渡す。
@@ -256,6 +257,7 @@
   - ConPTY repaint / Backspace 補正後: 602 tests, 1282 assertions, 8 omissions。
   - Win32 key mapping テスト追加後: 604 tests, 1298 assertions, 8 omissions。
   - Win32 output polling テスト追加後: 606 tests, 1305 assertions, 8 omissions。
+  - Win32 pane background clear テスト追加後: 607 tests, 1306 assertions, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - 2026-05-25: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 12 tests, 21 assertions, 0 failures。

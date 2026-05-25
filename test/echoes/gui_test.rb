@@ -32,6 +32,11 @@ if Echoes::Platform.windows?
       def alive? = alive
       def read_available_output = outputs.shift
     end
+    StubCursor = Struct.new(:row, :col, :visible)
+    StubDrawScreen = Struct.new(:scrollback, :rows, :cols, :grid, :placements, :cursor) do
+      def cursor_style = 0
+    end
+    StubDrawPane = Struct.new(:screen, :scroll_offset)
 
     test "embedded mode raises a clear unsupported error" do
       old = ENV["ECHOES_EMBED"]
@@ -194,6 +199,24 @@ if Echoes::Platform.windows?
                    gui.send(:aligned_text_origin, 10, 10, 60, 24, 30, 8, halign: 2, valign: 2)
       assert_equal [40, 26],
                    gui.send(:aligned_text_origin, 10, 10, 60, 24, 30, 8, halign: 1, valign: 1)
+    end
+
+    test "Windows pane drawing clears the pane background before cell drawing" do
+      screen = StubDrawScreen.new([], 0, 0, [], [], StubCursor.new(0, 0, false))
+      pane = StubDrawPane.new(screen, 0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@default_bg, 0x112233)
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+
+      fills = []
+      gui.define_singleton_method(:fill_rect_color) do |_hdc, left, top, right, bottom, color|
+        fills << [left, top, right, bottom, color]
+      end
+
+      gui.send(:draw_pane_content, :hdc, pane, 10, 20, 80, 48, true)
+
+      assert_equal [[10, 20, 90, 68, 0x112233]], fills
     end
 
     private
