@@ -24,6 +24,8 @@
   - macOS フルテストはこの作業環境では未実行。
   - 2026-05-22 追加調査: ConPTY backend で `cmd.exe` の初期出力、入力 echo、コマンド出力を pipe 経由で取得できることを確認。stdout/stderr を pseudoconsole output pipe に明示し、stdin は ConPTY に任せる必要がある。
   - 2026-05-25 追加調査: `cmd.exe` が初回入力時に返す `ESC[?25l ESC[2J ESC[m ESC[H` 系の repaint prefix と、Backspace 時に返す home erase repaint を backend で補正し、`d` 入力後と `dir` 入力後の Backspace が parser 上でプロンプト行を壊さないことを確認。
+  - 2026-05-25 追加調査: Win32 GUI resize helper / tab cleanup helper の切り出しとテスト化。`ruby -S rake test:core`: 610 tests, 1319 assertions, 0 failures, 8 omissions。
+  - 2026-05-25 追加調査: ConPTY Ctrl-C / child process cleanup の詳細検証（後述）。
 
 ## 引き継ぎ用残タスクまとめ
 
@@ -31,10 +33,8 @@
 
 直近で優先する作業:
 
-- [ ] 現在の未コミット差分をレビューしてコミットする。
-  - 対象: `lib/echoes/gui_win32.rb`, `test/echoes/gui_test.rb`, `docs/windows-porting-tasks.md`。
-  - 内容: Win32 GUI の tab cleanup、resize helper、pane background clear などのテスト化とドキュメント更新。
-  - 未追跡の `claude-zai.bat` はこの作業では触っていない。
+- [x] 現在の未コミット差分をレビューしてコミットする。
+  - commit `e75b39a`: Win32 GUI resize helper / tab cleanup helper の切り出しとテスト化。
 - [ ] `feature/windows` の未 push commits を push する。
   - 2026-05-25 時点で `origin/feature/windows` より ahead。最新状態は `git status --short --branch` と `git log --oneline origin/feature/windows..HEAD` で確認する。
 - [ ] Windows GUI を手動起動して、最小操作を確認する。
@@ -62,8 +62,20 @@
 後続の実装タスク:
 
 - [ ] Ctrl-C / command interruption の Windows 仕様を決める。
-  - `"\x03"` input pipe write と `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, process_id)` は、実行中 child process の中断には不十分だった。
-  - 候補: ConPTY child process tree の制御方法を再調査する、job object / process group / helper process を検討する、初期リリースでは制限事項として明記する。
+  - 2026-05-25 詳細検証結果:
+    - **`\x03` via ConPTY pipe**: `ping -t` や `trap(:INT)` 付き Ruby を中断できない。cmd.exe 直下でも直接 ConPTY child でも同様。プロンプト入力のキャンセル（行内 `^C`）としては動作する。
+    - **`AttachConsole(pid)` + `GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)`**: API は成功を返すが、ConPTY 内の子プロセスには届かない。
+    - **`AttachConsole(pid)` + `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)`**: 同上。API 成功だが効果なし。
+    - **`AttachConsole(pid)` + `WriteConsoleInputW` via `CONIN$`**: `CONIN$` を `GENERIC_WRITE` で開いて `KEY_EVENT` (Ctrl+C) を書き込むと API は成功 (ret=1, written=1) するが、ConPTY の signal dispatch が発火せず子プロセスは中断されない。
+    - **`Job Object` + `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`**: Job 作成・プロセス割り当ては成功するが、Job handle close 後も cmd.exe の孫プロセス (ruby.exe) が残る。ConPTY child だけが Job に属し、孫プロセスは含まれないため。
+  - **結論**: ConPTY は console の Ctrl-C signal dispatch mechanism を pseudo console 内で再現しない。これは Windows API の根本的な制限。
+  - **影響**: 以下の 2 点が未解決。
+    1. **Ctrl-C での実行中コマンド中断**: 初期リリースでは制限事項として明記する。
+    2. **child process cleanup**: `TerminateProcess` で `cmd.exe` を kill しても、`cmd.exe` が起動した子プロセス (ruby.exe, ping.exe 等) が残る。GUI 終了後もプロセスが残る問題がある。
+  - 候補:
+    - 初期リリースでは Ctrl-C 割り込みを制限事項として明記する。
+    - child process cleanup は `CreateToolhelp32Snapshot` でプロセスツリーを列挙して `TerminateProcess` する helper を追加する。
+    - 将来的に ConPTY 以外の仕組み (WinPTY helper 等) を検討する。
 - [ ] Unicode fallback font を実装する。
   - 現在は GDI font family に依存している。CJK / emoji / symbols の fallback が必要。
   - 候補: DirectWrite へ寄せる、GDI font linking を調査する、当面は推奨フォントをドキュメント化する。
@@ -163,7 +175,11 @@
   - `ConPTY#close` を追加し、process / thread / pseudoconsole / pipe handles をゼロクリアまで含めて解放するように更新済み。
 - [ ] Ctrl-C 相当の配送方法を検証する。
   - `"\x03"` の input pipe write では、実行中の `ping` や Ruby child process を中断できないことを確認。
-  - `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, process_id)` は API 上 true を返すが、ConPTY 内の実行中 child process までは中断できなかったため未採用。
+  - `GenerateConsoleCtrlEvent(CTRL_C_EVENT / CTRL_BREAK_EVENT)` は API 上 true を返すが、ConPTY 内の child process までは届かない。
+  - `WriteConsoleInputW` で `CONIN$` に `KEY_EVENT Ctrl+C` を書き込んでも、ConPTY の signal dispatch は発火しない。
+  - `Job Object` + `KILL_ON_JOB_CLOSE` は ConPTY 直接 child だけに適用され、孫プロセスは対象外。
+  - **根本原因**: ConPTY は console の Ctrl-C signal dispatch mechanism を pseudo console 内で再現しない。Windows API の制限。
+  - **残課題**: `TerminateProcess` で `cmd.exe` を kill しても孫プロセスが残るため、プロセスツリー cleanup が必要。
 - [x] 最小の Windows 手動確認手順を記録する。
   - `ruby "-Ilib" -r echoes/conpty -e "c=Echoes::ConPTY.new; c.spawn('cmd.exe', cols: 80, rows: 24); sleep 1; out=+''; out << c.read_available_output(4096).to_s; c.write(%Q(echo echoes-conpty\r\n)); sleep 1; out << c.read_available_output(4096).to_s; c.write(%Q(exit\r\n)); sleep 0.5; out << c.read_available_output(4096).to_s; c.kill; puts out.inspect; exit(out.include?('echoes-conpty') ? 0 : 1)"`
 
