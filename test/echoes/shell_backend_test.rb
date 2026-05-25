@@ -2,6 +2,7 @@
 
 require "test_helper"
 require "echoes/shell_backend"
+require "echoes/conpty"
 
 class Echoes::ShellBackendTest < Test::Unit::TestCase
   test "selects Windows popen backend on Windows" do
@@ -158,6 +159,24 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     assert_equal("\nd", backend.read_available_output(16_384))
   ensure
     backend&.close
+  end
+
+  test "Windows process tree terminator kills descendants deepest first" do
+    killed = []
+    terminator = Echoes::WindowsProcessTreeTerminator.new(
+      processes: [
+        {pid: 10, parent_pid: 1},
+        {pid: 20, parent_pid: 10},
+        {pid: 30, parent_pid: 20},
+        {pid: 40, parent_pid: 10},
+        {pid: 50, parent_pid: 99}
+      ],
+      terminate_process: ->(pid) { killed << pid }
+    )
+
+    terminator.kill_descendants(10)
+
+    assert_equal([30, 20, 40], killed)
   end
 
   test "Windows ConPTY backend talks to cmd.exe" do

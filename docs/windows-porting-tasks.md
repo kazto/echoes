@@ -27,6 +27,7 @@
   - 2026-05-25 追加調査: Win32 GUI resize helper / tab cleanup helper の切り出しとテスト化。`ruby -S rake test:core`: 610 tests, 1319 assertions, 0 failures, 8 omissions。
   - 2026-05-25 追加調査: ConPTY Ctrl-C / child process cleanup の詳細検証（後述）。
   - 2026-05-25 追加調査: Windows GUI 手動 smoke を実施。起動、`d` 入力、`dir` 入力後の Backspace、Enter 後の出力、resize 後の表示維持、終了後 cleanup を確認。resize 時に ConPTY が返す full-screen repaint を backend で破棄する補正を追加。`ruby -S rake test:core`: 611 tests, 1320 assertions, 0 failures, 8 omissions。
+  - 2026-05-25 追加調査: `CreateToolhelp32Snapshot` ベースの process tree cleanup を追加。`ConPTY#kill` で root `cmd.exe` の子孫を深い順に `TerminateProcess` してから root を終了する。marker 付き `ruby -e "sleep 60"` を `cmd.exe` 配下で起動し、`ConPTY#kill` 後に `Win32_Process` で残存しないことを確認。
 
 ## 引き継ぎ用残タスクまとめ
 
@@ -62,7 +63,7 @@
 
 後続の実装タスク:
 
-- [ ] Ctrl-C / command interruption の Windows 仕様を決める。
+- [x] Ctrl-C / command interruption の Windows 仕様を決める。
   - 2026-05-25 詳細検証結果:
     - **`\x03` via ConPTY pipe**: `ping -t` や `trap(:INT)` 付き Ruby を中断できない。cmd.exe 直下でも直接 ConPTY child でも同様。プロンプト入力のキャンセル（行内 `^C`）としては動作する。
     - **`AttachConsole(pid)` + `GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)`**: API は成功を返すが、ConPTY 内の子プロセスには届かない。
@@ -70,12 +71,9 @@
     - **`AttachConsole(pid)` + `WriteConsoleInputW` via `CONIN$`**: `CONIN$` を `GENERIC_WRITE` で開いて `KEY_EVENT` (Ctrl+C) を書き込むと API は成功 (ret=1, written=1) するが、ConPTY の signal dispatch が発火せず子プロセスは中断されない。
     - **`Job Object` + `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`**: Job 作成・プロセス割り当ては成功するが、Job handle close 後も cmd.exe の孫プロセス (ruby.exe) が残る。ConPTY child だけが Job に属し、孫プロセスは含まれないため。
   - **結論**: ConPTY は console の Ctrl-C signal dispatch mechanism を pseudo console 内で再現しない。これは Windows API の根本的な制限。
-  - **影響**: 以下の 2 点が未解決。
-    1. **Ctrl-C での実行中コマンド中断**: 初期リリースでは制限事項として明記する。
-    2. **child process cleanup**: `TerminateProcess` で `cmd.exe` を kill しても、`cmd.exe` が起動した子プロセス (ruby.exe, ping.exe 等) が残る。GUI 終了後もプロセスが残る問題がある。
-  - 候補:
-    - 初期リリースでは Ctrl-C 割り込みを制限事項として明記する。
-    - child process cleanup は `CreateToolhelp32Snapshot` でプロセスツリーを列挙して `TerminateProcess` する helper を追加する。
+  - **決定**:
+    - Ctrl-C での実行中コマンド中断は、初期リリースでは制限事項として明記する。
+    - child process cleanup は `CreateToolhelp32Snapshot` でプロセスツリーを列挙して `TerminateProcess` する helper を追加済み。
     - 将来的に ConPTY 以外の仕組み (WinPTY helper 等) を検討する。
 - [ ] Unicode fallback font を実装する。
   - 現在は GDI font family に依存している。CJK / emoji / symbols の fallback が必要。
@@ -174,13 +172,13 @@
   - `ConPTY#resize(100, 30)` 後に `cmd.exe` の `mode con` で 100 桁 / 30 行が反映されることを確認済み。
 - [x] close 時に pipe / process / pseudoconsole handle を解放する。
   - `ConPTY#close` を追加し、process / thread / pseudoconsole / pipe handles をゼロクリアまで含めて解放するように更新済み。
-- [ ] Ctrl-C 相当の配送方法を検証する。
+- [x] Ctrl-C 相当の配送方法を検証する。
   - `"\x03"` の input pipe write では、実行中の `ping` や Ruby child process を中断できないことを確認。
   - `GenerateConsoleCtrlEvent(CTRL_C_EVENT / CTRL_BREAK_EVENT)` は API 上 true を返すが、ConPTY 内の child process までは届かない。
   - `WriteConsoleInputW` で `CONIN$` に `KEY_EVENT Ctrl+C` を書き込んでも、ConPTY の signal dispatch は発火しない。
   - `Job Object` + `KILL_ON_JOB_CLOSE` は ConPTY 直接 child だけに適用され、孫プロセスは対象外。
   - **根本原因**: ConPTY は console の Ctrl-C signal dispatch mechanism を pseudo console 内で再現しない。Windows API の制限。
-  - **残課題**: `TerminateProcess` で `cmd.exe` を kill しても孫プロセスが残るため、プロセスツリー cleanup が必要。
+  - **対応**: `ConPTY#kill` で `CreateToolhelp32Snapshot` から root PID の子孫を列挙し、深い順に `TerminateProcess` してから root `cmd.exe` を終了する。
 - [x] 最小の Windows 手動確認手順を記録する。
   - `ruby "-Ilib" -r echoes/conpty -e "c=Echoes::ConPTY.new; c.spawn('cmd.exe', cols: 80, rows: 24); sleep 1; out=+''; out << c.read_available_output(4096).to_s; c.write(%Q(echo echoes-conpty\r\n)); sleep 1; out << c.read_available_output(4096).to_s; c.write(%Q(exit\r\n)); sleep 0.5; out << c.read_available_output(4096).to_s; c.kill; puts out.inspect; exit(out.include?('echoes-conpty') ? 0 : 1)"`
 
@@ -200,6 +198,7 @@
 - [x] Windows backend 用の最小統合テストを追加する。
   - `WindowsConPTYBackend` で `cmd.exe` の read/write と explicit env を確認する Windows 限定テストを追加済み。
   - `cmd.exe` の初回入力 repaint prefix 除去、Backspace 時の home erase repaint 補正、ConPTY 出力の LF 正規化テストを追加済み。
+  - ConPTY process tree cleanup の単体テストと、marker 付き `ruby -e "sleep 60"` を使った残存確認 smoke を追加確認済み。
 
 ## Phase 6: 設定と Preferences
 
@@ -329,9 +328,11 @@
   - Win32 pane background clear テスト追加後: 607 tests, 1306 assertions, 8 omissions。
   - Win32 GUI tab cleanup テスト追加後: 608 tests, 1310 assertions, 8 omissions。
   - Win32 resize helper テスト追加後: 610 tests, 1319 assertions, 8 omissions。
+  - ConPTY process tree cleanup テスト追加後: 612 tests, 1321 assertions, 0 failures, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - 2026-05-25: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 12 tests, 21 assertions, 0 failures。
+  - ConPTY process tree cleanup テスト追加後: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 14 tests, 23 assertions, 0 failures。
   - `pane_test.rb`, `tab_test.rb` も ConPTY backend 統合後に通過済み。
 - [ ] Windows GUI 手動確認を実施する。
 - [x] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。

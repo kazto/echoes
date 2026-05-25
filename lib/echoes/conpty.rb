@@ -42,6 +42,10 @@ module Echoes
     SetHandleInformation = new_func('SetHandleInformation', [P, U, U], I)
     GetExitCodeProcess   = new_func('GetExitCodeProcess', [P, P], I)
     TerminateProcess     = new_func('TerminateProcess', [P, U], I)
+    OpenProcess          = new_func('OpenProcess', [U, I, U], P)
+    CreateToolhelp32Snapshot = new_func('CreateToolhelp32Snapshot', [U, U], P)
+    Process32FirstW      = new_func('Process32FirstW', [P, P], I)
+    Process32NextW       = new_func('Process32NextW', [P, P], I)
     ReadFile             = new_func('ReadFile', [P, P, U, P, P], I)
     WriteFile            = new_func('WriteFile', [P, P, U, P, P], I)
     PeekNamedPipe        = new_func('PeekNamedPipe', [P, P, U, P, P, P], I)
@@ -56,6 +60,9 @@ module Echoes
     STARTF_USESTDHANDLES               = 0x00000100
     HANDLE_FLAG_INHERIT                = 0x00000001
     STILL_ACTIVE                        = 259
+    TH32CS_SNAPPROCESS                  = 0x00000002
+    PROCESS_TERMINATE                   = 0x0001
+    INVALID_HANDLE_VALUE                = Fiddle::SIZEOF_VOIDP == 8 ? 0xFFFFFFFFFFFFFFFF : 0xFFFFFFFF
 
     # Size of COORD: {short X, short Y} (4 bytes total)
     def self.make_coord(cols, rows)
@@ -64,13 +71,14 @@ module Echoes
 
     attr_reader :h_pc, :h_process, :h_process_id, :h_thread, :pipe_in_w, :pipe_out_r
 
-    def initialize
+    def initialize(process_tree_terminator: nil)
       @h_pc = 0
       @h_process = 0
       @h_process_id = 0
       @h_thread = 0
       @pipe_in_w = 0
       @pipe_out_r = 0
+      @process_tree_terminator = process_tree_terminator || WindowsProcessTreeTerminator.new
     end
 
     # Spawns the specified shell process (e.g. powershell.exe) under a new Pseudo Console
@@ -253,6 +261,7 @@ module Echoes
     end
 
     def kill
+      @process_tree_terminator.kill_descendants(@h_process_id) if @h_process_id && @h_process_id != 0
       TerminateProcess.call(@h_process, 0) if @h_process && @h_process != 0
       close_handles
     end
@@ -297,6 +306,80 @@ module Echoes
       buffer = Fiddle::Pointer.malloc(data.bytesize, Fiddle::RUBY_FREE)
       buffer[0, data.bytesize] = data
       buffer
+    end
+  end
+
+  class WindowsProcessTreeTerminator
+    PROCESSENTRY32W_SIZE = Fiddle::SIZEOF_VOIDP == 8 ? 568 : 556
+    PROCESSENTRY_PID_OFFSET = 8
+    PROCESSENTRY_PARENT_PID_OFFSET = Fiddle::SIZEOF_VOIDP == 8 ? 32 : 24
+
+    def initialize(processes: nil, terminate_process: nil)
+      @processes = processes
+      @terminate_process = terminate_process
+    end
+
+    def kill_descendants(root_pid)
+      descendants_for(root_pid).each do |process|
+        terminate(process[:pid])
+      end
+    end
+
+    private
+
+    def descendants_for(root_pid)
+      all = process_list
+      by_parent = all.group_by { |process| process[:parent_pid] }
+      indexed = []
+      visit = lambda do |pid, depth|
+        by_parent.fetch(pid, []).each do |child|
+          indexed << [child, depth]
+          visit.call(child[:pid], depth + 1)
+        end
+      end
+      visit.call(root_pid.to_i, 1)
+      indexed.sort_by.with_index { |(_process, depth), index| [-depth, index] }.map(&:first)
+    end
+
+    def process_list
+      return @processes if @processes
+
+      snapshot = ConPTY::CreateToolhelp32Snapshot.call(ConPTY::TH32CS_SNAPPROCESS, 0)
+      return [] if !snapshot || snapshot == 0 || snapshot == ConPTY::INVALID_HANDLE_VALUE
+
+      begin
+        entry = Fiddle::Pointer.malloc(PROCESSENTRY32W_SIZE, Fiddle::RUBY_FREE)
+        entry[0, PROCESSENTRY32W_SIZE] = "\x00" * PROCESSENTRY32W_SIZE
+        entry[0, 4] = [PROCESSENTRY32W_SIZE].pack('L')
+        processes = []
+        ok = ConPTY::Process32FirstW.call(snapshot, entry)
+        while ok != 0
+          processes << {
+            pid: entry[PROCESSENTRY_PID_OFFSET, 4].unpack1('L'),
+            parent_pid: entry[PROCESSENTRY_PARENT_PID_OFFSET, 4].unpack1('L')
+          }
+          ok = ConPTY::Process32NextW.call(snapshot, entry)
+        end
+        processes
+      ensure
+        ConPTY::CloseHandle.call(snapshot)
+      end
+    end
+
+    def terminate(pid)
+      if @terminate_process
+        @terminate_process.call(pid)
+        return
+      end
+
+      handle = ConPTY::OpenProcess.call(ConPTY::PROCESS_TERMINATE, 0, pid)
+      return if !handle || handle == 0
+
+      begin
+        ConPTY::TerminateProcess.call(handle, 0)
+      ensure
+        ConPTY::CloseHandle.call(handle)
+      end
     end
   end
 end
