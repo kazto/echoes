@@ -113,6 +113,34 @@ if Echoes::Platform.windows?
       assert_nil gui.send(:windows_key_sequence, 0x41)
     end
 
+    test "Windows IME composition updates marked text when composition string is present" do
+      gui = Echoes::GUI.allocate
+      gui.define_singleton_method(:read_ime_composition_string) do |hwnd, flag|
+        [hwnd, flag] == [:hwnd, Echoes::Win32::GCS_COMPSTR] ? "かな" : nil
+      end
+
+      assert_true gui.send(:update_ime_composition, :hwnd, Echoes::Win32::GCS_COMPSTR)
+      assert_equal "かな", gui.instance_variable_get(:@marked_text)
+    end
+
+    test "Windows IME composition clears marked text when composition string is empty" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@marked_text, "かな")
+      gui.define_singleton_method(:read_ime_composition_string) { |_hwnd, _flag| "" }
+
+      assert_true gui.send(:update_ime_composition, :hwnd, Echoes::Win32::GCS_COMPSTR)
+      assert_nil gui.instance_variable_get(:@marked_text)
+    end
+
+    test "Windows IME composition ignores updates without composition string flag" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@marked_text, "かな")
+      gui.define_singleton_method(:read_ime_composition_string) { |_hwnd, _flag| flunk("should not read IME composition") }
+
+      assert_false gui.send(:update_ime_composition, :hwnd, 0)
+      assert_equal "かな", gui.instance_variable_get(:@marked_text)
+    end
+
     test "Windows I/O polling feeds active pane output to its parser" do
       parser = StubParser.new([])
       pane = StubPollingPane.new(true, ["hello"], parser)
@@ -335,6 +363,31 @@ if Echoes::Platform.windows?
       gui.send(:draw_pane_content, :hdc, pane, 10, 20, 80, 48, true)
 
       assert_equal [[10, 20, 90, 68, 0x112233]], fills
+    end
+
+    test "Windows IME marked text draws with fallback font runs" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      gui.instance_variable_set(:@hfont, :base)
+      gui.instance_variable_set(:@marked_text, "A漢")
+
+      runs = []
+      gui.define_singleton_method(:font_runs_for_text) do |base_font, text, **_kwargs|
+        runs << [base_font, text]
+        [["A", :base], ["漢", :fallback]]
+      end
+
+      drawn = []
+      gui.define_singleton_method(:draw_text_run) do |_hdc, x, y, text, font|
+        drawn << [x, y, text, font]
+      end
+      gui.define_singleton_method(:draw_ime_underline) { |_hdc, _x, _y, _width, _height| }
+
+      gui.send(:draw_ime_marked_text, :hdc, 10, 20, "A漢", 16)
+
+      assert_equal [[:base, "A漢"]], runs
+      assert_equal [[10, 20, "A", :base], [18, 20, "漢", :fallback]], drawn
     end
 
     test "Windows screen handlers wire OSC notifications" do

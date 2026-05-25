@@ -209,20 +209,7 @@ module Echoes
           0
 
         when Win32::WM_IME_COMPOSITION
-          if (lparam.to_i & Win32::GCS_COMPSTR) != 0
-            himc = Win32::ImmGetContext.call(hwnd)
-            if himc && himc.to_i != 0
-              len = Win32::ImmGetCompositionStringW.call(himc, Win32::GCS_COMPSTR, nil, 0)
-              if len > 0
-                buf = Fiddle::Pointer.malloc(len + 2, Fiddle::RUBY_FREE)
-                buf[0, len + 2] = "\x00" * (len + 2)
-                Win32::ImmGetCompositionStringW.call(himc, Win32::GCS_COMPSTR, buf, len)
-                @marked_text = buf.to_str(len).force_encoding('UTF-16LE').encode('UTF-8') rescue nil
-              else
-                @marked_text = nil
-              end
-              Win32::ImmReleaseContext.call(hwnd, himc)
-            end
+          if update_ime_composition(hwnd, lparam.to_i)
             Win32::InvalidateRect.call(hwnd, nil, 1)
           end
           0
@@ -380,6 +367,62 @@ module Echoes
       when 0x0D then "\r"    # VK_RETURN
       when 0x1B then "\e"    # VK_ESCAPE
       end
+    end
+
+    private def update_ime_composition(hwnd, lparam)
+      return false if (lparam.to_i & Win32::GCS_COMPSTR) == 0
+
+      text = read_ime_composition_string(hwnd, Win32::GCS_COMPSTR)
+      @marked_text = text && !text.empty? ? text : nil
+      true
+    end
+
+    private def read_ime_composition_string(hwnd, flag)
+      himc = Win32::ImmGetContext.call(hwnd)
+      return nil if !himc || himc.to_i == 0
+
+      begin
+        len = Win32::ImmGetCompositionStringW.call(himc, flag, nil, 0)
+        return nil if len <= 0
+
+        buf = Fiddle::Pointer.malloc(len + 2, Fiddle::RUBY_FREE)
+        buf[0, len + 2] = "\x00" * (len + 2)
+        Win32::ImmGetCompositionStringW.call(himc, flag, buf, len)
+        buf.to_str(len).force_encoding("UTF-16LE").encode("UTF-8")
+      ensure
+        Win32::ImmReleaseContext.call(hwnd, himc)
+      end
+    rescue Encoding::UndefinedConversionError, Encoding::InvalidByteSequenceError
+      nil
+    end
+
+    private def draw_text_run(hdc, x, y, text, font)
+      wstr = Win32.to_wstring(text)
+      wlen = wstr.bytesize / 2 - 1
+      previous_font = Win32::SelectObject.call(hdc, font)
+      begin
+        Win32::TextOutW.call(hdc, x, y, Fiddle::Pointer[wstr], wlen)
+      ensure
+        Win32::SelectObject.call(hdc, previous_font)
+      end
+    end
+
+    private def draw_ime_marked_text(hdc, x, y, text, height)
+      run_x = x
+      font_runs_for_text(@hfont, text).each do |run_text, font|
+        draw_text_run(hdc, run_x, y, run_text, font)
+        run_x += run_text.each_char.sum { |char| char.ord > 0x7F ? 2 : 1 } * @cell_width
+      end
+
+      marked_cells_width = text.each_char.sum { |char| char.ord > 0x7F ? 2 : 1 }
+      marked_px_width = marked_cells_width * @cell_width
+      draw_ime_underline(hdc, x, y, marked_px_width, height)
+    end
+
+    private def draw_ime_underline(hdc, x, y, width, height)
+      rect_ptr = Fiddle::Pointer.malloc(Win32::RECT_SIZE, Fiddle::RUBY_FREE)
+      rect_ptr[0, Win32::RECT_SIZE] = [x, y + height - 2, x + width, y + height - 1].pack('l4')
+      Win32::InvertRect.call(hdc, rect_ptr)
     end
 
     private def poll_active_pane_output
@@ -833,23 +876,12 @@ module Echoes
         mx = px + screen.cursor.col * @cell_width
         my = py + screen.cursor.row * @cell_height
 
-        marked_cells_width = @marked_text.each_char.sum { |ch| ch.ord > 0x7F ? 2 : 1 }
-        marked_px_width = marked_cells_width * @cell_width
-
         ime_bg = (130 << 16) | (65 << 8) | 30
         ime_fg = 0xFFFFFF
 
         Win32::SetTextColor.call(hdc, ime_fg)
         Win32::SetBkColor.call(hdc, ime_bg)
-
-        wstr = Win32.to_wstring(@marked_text)
-        wlen = wstr.bytesize / 2 - 1
-        Win32::TextOutW.call(hdc, mx, my, Fiddle::Pointer[wstr], wlen)
-
-        # アンダーライン（下線）の描画
-        rect_ptr = Fiddle::Pointer.malloc(Win32::RECT_SIZE, Fiddle::RUBY_FREE)
-        rect_ptr[0, Win32::RECT_SIZE] = [mx, my + @cell_height - 2, mx + marked_px_width, my + @cell_height - 1].pack('l4')
-        Win32::InvertRect.call(hdc, rect_ptr)
+        draw_ime_marked_text(hdc, mx, my, @marked_text, @cell_height)
       end
 
       # カーソルの描画

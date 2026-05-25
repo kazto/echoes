@@ -30,6 +30,8 @@
   - 2026-05-25 追加調査: `CreateToolhelp32Snapshot` ベースの process tree cleanup を追加。`ConPTY#kill` で root `cmd.exe` の子孫を深い順に `TerminateProcess` してから root を終了する。marker 付き `ruby -e "sleep 60"` を `cmd.exe` 配下で起動し、`ConPTY#kill` 後に `Win32_Process` で残存しないことを確認。
   - 2026-05-25 追加調査: Windows GUI の GDI font fallback を追加。`GetGlyphIndicesW` で base font に glyph がない文字を検出し、`Yu Gothic UI` / `Meiryo` / `Segoe UI Emoji` / `Segoe UI Symbol` / `MS Gothic` へ run 単位で切り替える。emoji は GDI が glyph を報告しない場合でも `Segoe UI Emoji` を優先する。
   - 2026-05-25 追加調査: Windows GUI の OSC 9 / OSC 777 notification handler を追加。初期実装では native toast ではなく、通知 title / message を Win32 window title に反映する最小境界とする。
+  - 2026-05-25 追加調査: Windows GUI の IME composition 更新処理を helper 化し、`GCS_COMPSTR` 有無、composition string 更新、空文字時の marked text clearing をテストで固定。
+  - 2026-05-25 追加調査: Windows GUI の IME marked text 描画を GDI font fallback 経路に接続。通常セル描画と同じ `font_runs_for_text` で日本語 composition 文字列を fallback font run に分割して描画する。
 
 ## 引き継ぎ用残タスクまとめ
 
@@ -82,7 +84,7 @@
   - CJK は `Yu Gothic UI` / `Meiryo` / `MS Gothic`、emoji / symbols は `Segoe UI Emoji` / `Segoe UI Symbol` を優先する。
   - 制限: color emoji / complex shaping は GDI 依存。完全対応が必要なら DirectWrite 移行を後続で検討する。
 - [ ] IME、drag and drop、file dialog、multi-display、native toast notification の対応順を決める。
-  - IME は composition 表示の最小実装があるが、確定文字列・候補 UI・日本語入力の実機確認が必要。
+  - IME は composition 表示の最小実装と composition string 更新 helper のテストがあるが、確定文字列・候補 UI・日本語入力の実機確認が必要。
   - drag and drop / file dialog / native toast notification は Windows GUI では未整理。OSC notification は window title 反映の最小境界のみ実装済み。
 - [ ] GUI backend 設計整理を進める。
   - `lib/echoes/gui.rb` の責務分類、OS 非依存 terminal orchestration の切り出し、AppKit backend と Win32 backend の境界整理が未完了。
@@ -270,6 +272,11 @@
 - [x] OSC notification の最小境界を実装する。
   - OSC 9 / OSC 777 notification request を screen handler 経由で受け、Win32 window title に `title - message` として反映する。
   - native toast notification は後続対応に回す。
+- [x] IME composition 更新処理をテスト可能にする。
+  - `WM_IME_COMPOSITION` から `update_ime_composition` helper に切り出し、`GCS_COMPSTR` がある場合だけ `ImmGetCompositionStringW` 由来の文字列で `@marked_text` を更新する。
+  - composition string が空なら `@marked_text` を clear する。
+- [x] IME marked text を fallback font で描画する。
+  - IME inline composition overlay も通常セル描画と同じ `font_runs_for_text` を使い、日本語など base font に glyph がない文字を fallback font で描画する。
 - [ ] 最小 GUI で Windows shell が起動し、入力と出力ができることを確認する。
 
 ## Phase 9: 画像・フォント拡張
@@ -339,6 +346,8 @@
   - ConPTY process tree cleanup テスト追加後: 612 tests, 1321 assertions, 0 failures, 8 omissions。
   - Windows GUI font fallback テスト追加後: 615 tests, 1325 assertions, 0 failures, 8 omissions。
   - Windows GUI notification handler テスト追加後: 617 tests, 1327 assertions, 0 failures, 8 omissions。
+  - Windows GUI IME composition helper テスト追加後: 620 tests, 1333 assertions, 0 failures, 8 omissions。
+  - Windows GUI IME marked text fallback 描画テスト追加後: 621 tests, 1335 assertions, 0 failures, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - 2026-05-25: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 12 tests, 21 assertions, 0 failures。
