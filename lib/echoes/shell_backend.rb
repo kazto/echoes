@@ -108,6 +108,7 @@ module Echoes
       output = @conpty.read_available_output(max)
       output = normalize_conpty_repaint(output)
       output = normalize_conpty_home_erase_repaint(output)
+      output = normalize_conpty_resize_repaint(output)
       normalize_output_newlines(output)
     end
 
@@ -157,6 +158,12 @@ module Echoes
       else
         output
       end
+    end
+
+    CMD_RESIZE_REPAINT = /\A\e\[\?25l\e\[8;\d+;\d+t\e\[H.*(?:\e\[K(?:\r?\n)?)+\e\[\d+;\d+H\e\[\?25h\z/m.freeze
+
+    def normalize_conpty_resize_repaint(output)
+      output.match?(CMD_RESIZE_REPAINT) ? "".b : output
     end
 
     def normalize_output_newlines(output)

@@ -26,6 +26,7 @@
   - 2026-05-25 追加調査: `cmd.exe` が初回入力時に返す `ESC[?25l ESC[2J ESC[m ESC[H` 系の repaint prefix と、Backspace 時に返す home erase repaint を backend で補正し、`d` 入力後と `dir` 入力後の Backspace が parser 上でプロンプト行を壊さないことを確認。
   - 2026-05-25 追加調査: Win32 GUI resize helper / tab cleanup helper の切り出しとテスト化。`ruby -S rake test:core`: 610 tests, 1319 assertions, 0 failures, 8 omissions。
   - 2026-05-25 追加調査: ConPTY Ctrl-C / child process cleanup の詳細検証（後述）。
+  - 2026-05-25 追加調査: Windows GUI 手動 smoke を実施。起動、`d` 入力、`dir` 入力後の Backspace、Enter 後の出力、resize 後の表示維持、終了後 cleanup を確認。resize 時に ConPTY が返す full-screen repaint を backend で破棄する補正を追加。`ruby -S rake test:core`: 611 tests, 1320 assertions, 0 failures, 8 omissions。
 
 ## 引き継ぎ用残タスクまとめ
 
@@ -35,17 +36,17 @@
 
 - [x] 現在の未コミット差分をレビューしてコミットする。
   - commit `e75b39a`: Win32 GUI resize helper / tab cleanup helper の切り出しとテスト化。
-- [ ] `feature/windows` の未 push commits を push する。
-  - 2026-05-25 時点で `origin/feature/windows` より ahead。最新状態は `git status --short --branch` と `git log --oneline origin/feature/windows..HEAD` で確認する。
-- [ ] Windows GUI を手動起動して、最小操作を確認する。
+- [x] `feature/windows` の未 push commits を push する。
+  - 2026-05-25 確認時点で `feature/windows...origin/feature/windows` は ahead なし。`git log --oneline origin/feature/windows..HEAD` も空。
+- [x] Windows GUI を手動起動して、最小操作を確認する。
   - 起動直後に `cmd.exe` banner / prompt が表示される。
   - `d` を 1 文字入力しても prompt が消えない。
   - `dir` 入力後、Backspace 3 回で prompt 末尾へ戻り、カーソルが行頭へ飛ばない。
   - Enter でコマンド出力が表示される。
   - resize 後も表示が崩れず、終了後に `cmd.exe` / ConPTY process が残らない。
-- [ ] Windows GUI 手動確認の結果を `Phase 8` と `Phase 12` に反映する。
-  - 問題なければ `最小 GUI で Windows shell が起動し、入力と出力ができることを確認する` と `Windows GUI 手動確認を実施する` を完了にする。
-  - 問題が残る場合は、再現手順とスクリーンショットをこの節へ追記する。
+- [x] Windows GUI 手動確認の結果を `Phase 8` と `Phase 12` に反映する。
+  - 確認コマンドは `ruby -Ilib exe\echoes`。自動化補助で Win32 window にキー入力し、`tmp/gui-smoke/*.png` のスクリーンショットで表示を確認。
+  - 初回 resize 確認で ConPTY resize repaint により画面が `dir` のみになる崩れを再現。`WindowsConPTYBackend` で `cmd.exe` resize repaint を破棄する補正を追加し、修正後に `dir` listing が維持されることを確認。
 
 リリース前に必要な確認:
 

@@ -127,6 +127,23 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     backend&.close
   end
 
+  test "ConPTY backend drops cmd resize repaint" do
+    repaint = "\e[?25l\e[8;40;120t\e[Hdir\e[K\r\n" \
+              "\e[K\r\n\e[K\r\n\e[K\e[2;1H\e[?25h"
+    conpty = FakeConPTY.new([repaint])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    assert_equal("", backend.read_available_output(16_384))
+  ensure
+    backend&.close
+  end
+
   test "ConPTY backend normalizes lone line feeds" do
     conpty = FakeConPTY.new(["a\nb\r\nc\r", "\nd"])
     backend = Echoes::WindowsConPTYBackend.new(
