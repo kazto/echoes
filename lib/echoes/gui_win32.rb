@@ -247,39 +247,7 @@ module Echoes
 
           escape_sequence = nil
           unless handled_key
-            case vk
-            when 0x26 # VK_UP
-              escape_sequence = "\e[A"
-            when 0x28 # VK_DOWN
-              escape_sequence = "\e[B"
-            when 0x27 # VK_RIGHT
-              escape_sequence = "\e[C"
-            when 0x25 # VK_LEFT
-              escape_sequence = "\e[D"
-            when 0x24 # VK_HOME
-              escape_sequence = "\e[H"
-            when 0x23 # VK_END
-              escape_sequence = "\e[F"
-            when 0x21 # VK_PRIOR (PgUp)
-              escape_sequence = "\e[5~"
-            when 0x22 # VK_NEXT (PgDn)
-              escape_sequence = "\e[6~"
-            when 0x2E # VK_DELETE
-              escape_sequence = "\e[3~"
-            when 0x08 # VK_BACK
-              escape_sequence = "\x7F"
-            when 0x09 # VK_TAB
-              escape_sequence = "\t"
-            when 0x0D # VK_RETURN
-              escape_sequence = "\r"
-            when 0x1B # VK_ESCAPE
-              escape_sequence = "\e"
-            end
-
-            if ctrl_pressed && vk >= 0x41 && vk <= 0x5A
-              escape_sequence = (vk - 0x40).chr
-            end
-
+            escape_sequence = windows_key_sequence(vk, ctrl_pressed: ctrl_pressed)
             if escape_sequence && (tab = current_tab) && (pane = tab.active_pane)
               pane.write_input(escape_sequence)
             end
@@ -378,18 +346,7 @@ module Echoes
 
         # B. 同期的にシェルプロセスの出力をポーリング
         begin
-          if (tab = current_tab) && (pane = tab.active_pane)
-            if pane.alive?
-              output = pane.read_available_output
-              if output && !output.empty?
-                pane.parser.feed(output)
-                if @hwnd && !@hwnd.null?
-                  Win32::InvalidateRect.call(@hwnd, nil, 1)
-                  Win32::UpdateWindow.call(@hwnd)
-                end
-              end
-            end
-          end
+          poll_active_pane_output
         rescue => e
           warn "echoes win32: I/O polling error: #{e.message}"
         end
@@ -404,6 +361,44 @@ module Echoes
     end
 
     private
+
+    private def windows_key_sequence(vk, ctrl_pressed: false)
+      if ctrl_pressed && vk >= 0x41 && vk <= 0x5A
+        return (vk - 0x40).chr
+      end
+
+      case vk
+      when 0x26 then "\e[A"  # VK_UP
+      when 0x28 then "\e[B"  # VK_DOWN
+      when 0x27 then "\e[C"  # VK_RIGHT
+      when 0x25 then "\e[D"  # VK_LEFT
+      when 0x24 then "\e[H"  # VK_HOME
+      when 0x23 then "\e[F"  # VK_END
+      when 0x21 then "\e[5~" # VK_PRIOR (PgUp)
+      when 0x22 then "\e[6~" # VK_NEXT (PgDn)
+      when 0x2E then "\e[3~" # VK_DELETE
+      when 0x08 then "\x7F"  # VK_BACK; cmd.exe expects DEL for normal erase
+      when 0x09 then "\t"    # VK_TAB
+      when 0x0D then "\r"    # VK_RETURN
+      when 0x1B then "\e"    # VK_ESCAPE
+      end
+    end
+
+    private def poll_active_pane_output
+      tab = current_tab
+      pane = tab&.active_pane
+      return false unless pane&.alive?
+
+      output = pane.read_available_output
+      return false if output.nil? || output.empty?
+
+      pane.parser.feed(output)
+      if @hwnd && !Win32.null_pointer?(@hwnd)
+        Win32::InvalidateRect.call(@hwnd, nil, 1)
+        Win32::UpdateWindow.call(@hwnd)
+      end
+      true
+    end
 
     private def create_font(weight: 400, italic: false, height: nil, family: nil)
       font_height = height || (@font_size ? @font_size.to_i : 16)

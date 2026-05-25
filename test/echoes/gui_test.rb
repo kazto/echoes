@@ -23,6 +23,15 @@ if Echoes::Platform.windows?
       def selecting? = true
     end
     StubCellStyle = Struct.new(:bold, :italic)
+    StubParser = Struct.new(:fed) do
+      def feed(output)
+        fed << output
+      end
+    end
+    StubPollingPane = Struct.new(:alive, :outputs, :parser) do
+      def alive? = alive
+      def read_available_output = outputs.shift
+    end
 
     test "embedded mode raises a clear unsupported error" do
       old = ENV["ECHOES_EMBED"]
@@ -54,6 +63,63 @@ if Echoes::Platform.windows?
       end
 
       assert_equal ["\e[200~", "hello", "\e[201~"], pane.writes
+    end
+
+    test "Windows key sequence maps navigation and editing keys" do
+      gui = Echoes::GUI.allocate
+
+      assert_equal "\e[A", gui.send(:windows_key_sequence, 0x26)
+      assert_equal "\e[B", gui.send(:windows_key_sequence, 0x28)
+      assert_equal "\e[C", gui.send(:windows_key_sequence, 0x27)
+      assert_equal "\e[D", gui.send(:windows_key_sequence, 0x25)
+      assert_equal "\e[H", gui.send(:windows_key_sequence, 0x24)
+      assert_equal "\e[F", gui.send(:windows_key_sequence, 0x23)
+      assert_equal "\e[5~", gui.send(:windows_key_sequence, 0x21)
+      assert_equal "\e[6~", gui.send(:windows_key_sequence, 0x22)
+      assert_equal "\e[3~", gui.send(:windows_key_sequence, 0x2E)
+      assert_equal "\x7F", gui.send(:windows_key_sequence, 0x08)
+      assert_equal "\t", gui.send(:windows_key_sequence, 0x09)
+      assert_equal "\r", gui.send(:windows_key_sequence, 0x0D)
+      assert_equal "\e", gui.send(:windows_key_sequence, 0x1B)
+    end
+
+    test "Windows key sequence maps control letters" do
+      gui = Echoes::GUI.allocate
+
+      assert_equal "\x03", gui.send(:windows_key_sequence, 0x43, ctrl_pressed: true)
+      assert_equal "\x1A", gui.send(:windows_key_sequence, 0x5A, ctrl_pressed: true)
+      assert_nil gui.send(:windows_key_sequence, 0x41)
+    end
+
+    test "Windows I/O polling feeds active pane output to its parser" do
+      parser = StubParser.new([])
+      pane = StubPollingPane.new(true, ["hello"], parser)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.instance_variable_set(:@hwnd, nil)
+
+      assert_true gui.send(:poll_active_pane_output)
+      assert_equal ["hello"], parser.fed
+    end
+
+    test "Windows I/O polling ignores empty output and inactive panes" do
+      parser = StubParser.new([])
+      empty_pane = StubPollingPane.new(true, [""], parser)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(empty_pane)])
+      gui.instance_variable_set(:@hwnd, nil)
+
+      assert_false gui.send(:poll_active_pane_output)
+      assert_equal [], parser.fed
+
+      dead_pane = StubPollingPane.new(false, ["unread"], parser)
+      gui.instance_variable_set(:@tabs, [StubTab.new(dead_pane)])
+
+      assert_false gui.send(:poll_active_pane_output)
+      assert_equal ["unread"], dead_pane.outputs
+      assert_equal [], parser.fed
     end
 
     test "Windows copy writes selected text to the clipboard" do

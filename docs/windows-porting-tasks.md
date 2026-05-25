@@ -187,10 +187,12 @@
   - `CreateFontW` と `GetTextExtentPoint32W` で初期 cell metrics を取得する。
 - [x] 基本キー入力を `Pane` に渡す。
   - `WM_CHAR` と `WM_KEYDOWN` の基本キー / 矢印 / Ctrl キー入力を `Pane#write_input` に渡す。
+  - Win32 special key mapping を `windows_key_sequence` に切り出し、Backspace が `DEL(0x7F)` として送られることを含めてテストで固定済み。
 - [x] resize イベントを `Pane#resize` に渡す。
   - `WM_SIZE` から rows / cols を再計算して active tab を resize する。
 - [x] timer / repaint loop を実装する。
   - message loop 内で shell output を polling し、出力時に `InvalidateRect` / `UpdateWindow` する。
+  - active pane output polling を `poll_active_pane_output` に切り出し、parser feed / empty output / inactive pane の挙動をテストで固定済み。
 - [x] clipboard copy / paste を実装する。
   - `CF_UNICODETEXT` を使う Win32 clipboard helper を追加し、OSC 52 と Ctrl+Shift+C/V 経路から利用する。
 - [ ] 最小 GUI で Windows shell が起動し、入力と出力ができることを確認する。
@@ -252,6 +254,8 @@
   - Windows GUI text style 描画追加後: 596 tests, 1271 assertions, 8 omissions。
   - Windows GUI OSC 66 multicell text 描画追加後: 597 tests, 1275 assertions, 8 omissions。
   - ConPTY repaint / Backspace 補正後: 602 tests, 1282 assertions, 8 omissions。
+  - Win32 key mapping テスト追加後: 604 tests, 1298 assertions, 8 omissions。
+  - Win32 output polling テスト追加後: 606 tests, 1305 assertions, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - 2026-05-25: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 12 tests, 21 assertions, 0 failures。
