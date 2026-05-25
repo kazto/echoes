@@ -95,6 +95,7 @@ module Echoes
       @conpty.spawn(command.is_a?(Array) ? command.join(" ") : command, cols: cols, rows: rows, env: env)
       @pid = @conpty.h_process_id.to_i
       @closed = false
+      @conpty_output_ended_with_cr = false
       @read_io = WindowsConPTYIO.new(self, readable: true, rows: rows, cols: cols)
       @write_io = WindowsConPTYIO.new(self, readable: false, rows: rows, cols: cols)
     end
@@ -104,7 +105,10 @@ module Echoes
     end
 
     def read_available_output(max)
-      @conpty.read_available_output(max)
+      output = @conpty.read_available_output(max)
+      output = normalize_conpty_repaint(output)
+      output = normalize_conpty_home_erase_repaint(output)
+      normalize_output_newlines(output)
     end
 
     def resize(rows, cols, px_width: 0, px_height: 0)
@@ -133,6 +137,40 @@ module Echoes
 
     def closed?
       @closed
+    end
+
+    private
+
+    CMD_INPUT_REPAINT_PREFIX = "\e[?25l\e[2J\e[m\e[H".b
+
+    def normalize_conpty_repaint(output)
+      return output unless output.start_with?(CMD_INPUT_REPAINT_PREFIX)
+
+      output.byteslice(CMD_INPUT_REPAINT_PREFIX.bytesize..) || "".b
+    end
+
+    CMD_INPUT_HOME_ERASE_REPAINT = /\A\e\[\?25l\e\[H( +)\e\[H\e\[\?25h\z/.freeze
+
+    def normalize_conpty_home_erase_repaint(output)
+      if (match = CMD_INPUT_HOME_ERASE_REPAINT.match(output))
+        "\b \b" * match[1].bytesize
+      else
+        output
+      end
+    end
+
+    def normalize_output_newlines(output)
+      normalized = +""
+      output.each_byte do |byte|
+        if byte == 10
+          normalized << "\r" unless @conpty_output_ended_with_cr
+          normalized << "\n"
+        else
+          normalized << byte
+        end
+        @conpty_output_ended_with_cr = byte == 13
+      end
+      normalized
     end
   end
 

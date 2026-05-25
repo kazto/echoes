@@ -8,7 +8,7 @@
 
 ## 進捗メモ
 
-更新日: 2026-05-22
+更新日: 2026-05-25
 
 - `feature/windows` ブランチで Phase 1 と Phase 2 の最小対応を進行中。
 - `Echoes::Platform` を追加し、OS 判定と default shell 判定を集約済み。
@@ -23,6 +23,7 @@
   - Windows ローカルでは `bundle exec rake ...` が `rubish` git checkout 不足で失敗する。Windows core CI は暫定的に Bundler を使わず `gem install rake test-unit` と `ruby -S rake test:core` で実行する。
   - macOS フルテストはこの作業環境では未実行。
   - 2026-05-22 追加調査: ConPTY backend で `cmd.exe` の初期出力、入力 echo、コマンド出力を pipe 経由で取得できることを確認。stdout/stderr を pseudoconsole output pipe に明示し、stdin は ConPTY に任せる必要がある。
+  - 2026-05-25 追加調査: `cmd.exe` が初回入力時に返す `ESC[?25l ESC[2J ESC[m ESC[H` 系の repaint prefix と、Backspace 時に返す home erase repaint を backend で補正し、`d` 入力後と `dir` 入力後の Backspace が parser 上でプロンプト行を壊さないことを確認。
 
 ## Phase 0: 作業前確認
 
@@ -131,6 +132,7 @@
 - [x] `Pane#close` が Windows backend でもプロセスを残さないことを確認する。
 - [x] Windows backend 用の最小統合テストを追加する。
   - `WindowsConPTYBackend` で `cmd.exe` の read/write と explicit env を確認する Windows 限定テストを追加済み。
+  - `cmd.exe` の初回入力 repaint prefix 除去、Backspace 時の home erase repaint 補正、ConPTY 出力の LF 正規化テストを追加済み。
 
 ## Phase 6: 設定と Preferences
 
@@ -249,8 +251,10 @@
   - Windows GUI image blit 追加後: 594 tests, 1265 assertions, 8 omissions。
   - Windows GUI text style 描画追加後: 596 tests, 1271 assertions, 8 omissions。
   - Windows GUI OSC 66 multicell text 描画追加後: 597 tests, 1275 assertions, 8 omissions。
+  - ConPTY repaint / Backspace 補正後: 602 tests, 1282 assertions, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
+  - 2026-05-25: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 12 tests, 21 assertions, 0 failures。
   - `pane_test.rb`, `tab_test.rb` も ConPTY backend 統合後に通過済み。
 - [ ] Windows GUI 手動確認を実施する。
 - [x] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。

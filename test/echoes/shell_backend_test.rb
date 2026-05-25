@@ -35,7 +35,7 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
   class FakeConPTY
     attr_reader :spawn_args, :resizes, :writes, :killed
 
-    def initialize
+    def initialize(outputs = [])
       @pipe_out_r = 111
       @pipe_in_w = 222
       @h_process = 333
@@ -43,6 +43,7 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
       @resizes = []
       @writes = []
       @killed = false
+      @outputs = outputs
     end
 
     attr_reader :pipe_out_r, :pipe_in_w, :h_process, :h_process_id
@@ -60,7 +61,7 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     end
 
     def read_available_output(max)
-      "x" * max
+      @outputs.empty? ? "x" * max : @outputs.shift
     end
 
     def alive?
@@ -94,6 +95,52 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
 
     backend.close
     assert_true(conpty.killed)
+  end
+
+  test "ConPTY backend strips cmd input repaint prefix" do
+    conpty = FakeConPTY.new(["\e[?25l\e[2J\e[m\e[Hd\e]0;cmd\a\e[?25h"])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    assert_equal("d\e]0;cmd\a\e[?25h", backend.read_available_output(16_384))
+  ensure
+    backend&.close
+  end
+
+  test "ConPTY backend translates cmd home erase repaint to backspace echo" do
+    conpty = FakeConPTY.new(["\e[?25l\e[H  \e[H\e[?25h"])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    assert_equal("\b \b\b \b", backend.read_available_output(16_384))
+  ensure
+    backend&.close
+  end
+
+  test "ConPTY backend normalizes lone line feeds" do
+    conpty = FakeConPTY.new(["a\nb\r\nc\r", "\nd"])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    assert_equal("a\r\nb\r\nc\r", backend.read_available_output(16_384))
+    assert_equal("\nd", backend.read_available_output(16_384))
+  ensure
+    backend&.close
   end
 
   test "Windows ConPTY backend talks to cmd.exe" do
@@ -137,13 +184,66 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     end
   end
 
+  test "Windows ConPTY backend keeps prompt when cmd echoes first input" do
+    omit("Windows only") unless TestHelper::IS_WINDOWS
+
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 10,
+      cols: 80
+    )
+    screen = Echoes::Screen.new(rows: 10, cols: 80)
+    parser = Echoes::Parser.new(screen)
+    begin
+      drain_backend_output(backend, until_match: /C:\\.*>/, parser: parser)
+
+      backend.write("d")
+      drain_backend_output(backend, until_match: /d/, parser: parser)
+
+      assert_match(/C:\\.*>d\z/, screen.to_text)
+    ensure
+      backend.close
+    end
+  end
+
+  test "Windows ConPTY backend edits echoed cmd input with delete backspace" do
+    omit("Windows only") unless TestHelper::IS_WINDOWS
+
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 10,
+      cols: 80
+    )
+    screen = Echoes::Screen.new(rows: 10, cols: 80)
+    parser = Echoes::Parser.new(screen)
+    begin
+      drain_backend_output(backend, until_match: /C:\\.*>/, parser: parser)
+
+      backend.write("dir")
+      drain_backend_output(backend, until_match: /r/, parser: parser)
+      assert_match(/C:\\.*>dir\z/, screen.to_text)
+
+      3.times do
+        backend.write("\x7F")
+        drain_backend_output(backend, until_match: /\b \b/, parser: parser)
+      end
+
+      assert_match(/C:\\.*>\z/, screen.to_text)
+    ensure
+      backend.close
+    end
+  end
+
   private
 
-  def drain_backend_output(backend, until_match:, attempts: 30)
+  def drain_backend_output(backend, until_match:, attempts: 30, parser: nil)
     output = +""
     attempts.times do
       chunk = backend.read_available_output(16_384)
       output << chunk if chunk && !chunk.empty?
+      parser&.feed(chunk) if chunk && !chunk.empty?
       break if output.match?(until_match)
       sleep 0.1
     end
