@@ -354,11 +354,30 @@ module Echoes
     end
 
     private def update_ime_composition(hwnd, lparam)
-      return false if (lparam.to_i & Win32::GCS_COMPSTR) == 0
+      handled = false
+
+      if (lparam.to_i & Win32::GCS_RESULTSTR) != 0
+        commit_ime_composition(hwnd)
+        @marked_text = nil
+        handled = true
+      end
+
+      return handled if (lparam.to_i & Win32::GCS_COMPSTR) == 0
 
       text = read_ime_composition_string(hwnd, Win32::GCS_COMPSTR)
       @marked_text = text && !text.empty? ? text : nil
       true
+    end
+
+    private def commit_ime_composition(hwnd)
+      result = read_ime_composition_string(hwnd, Win32::GCS_RESULTSTR)
+      return unless result && !result.empty?
+
+      if (tab = current_tab) && (pane = tab.active_pane)
+        write_pane_input(pane, result)
+      end
+    rescue Encoding::UndefinedConversionError, Encoding::InvalidByteSequenceError => e
+      warn "IME commit encoding error: #{e.message}"
     end
 
     private def read_ime_composition_string(hwnd, flag)
@@ -372,7 +391,12 @@ module Echoes
         buf = Fiddle::Pointer.malloc(len + 2, Fiddle::RUBY_FREE)
         buf[0, len + 2] = "\x00" * (len + 2)
         Win32::ImmGetCompositionStringW.call(himc, flag, buf, len)
-        buf.to_str(len).force_encoding("UTF-16LE").encode("UTF-8")
+
+        binary_data = buf.to_str(len)
+        binary_data.force_encoding("BINARY")
+
+        utf8_result = binary_data.dup.force_encoding("UTF-16LE").encode("UTF-8", invalid: :replace, undef: :replace)
+        utf8_result
       ensure
         Win32::ImmReleaseContext.call(hwnd, himc)
       end

@@ -120,6 +120,7 @@ module Echoes
 
     # IME Composition String Flags
     GCS_COMPSTR             = 0x0008
+    GCS_RESULTSTR           = 0x0800
 
     # Background modes
     TRANSPARENT        = 1

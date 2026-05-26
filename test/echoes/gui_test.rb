@@ -188,6 +188,51 @@ if Echoes::Platform.windows?
       assert_equal "かな", gui.instance_variable_get(:@marked_text)
     end
 
+    test "Windows IME composition commits result string when result flag is present" do
+      gui = Echoes::GUI.allocate
+      pane = StubInputPane.new(Echoes::Screen.new(rows: 2, cols: 10), [], 0, 0.0)
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.instance_variable_set(:@marked_text, "にほんご")
+      gui.define_singleton_method(:read_ime_composition_string) do |_hwnd, flag|
+        flag == Echoes::Win32::GCS_RESULTSTR ? "日本語" : nil
+      end
+
+      assert_true gui.send(:update_ime_composition, :hwnd, Echoes::Win32::GCS_RESULTSTR)
+      assert_equal ["日本語"], pane.writes
+      assert_nil gui.instance_variable_get(:@marked_text)
+    end
+
+    test "Windows IME commit sends result string to active pane" do
+      gui = Echoes::GUI.allocate
+      pane = StubInputPane.new(Echoes::Screen.new(rows: 2, cols: 10), [], 0, 0.0)
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.define_singleton_method(:read_ime_composition_string) do |hwnd, flag|
+        if flag == Echoes::Win32::GCS_RESULTSTR
+          "日本語"
+        else
+          nil
+        end
+      end
+
+      gui.send(:commit_ime_composition, :hwnd)
+
+      assert_equal ["日本語"], pane.writes
+    end
+
+    test "Windows IME commit ignores empty result strings" do
+      gui = Echoes::GUI.allocate
+      pane = StubInputPane.new(Echoes::Screen.new(rows: 2, cols: 10), [], 0, 0.0)
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.define_singleton_method(:read_ime_composition_string) { |_hwnd, _flag| "" }
+
+      gui.send(:commit_ime_composition, :hwnd)
+
+      assert_equal [], pane.writes
+    end
+
     test "Windows I/O polling feeds active pane output to its parser" do
       parser = StubParser.new([])
       pane = StubPollingPane.new(true, ["hello"], parser)

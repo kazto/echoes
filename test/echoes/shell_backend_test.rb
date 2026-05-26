@@ -116,7 +116,7 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     backend&.close
   end
 
-  test "ConPTY backend encodes UTF-8 input for the console code page" do
+  test "ConPTY backend writes UTF-8 input directly to ConPTY" do
     conpty = FakeConPTY.new
     backend = Echoes::WindowsConPTYBackend.new(
       command: "cmd.exe",
@@ -129,7 +129,26 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     backend.write("日本語")
 
     assert_equal(["cmd.exe", 80, 24, nil], conpty.spawn_args)
-    assert_equal(["日本語".encode("Windows-31J").b], conpty.writes.map(&:b))
+    assert_equal(["日本語".b], conpty.writes.map(&:b))
+  ensure
+    backend&.close
+  end
+
+  test "ConPTY backend decodes mixed UTF-8 input echo and locale command output" do
+    mixed_output = "日本語\r\n".b +
+                   "'".b +
+                   "日本語".encode("Windows-31J").b +
+                   "' は".encode("Windows-31J").b
+    conpty = FakeConPTY.new([mixed_output])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    assert_equal("日本語\r\n'日本語' は", backend.read_available_output(16_384))
   ensure
     backend&.close
   end

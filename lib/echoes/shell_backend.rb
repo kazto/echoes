@@ -92,7 +92,7 @@ module Echoes
       require_relative "conpty"
 
       @conpty = conpty || ConPTY.new
-      @console_encoding = Encoding.find("locale")
+      @console_encoding = self.class.windows_console_encoding
       @conpty.spawn(command.is_a?(Array) ? command.join(" ") : command, cols: cols, rows: rows, env: env)
       @pid = @conpty.h_process_id.to_i
       @closed = false
@@ -143,20 +143,78 @@ module Echoes
 
     private
 
+    def self.windows_console_encoding
+      require "fiddle"
+      kernel32 = Fiddle.dlopen("kernel32.dll")
+      get_oem_cp = Fiddle::Function.new(kernel32["GetOEMCP"], [], Fiddle::TYPE_UINT)
+      Encoding.find("CP#{get_oem_cp.call}")
+    rescue StandardError
+      Encoding.find("locale")
+    end
+
     def encode_console_input(bytes)
-      bytes.to_s.dup.force_encoding("UTF-8").encode(
-        @console_encoding,
-        invalid: :replace,
-        undef: :replace
-      )
+      bytes.to_s.dup.force_encoding("UTF-8")
     end
 
     def decode_console_output(bytes)
-      bytes.to_s.dup.force_encoding(@console_encoding).encode(
-        "UTF-8",
-        invalid: :replace,
-        undef: :replace
-      )
+      decode_mixed_console_output(bytes.to_s.b)
+    end
+
+    def decode_mixed_console_output(bytes)
+      output = +""
+      i = 0
+
+      while i < bytes.bytesize
+        byte = bytes.getbyte(i)
+        if byte < 0x80
+          output << byte
+          i += 1
+        elsif (utf8 = read_utf8_char(bytes, i))
+          output << utf8
+          i += utf8.bytesize
+        else
+          len = console_encoded_char_length(bytes, i)
+          output << bytes.byteslice(i, len).force_encoding(@console_encoding).encode(
+            "UTF-8",
+            invalid: :replace,
+            undef: :replace
+          )
+          i += len
+        end
+      end
+
+      output
+    end
+
+    def read_utf8_char(bytes, offset)
+      first = bytes.getbyte(offset)
+      len =
+        if first && first >= 0xC2 && first <= 0xDF
+          2
+        elsif first && first >= 0xE0 && first <= 0xEF
+          3
+        elsif first && first >= 0xF0 && first <= 0xF4
+          4
+        end
+      return nil unless len && offset + len <= bytes.bytesize
+
+      candidate = bytes.byteslice(offset, len)
+      return nil unless candidate.bytes.drop(1).all? { |byte| byte >= 0x80 && byte <= 0xBF }
+
+      candidate = candidate.dup.force_encoding("UTF-8")
+      candidate.valid_encoding? ? candidate : nil
+    end
+
+    def console_encoded_char_length(bytes, offset)
+      byte = bytes.getbyte(offset)
+      if @console_encoding == Encoding::Windows_31J &&
+         byte &&
+         ((byte >= 0x81 && byte <= 0x9F) || (byte >= 0xE0 && byte <= 0xFC)) &&
+         offset + 1 < bytes.bytesize
+        2
+      else
+        1
+      end
     end
 
     CMD_INPUT_REPAINT_PREFIX = "\e[?25l\e[2J\e[m\e[H".b
