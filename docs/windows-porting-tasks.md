@@ -360,6 +360,7 @@
   - Windows GUI mouse wheel scroll テスト追加後: 623 tests, 1343 assertions, 0 failures, 8 omissions。
   - Windows GUI input snap-to-bottom テスト追加後: 624 tests, 1346 assertions, 0 failures, 8 omissions。
   - Windows ConPTY locale encoding テスト追加後: 627 tests, 1351 assertions, 0 failures, 8 omissions。
+  - Windows GUI wide-char continuation 描画テスト追加後: 628 tests, 1352 assertions, 0 failures, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - 2026-05-25: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 12 tests, 21 assertions, 0 failures。

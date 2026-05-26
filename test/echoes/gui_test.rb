@@ -412,6 +412,39 @@ if Echoes::Platform.windows?
       assert_equal [[10, 20, 90, 68, 0x112233]], fills
     end
 
+    test "Windows pane drawing skips wide-char continuation cells" do
+      row = [
+        Echoes::Cell.new("日", width: 2),
+        Echoes::Cell.new(" ", width: 0),
+        Echoes::Cell.new("本", width: 2),
+        Echoes::Cell.new(" ", width: 0),
+        Echoes::Cell.new("語", width: 2),
+        Echoes::Cell.new(" ", width: 0)
+      ]
+      screen = StubDrawScreen.new([], 1, 6, [row], [], StubCursor.new(0, 0, false))
+      pane = StubDrawPane.new(screen, 0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@colors, [])
+      gui.instance_variable_set(:@default_fg, 0xeeeeee)
+      gui.instance_variable_set(:@default_bg, 0x000000)
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      gui.instance_variable_set(:@hfont, :base)
+
+      drawn = []
+      gui.define_singleton_method(:clear_pane_background) { |_hdc, _px, _py, _pw, _ph| }
+      gui.define_singleton_method(:font_runs_for_text) { |_font, text, **_kwargs| [[text, :base]] }
+      gui.define_singleton_method(:draw_text_run) do |_hdc, x, y, text, font|
+        drawn << [x, y, text, font]
+      end
+      gui.define_singleton_method(:draw_text_decorations) do |_hdc, _x, _y, _width, _color, **_kwargs|
+      end
+
+      gui.send(:draw_pane_content, 0, pane, 10, 20, 48, 16, false)
+
+      assert_equal [[10, 20, "日本語", :base]], drawn
+    end
+
     test "Windows IME marked text draws with fallback font runs" do
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@cell_width, 8)

@@ -792,7 +792,7 @@ module Echoes
             c += 1
             next
           end
-          if cell.multicell == :cont
+          if cell.width.to_i == 0 || cell.multicell == :cont
             c += 1
             next
           end
@@ -825,13 +825,14 @@ module Echoes
             next
           end
 
-          run_length = 1
+          cell_width = [cell.width.to_i, 1].max
+          run_length = cell_width
           run_str = cell.char || " "
 
           while (c + run_length) < pane_cols
             next_cell = row[c + run_length]
             break unless next_cell
-            break if next_cell.multicell
+            break if [next_cell.width.to_i, 1].max != cell_width || next_cell.multicell
 
             n_fg_val = next_cell.fg
             n_bg_val = next_cell.bg
@@ -865,7 +866,7 @@ module Echoes
                      n_strikethrough != cell.strikethrough
 
             run_str += next_cell.char || " "
-            run_length += 1
+            run_length += cell_width
           end
 
           Win32::SetTextColor.call(hdc, fg_color)
@@ -875,15 +876,8 @@ module Echoes
           run_font = font_for_cell(cell)
           run_x = cx
           font_runs_for_text(run_font, run_str, bold: cell.bold, italic: cell.italic).each do |text, font|
-            wstr = Win32.to_wstring(text)
-            wlen = wstr.bytesize / 2 - 1
-            previous_font = Win32::SelectObject.call(hdc, font)
-            begin
-              Win32::TextOutW.call(hdc, run_x, y, Fiddle::Pointer[wstr], wlen)
-            ensure
-              Win32::SelectObject.call(hdc, previous_font)
-            end
-            run_x += text.length * @cell_width
+            draw_text_run(hdc, run_x, y, text, font)
+            run_x += text.length * cell_width * @cell_width
           end
           draw_text_decorations(
             hdc,
