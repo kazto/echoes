@@ -8,3 +8,5 @@ Gemfile.lock
 /pkg/
 /spec/reports/
 /tmp/
+
+echoes.conf
