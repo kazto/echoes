@@ -131,6 +131,7 @@ module Echoes
                 @cell_height = size_ptr[4, 4].unpack1('L')
                 @cell_width = 8 if @cell_width == 0
                 @cell_height = 16 if @cell_height == 0
+                sync_window_size_from_client_rect
               end
 
               # 全ペインのレイアウトを取得して描画
@@ -492,6 +493,24 @@ module Echoes
       @rows = rows
       current_tab&.resize(rows, cols)
       true
+    end
+
+    private def sync_window_size_from_client_rect
+      width, height = client_size
+      return false unless width && height
+
+      handle_window_resize_pixels(width, height)
+    end
+
+    private def client_size
+      return nil unless @hwnd
+
+      rect = Fiddle::Pointer.malloc(Win32::RECT_SIZE, Fiddle::RUBY_FREE)
+      rect[0, Win32::RECT_SIZE] = "\x00" * Win32::RECT_SIZE
+      return nil if Win32::GetClientRect.call(@hwnd, rect) == 0
+
+      left, top, right, bottom = rect[0, Win32::RECT_SIZE].unpack("l4")
+      [right - left, bottom - top]
     end
 
     private def create_font(weight: 400, italic: false, height: nil, family: nil)

@@ -255,6 +255,24 @@ if Echoes::Platform.windows?
       assert_equal [], tab.resizes
     end
 
+    test "Windows paint size sync updates rows after cell metrics become available" do
+      tab = StubResizableTab.new([])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@tabs, [tab])
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      gui.instance_variable_set(:@cols, 80)
+      gui.instance_variable_set(:@rows, 24)
+      gui.define_singleton_method(:client_size) { [1_000, 560] }
+
+      assert_true gui.send(:sync_window_size_from_client_rect)
+
+      assert_equal 125, gui.instance_variable_get(:@cols)
+      assert_equal 35, gui.instance_variable_get(:@rows)
+      assert_equal [[35, 125]], tab.resizes
+    end
+
     test "Windows GUI cleanup closes tabs once and clears the tab list" do
       tab1 = StubClosableTab.new(0)
       tab2 = StubClosableTab.new(0)
