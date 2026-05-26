@@ -1,0 +1,107 @@
+# macOS / Windows Feature Parity
+
+This document maps the macOS native API inventory to the closest Windows capability and the current Echoes implementation status.
+
+Inventory date: 2026-05-26.
+
+## Status Legend
+
+| Status | Meaning |
+| --- | --- |
+| Done | Windows has an implementation in the current source that provides the Echoes feature. |
+| Partial | Windows has a working subset, but it is not equivalent to the macOS/AppKit behavior. |
+| Alternate | Windows intentionally uses a different persistence, packaging, or UX model. |
+| Missing | Windows has no current implementation for this feature. |
+| Not applicable | The macOS API is an implementation detail with no direct Windows feature requirement. |
+
+## Source Map
+
+| Area | Windows source |
+| --- | --- |
+| Win32 Fiddle bindings | `lib/echoes/win32.rb` |
+| Windows GUI backend | `lib/echoes/gui_win32.rb` |
+| Windows ConPTY shell backend | `lib/echoes/conpty.rb`, `lib/echoes/shell_backend.rb` |
+| Windows PNG/RGB/RGBA decoder | `lib/echoes/kitty_graphics_win32.rb` |
+| Preferences | `lib/echoes/preferences.rb` |
+| Installer | `lib/echoes/installer.rb` |
+| Platform selection / load boundary | `lib/echoes.rb`, `lib/echoes/platform.rb`, `exe/echoes` |
+
+## Parity Table
+
+| macOS feature | macOS API / mechanism | Windows counterpart | Current status | Source | Gap / note |
+| --- | --- | --- | --- | --- | --- |
+| Lazy native load boundary | Conditional AppKit loading through `Echoes.load_gui_backend` | Conditional Win32 GUI loading | Done | `lib/echoes.rb`, `lib/echoes/platform.rb` | Windows avoids loading AppKit/CoreGraphics. |
+| Native binding layer | Objective-C runtime via `libobjc` and `objc_msgSend` | Direct Win32 DLL bindings through Fiddle | Done | `lib/echoes/win32.rb` | Windows does not need an Objective-C-style dispatch layer. |
+| GUI app lifecycle | `NSApplication.sharedApplication`, `run`, `terminate:` | Win32 message loop with `PeekMessageW`, `TranslateMessage`, `DispatchMessageW`, `WM_QUIT` | Partial | `lib/echoes/gui_win32.rb` | Basic loop exists. App-level services such as native menu integration are not equivalent. |
+| Window creation | `NSWindow initWithContentRect:styleMask:backing:defer:` | `RegisterClassExW`, `CreateWindowExW`, `ShowWindow`, `UpdateWindow` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Single main Win32 window exists. AppKit-style multiple windows are not implemented. |
+| Window title | `NSWindow#setTitle:` | `SetWindowTextW` | Done | `lib/echoes/gui_win32.rb` | Used for tab/window title and notification fallback. |
+| Window autosave | `setFrameAutosaveName:`, `NSUserDefaults` | JSON preferences backend | Partial | `lib/echoes/preferences.rb`, `lib/echoes/gui_win32.rb` | JSON persistence exists. Equivalent window frame autosave behavior is not clearly implemented in Win32 GUI. |
+| Content view / first responder | `setContentView:`, `makeFirstResponder:` | `HWND` receives `WndProc` messages, `SetFocus` | Done | `lib/echoes/gui_win32.rb` | Different model, but keyboard input is routed to the terminal window. |
+| Custom view subclass | Runtime-created `EchoesTerminalView < NSView` | `WndProc` callback closure | Done | `lib/echoes/gui_win32.rb` | Windows uses a window procedure instead of dynamic class methods. |
+| Repaint callback | `drawRect:` | `WM_PAINT`, double-buffered GDI paint | Done | `lib/echoes/gui_win32.rb` | Win32 has double buffering with compatible DC/bitmap. |
+| Resize callback | `setFrameSize:` hook | `WM_SIZE`, `GetClientRect` | Done | `lib/echoes/gui_win32.rb` | Resize updates terminal rows/cols and ConPTY size. |
+| Timer / polling repaint | `NSTimer scheduledTimerWithTimeInterval:` | Manual polling in message loop with short sleep/repaint | Partial | `lib/echoes/gui_win32.rb` | Functional polling exists; it is not a native Win32 timer abstraction. |
+| Window focus notifications | `NSNotificationCenter` for key/resign notifications | `WM_SETFOCUS` / `WM_KILLFOCUS` equivalent | Missing | `lib/echoes/gui_win32.rb` | Current Win32 message handling does not list focus messages. |
+| Menu bar | `NSMenu`, `NSMenuItem`, `setMainMenu:` | Win32 menus / accelerators | Missing | - | Windows GUI currently has no native menu bar equivalent. |
+| Window menu | `NSApplication#setWindowsMenu:` | Win32 menu/window list | Missing | - | Multiple native windows and Window menu integration are not present. |
+| Completion popup | `NSMenu#popUpMenuPositioningItem:atLocation:inView:` | Popup menu or custom overlay | Missing | - | Current Win32 GUI does not implement the completion popup. |
+| Keyboard input | `NSEvent#characters`, `keyCode`, `modifierFlags`, `interpretKeyEvents:` | `WM_CHAR`, `WM_KEYDOWN`, virtual-key mapping | Done | `lib/echoes/gui_win32.rb` | Special keys and Ctrl-letter mappings are implemented. |
+| Copy mode/search key routing | AppKit keyboard callbacks | Win32 `WM_CHAR` / `WM_KEYDOWN` routed to shared pane logic | Partial | `lib/echoes/gui_win32.rb` | Search matcher/selection helpers exist, but the Windows UI surface is smaller than AppKit. |
+| IME composition | `NSTextInputClient` | IMM32: `WM_IME_*`, `ImmGetContext`, `ImmGetCompositionStringW` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Inline composition and result commit exist. Candidate window positioning and full Cocoa text-input parity are not implemented. |
+| Mouse click/drag | `mouseDown:`, `mouseDragged:`, `mouseUp:` and right/other variants | `WM_LBUTTONDOWN`, mouse movement/wheel handling | Partial | `lib/echoes/gui_win32.rb` | Left click/drag and wheel are present. Right/other button parity is incomplete despite constants for some messages. |
+| Mouse wheel | `scrollWheel:`, `deltaY` | `WM_MOUSEWHEEL` | Done | `lib/echoes/gui_win32.rb` | Scroll accumulation and pane scrolling are implemented. |
+| Pointer cursor shape/visibility | `NSCursor.IBeamCursor`, `hide`, `unhide`, cursor rects | Win32 cursor APIs | Missing | - | No current Win32 cursor shape/visibility implementation is visible. |
+| Text fill drawing | `NSColor#setFill`, `NSRectFill` | GDI `CreateSolidBrush`, `FillRect` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Used for background, selection, decorations, cursor, and pane borders. |
+| Text drawing | `NSString#drawAtPoint:withAttributes:` | GDI `TextOutW`, `ExtTextOutW` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Regular terminal text and multicell text are drawn with GDI. |
+| Font creation | `NSFont fontWithName:size:`, `monospacedSystemFontOfSize:weight:` | `CreateFontW` | Done | `lib/echoes/gui_win32.rb` | Regular, bold, italic, bold-italic fonts are created. |
+| Font metrics | `NSFont#ascender`, `descender`, `defaultLineHeightForFont`, `NSString#sizeWithAttributes:` | `GetTextMetricsW`, `GetTextExtentPoint32W` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Cell size and text extent are measured with GDI. |
+| Font fallback | `CTFontCreateForString` | `GetGlyphIndicesW` plus fallback families | Partial | `lib/echoes/gui_win32.rb` | Fallback runs exist for common Japanese/emoji/symbol fonts. Complex shaping/color emoji are still GDI-limited. |
+| Underline/strikethrough | AppKit text attributes | Explicit GDI rectangle decorations | Done | `lib/echoes/gui_win32.rb` | Decorations are drawn manually. |
+| Ligature suppression | `NSLigatureAttributeName` | GDI text rendering | Missing | - | GDI path does not expose equivalent ligature control. |
+| Gradients | `NSGradient#drawInRect:angle:` | GDI/GDI+ gradient or manual fill | Missing | - | Win32 GUI clears pane backgrounds with flat fills; gradient pane backgrounds are not implemented. |
+| CoreGraphics image drawing | `CGContextDrawImage`, `CGImage` | GDI `StretchDIBits` with BGRA DIB | Done | `lib/echoes/gui_win32.rb` | Kitty/iTerm image placements are drawn from RGBA buffers. |
+| PNG decode | `NSData`, `NSBitmapImageRep`, `CGImage` | GDI+ `GdipCreateBitmapFromStream` path | Done | `lib/echoes/kitty_graphics_win32.rb` | PNG decode returns the same RGBA shape expected by renderers. |
+| Raw RGB/RGBA conversion | `CGDataProviderCreateWithData`, `CGImageCreate` | Ruby buffer conversion / GDI+ path | Done | `lib/echoes/kitty_graphics_win32.rb` | `from_rgb` and `from_rgba` exist. |
+| Clipboard text | `NSPasteboard` with `NSPasteboardTypeString` | Win32 clipboard `CF_UNICODETEXT` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Copy/paste and OSC 52 use the Win32 helper. |
+| File URL drag/drop | `NSPasteboardTypeFileURL`, `readObjectsForClasses:options:` | `WM_DROPFILES` / OLE drag-drop | Missing | - | File drag/drop is not implemented in Win32 GUI. |
+| Open file dialog | `NSOpenPanel` | Common Item Dialog / `GetOpenFileNameW` | Missing | - | Windows has native APIs, but Echoes does not currently bind or use them. |
+| URL open | `NSWorkspace.openURL:` | `ShellExecuteW` / `Start-Process` equivalent | Missing | - | No Windows URL opener is implemented in current source. |
+| About panel | `orderFrontStandardAboutPanelWithOptions:` | Custom dialog / message box | Missing | - | No Win32 About dialog or menu surface exists. |
+| Notifications | `terminal-notifier` fallback on macOS | Window title fallback | Alternate | `lib/echoes/gui_win32.rb` | OSC 9 / OSC 777 requests set the Win32 window title; no native toast implementation. |
+| Screen enumeration | `NSScreen.screens`, `frame`, `visibleFrame`, `backingScaleFactor` | Monitor APIs such as `EnumDisplayMonitors` | Missing | - | No Win32 monitor enumeration binding is present. |
+| External/presentation windows | New `NSWindow` on selected `NSScreen` | Additional Win32 windows / monitor APIs | Missing | - | OSC open-window/display support is not implemented on Windows. |
+| Pane capture to PDF/PNG | `dataWithPDFInsideRect:`, `NSBitmapImageRep` capture | GDI bitmap capture / encoder | Missing | - | `capture_format_for` exists, but Windows GUI has no capture handler implementation. |
+| Preferences storage | `NSUserDefaults` suite | JSON file under `%APPDATA%/Echoes` or `ECHOES_CONFIG_HOME` | Alternate | `lib/echoes/preferences.rb` | Feature exists through a platform-specific backend, not the Windows registry. |
+| Shell process backend | macOS PTY backend | ConPTY backend | Done | `lib/echoes/conpty.rb`, `lib/echoes/shell_backend.rb`, `lib/echoes/pane.rb` | Normal panes use ConPTY on Windows. Ctrl-C delivery remains a known gap. |
+| Shell resize | PTY window size/ioctl | `ResizePseudoConsole` | Done | `lib/echoes/conpty.rb`, `lib/echoes/gui_win32.rb` | Resize propagation is implemented. |
+| Shell encoding | UTF-8 PTY stream | Console code page conversion | Done | `lib/echoes/shell_backend.rb` | ConPTY output is decoded from locale encoding; input is encoded back. |
+| Embedded rubish mode | Unix PTY/process group/job control | Windows process/helper model needed | Missing | `lib/echoes/embedded_shell.rb` | Explicitly blocked on Windows. |
+| Installer | `.app` wrapper copy | `echoes.bat` wrapper | Alternate | `lib/echoes/installer.rb` | Windows launcher exists, but there is no native executable/MSI/app bundle equivalent. |
+
+## Summary
+
+Windows currently covers the core terminal path:
+
+- Win32 window creation and message loop.
+- ConPTY-backed shell process I/O and resize.
+- GDI text rendering, font selection, basic font fallback, decorations, selections, and image blitting.
+- GDI+ PNG decode and raw RGB/RGBA conversion.
+- Keyboard input, special keys, mouse wheel, basic mouse selection, clipboard text, OSC 52, and minimal OSC notification fallback.
+- JSON preferences and `.bat` installer.
+
+The largest remaining AppKit parity gaps are:
+
+- Native menu bar, command accelerators, completion popup, and About panel.
+- Multiple native windows, screen enumeration, and OSC external-window/display support.
+- File drag/drop, file open dialog, URL opener, and pane capture.
+- Full IME candidate positioning/text-input parity.
+- Gradient backgrounds, ligature control, cursor shape/visibility, and richer font shaping.
+- Native toast notifications.
+- Embedded rubish mode and robust Ctrl-C delivery through ConPTY.
+
+## Maintenance Notes
+
+- When adding a Windows counterpart for a macOS API listed in `docs/macos-fiddle-api-inventory.md`, update this table in the same change.
+- Mark features as `Alternate` only when Echoes intentionally provides the same user-facing capability through a different Windows model.
+- Mark features as `Partial` when the implementation exists but user-visible behavior can differ from macOS.
+- Keep implementation evidence in the `Source` column specific enough to let a maintainer jump to the owning file quickly.
