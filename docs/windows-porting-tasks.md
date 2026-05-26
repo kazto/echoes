@@ -32,6 +32,8 @@
   - 2026-05-25 追加調査: Windows GUI の OSC 9 / OSC 777 notification handler を追加。初期実装では native toast ではなく、通知 title / message を Win32 window title に反映する最小境界とする。
   - 2026-05-25 追加調査: Windows GUI の IME composition 更新処理を helper 化し、`GCS_COMPSTR` 有無、composition string 更新、空文字時の marked text clearing をテストで固定。
   - 2026-05-25 追加調査: Windows GUI の IME marked text 描画を GDI font fallback 経路に接続。通常セル描画と同じ `font_runs_for_text` で日本語 composition 文字列を fallback font run に分割して描画する。
+  - 2026-05-26 追加調査: Windows GUI の mouse wheel scroll を追加。`WM_MOUSEWHEEL` を処理し、active pane の `scroll_offset` を scrollback 範囲で clamp して更新する。
+  - 2026-05-26 追加調査: Windows GUI の pane input helper を追加。スクロール中の key input / paste で `scroll_offset` と `scroll_accum` を live output に戻してから shell へ送る。
 
 ## 引き継ぎ用残タスクまとめ
 
@@ -277,6 +279,11 @@
   - composition string が空なら `@marked_text` を clear する。
 - [x] IME marked text を fallback font で描画する。
   - IME inline composition overlay も通常セル描画と同じ `font_runs_for_text` を使い、日本語など base font に glyph がない文字を fallback font で描画する。
+- [x] mouse wheel で scrollback をスクロールできるようにする。
+  - `WM_MOUSEWHEEL` を受け、mouse tracking が off の通常状態では active pane の `scroll_offset` を更新する。
+  - offset は `screen.scrollback.size` 範囲に clamp する。
+- [x] 入力時に scrollback 表示から live output へ戻す。
+  - key input / paste は `write_pane_input` helper 経由で `scroll_offset = 0`、`scroll_accum = 0.0` に戻してから shell へ送る。
 - [ ] 最小 GUI で Windows shell が起動し、入力と出力ができることを確認する。
 
 ## Phase 9: 画像・フォント拡張
@@ -348,6 +355,8 @@
   - Windows GUI notification handler テスト追加後: 617 tests, 1327 assertions, 0 failures, 8 omissions。
   - Windows GUI IME composition helper テスト追加後: 620 tests, 1333 assertions, 0 failures, 8 omissions。
   - Windows GUI IME marked text fallback 描画テスト追加後: 621 tests, 1335 assertions, 0 failures, 8 omissions。
+  - Windows GUI mouse wheel scroll テスト追加後: 623 tests, 1343 assertions, 0 failures, 8 omissions。
+  - Windows GUI input snap-to-bottom テスト追加後: 624 tests, 1346 assertions, 0 failures, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - 2026-05-25: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 12 tests, 21 assertions, 0 failures。

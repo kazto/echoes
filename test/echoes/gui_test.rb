@@ -13,6 +13,11 @@ if Echoes::Platform.windows?
         writes << str
       end
     end
+    StubInputPane = Struct.new(:screen, :writes, :scroll_offset, :scroll_accum) do
+      def write_input(str)
+        writes << str
+      end
+    end
     StubTab = Struct.new(:active_pane) do
       def screen
         active_pane.screen
@@ -54,6 +59,7 @@ if Echoes::Platform.windows?
         @refreshed = true
       end
     end
+    StubScrollablePane = Struct.new(:screen, :scroll_offset, :scroll_accum)
 
     test "embedded mode raises a clear unsupported error" do
       old = ENV["ECHOES_EMBED"]
@@ -111,6 +117,47 @@ if Echoes::Platform.windows?
       assert_equal "\x03", gui.send(:windows_key_sequence, 0x43, ctrl_pressed: true)
       assert_equal "\x1A", gui.send(:windows_key_sequence, 0x5A, ctrl_pressed: true)
       assert_nil gui.send(:windows_key_sequence, 0x41)
+    end
+
+    test "Windows mouse wheel scrolls active pane through scrollback" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      10.times { screen.scrollback << [] }
+      pane = StubScrollablePane.new(screen, 0, 0.0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+
+      assert_true gui.send(:handle_mouse_wheel_delta, 120)
+      assert_equal 3, pane.scroll_offset
+
+      assert_true gui.send(:handle_mouse_wheel_delta, -120)
+      assert_equal 0, pane.scroll_offset
+    end
+
+    test "Windows mouse wheel clamps active pane scroll offset to scrollback" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      2.times { screen.scrollback << [] }
+      pane = StubScrollablePane.new(screen, 1, 0.0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+
+      assert_true gui.send(:handle_mouse_wheel_delta, 120)
+      assert_equal 2, pane.scroll_offset
+
+      assert_true gui.send(:handle_mouse_wheel_delta, -240)
+      assert_equal 0, pane.scroll_offset
+    end
+
+    test "Windows pane input snaps scrolled pane back to live output" do
+      pane = StubInputPane.new(Echoes::Screen.new(rows: 2, cols: 10), [], 4, 1.5)
+      gui = Echoes::GUI.allocate
+
+      gui.send(:write_pane_input, pane, "x")
+
+      assert_equal ["x"], pane.writes
+      assert_equal 0, pane.scroll_offset
+      assert_equal 0.0, pane.scroll_accum
     end
 
     test "Windows IME composition updates marked text when composition string is present" do

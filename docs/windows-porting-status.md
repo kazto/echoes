@@ -8,7 +8,7 @@
 
 - Ruby gem 形式のターミナルエミュレータです。CLI 起点は `exe/echoes` で、GUI 起動時だけ OS 別 GUI backend を lazy load します。
 - GUI は macOS AppKit 実装が中心で、Windows GUI はまだ最小実装段階です。
-- Windows GUI の初期方針は Pure Ruby を維持するため Fiddle + Win32 API です。Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard まで実装済みです。clipboard は `CF_UNICODETEXT` helper 経由で copy / paste と OSC 52 に対応済みです。text drawing は regular / bold / italic / bold-italic font selection、underline / strikethrough、OSC 66 multicell text 描画、GDI font fallback に対応済みです。OSC 9 / OSC 777 notification request は native toast ではなく Win32 window title に反映する最小境界として対応済みです。
+- Windows GUI の初期方針は Pure Ruby を維持するため Fiddle + Win32 API です。Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard / mouse wheel scroll まで実装済みです。clipboard は `CF_UNICODETEXT` helper 経由で copy / paste と OSC 52 に対応済みです。text drawing は regular / bold / italic / bold-italic font selection、underline / strikethrough、OSC 66 multicell text 描画、GDI font fallback に対応済みです。OSC 9 / OSC 777 notification request は native toast ではなく Win32 window title に反映する最小境界として対応済みです。
 - Windows の PNG decode は GDI+ を Fiddle で呼ぶ Pure Ruby 実装です。Kitty graphics と iTerm2 inline images は同じ GDI+ decoder で RGBA buffer へ変換し、Win32 GUI は GDI `StretchDIBits` で `screen.placements` を描画します。
 - `require "echoes"` は Windows でも AppKit / CoreGraphics をロードしないように分離済みです。
 - 通常ペインは `ShellBackend` 経由で shell process を扱います。macOS では既存 PTY backend、Windows では ConPTY backend を選べます。
@@ -17,7 +17,7 @@
 - インストーラは OS 別に分岐済みです。macOS では `~/Applications` に `Echoes.app` / `EchoesEmbed.app` のラッパーを作り、Windows では `~/bin/echoes.bat` を生成します。
 - Preferences は OS 別 backend に分離済みです。macOS では `NSUserDefaults`、Windows では JSON file persistence を使います。
 - CI には Windows core test job を追加済みです。ただしリモート CI の成功は未確認です。
-- Windows ローカルでは `ruby -S rake test:core` が通過しています。2026-05-25 時点では 617 tests, 1327 assertions, 0 failures, 8 omissions です。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
+- Windows ローカルでは `ruby -S rake test:core` が通過しています。2026-05-26 時点では 624 tests, 1346 assertions, 0 failures, 8 omissions です。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
 
 ## Windows 対応の主なブロッカー
 

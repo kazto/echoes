@@ -199,6 +199,13 @@ module Echoes
           end
           0
 
+        when Win32::WM_MOUSEWHEEL
+          delta = signed_word((wparam.to_i >> 16) & 0xFFFF)
+          if handle_mouse_wheel_delta(delta)
+            Win32::InvalidateRect.call(hwnd, nil, 1)
+          end
+          0
+
         when Win32::WM_IME_STARTCOMPOSITION
           @marked_text = ""
           0
@@ -219,7 +226,7 @@ module Echoes
           unless [0x08, 0x09, 0x0D, 0x1B].include?(char_code)
             utf8_char = [char_code].pack('S').force_encoding('UTF-16LE').encode('UTF-8') rescue nil
             if utf8_char && (tab = current_tab) && (pane = tab.active_pane)
-              pane.write_input(utf8_char)
+              write_pane_input(pane, utf8_char)
             end
           end
           0
@@ -245,7 +252,7 @@ module Echoes
           unless handled_key
             escape_sequence = windows_key_sequence(vk, ctrl_pressed: ctrl_pressed)
             if escape_sequence && (tab = current_tab) && (pane = tab.active_pane)
-              pane.write_input(escape_sequence)
+              write_pane_input(pane, escape_sequence)
             end
           end
           0
@@ -367,6 +374,31 @@ module Echoes
       when 0x0D then "\r"    # VK_RETURN
       when 0x1B then "\e"    # VK_ESCAPE
       end
+    end
+
+    private def signed_word(value)
+      value >= 0x8000 ? value - 0x10000 : value
+    end
+
+    private def handle_mouse_wheel_delta(delta)
+      pane = current_tab&.active_pane
+      return false unless pane
+      return false if pane.screen.respond_to?(:mouse_tracking) && pane.screen.mouse_tracking != :off
+
+      pane.scroll_accum ||= 0.0
+      pane.scroll_accum += (delta.to_f / Win32::WHEEL_DELTA) * Win32::WHEEL_SCROLL_LINES
+      return false if pane.scroll_accum.abs < 1.0
+
+      lines = pane.scroll_accum.to_i
+      pane.scroll_offset = (pane.scroll_offset + lines).clamp(0, pane.screen.scrollback.size)
+      pane.scroll_accum -= lines
+      true
+    end
+
+    private def write_pane_input(pane, bytes)
+      pane.scroll_offset = 0 if pane.respond_to?(:scroll_offset=)
+      pane.scroll_accum = 0.0 if pane.respond_to?(:scroll_accum=)
+      pane.write_input(bytes)
     end
 
     private def update_ime_composition(hwnd, lparam)
@@ -691,11 +723,11 @@ module Echoes
       return unless pane
 
       if pane.screen.bracketed_paste_mode?
-        pane.write_input("\e[200~")
-        pane.write_input(str)
-        pane.write_input("\e[201~")
+        write_pane_input(pane, "\e[200~")
+        write_pane_input(pane, str)
+        write_pane_input(pane, "\e[201~")
       else
-        pane.write_input(str)
+        write_pane_input(pane, str)
       end
     rescue Errno::EIO, IOError
     end
