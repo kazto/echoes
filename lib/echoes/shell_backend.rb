@@ -107,6 +107,7 @@ module Echoes
 
     def read_available_output(max)
       output = @conpty.read_available_output(max)
+      output = normalize_conpty_clear_multiline_repaint(output)
       output = normalize_conpty_repaint(output)
       output = normalize_conpty_home_erase_repaint(output)
       output = normalize_conpty_resize_repaint(output)
@@ -218,6 +219,11 @@ module Echoes
     end
 
     CMD_INPUT_REPAINT_PREFIX = "\e[?25l\e[2J\e[m\e[H".b
+    CMD_CLEAR_MULTILINE_REPAINT = /\e\[\?25l\e\[2J\e\[m\e\[H(?=.*\r?\n).*?(?:\e\[\d+;\d+H|\e\[H)(?:\e\]0;[^\a]*\a)?\e\[\?25h/m.freeze
+
+    def normalize_conpty_clear_multiline_repaint(output)
+      output.gsub(CMD_CLEAR_MULTILINE_REPAINT, "".b)
+    end
 
     def normalize_conpty_repaint(output)
       return output unless output.start_with?(CMD_INPUT_REPAINT_PREFIX)
@@ -226,8 +232,11 @@ module Echoes
     end
 
     CMD_INPUT_HOME_ERASE_REPAINT = /\A\e\[\?25l\e\[H( +)\e\[H\e\[\?25h\z/.freeze
+    CMD_HOME_MULTILINE_REPAINT = /\A\e\[\?25l\e\[H(?=.*\r?\n).*?(?:\e\[\d+;\d+H|\e\[H)\e\[\?25h\z/m.freeze
 
     def normalize_conpty_home_erase_repaint(output)
+      return "".b if output.match?(CMD_HOME_MULTILINE_REPAINT)
+
       if (match = CMD_INPUT_HOME_ERASE_REPAINT.match(output))
         "\b \b" * match[1].bytesize
       else

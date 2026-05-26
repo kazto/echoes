@@ -200,6 +200,82 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     backend&.close
   end
 
+  test "ConPTY backend drops blank cmd resize repaint" do
+    repaint = "\e[?25l\e[2J\e[m\e[H" \
+              "\r\n\r\n\r\n\r\n" \
+              "\e[H\e]0;C:\\windows\\SYSTEM32\\cmd.exe\a\e[?25h"
+    conpty = FakeConPTY.new([repaint])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    assert_equal("", backend.read_available_output(16_384))
+  ensure
+    backend&.close
+  end
+
+  test "ConPTY backend preserves startup banner before blank cmd resize repaint" do
+    banner = "Microsoft Windows\r\n\r\nC:\\Users\\kazto>"
+    repaint = "\e[?25l\e[2J\e[m\e[H" \
+              "\r\n\r\n\r\n\r\n" \
+              "\e[H\e]0;C:\\windows\\SYSTEM32\\cmd.exe\a\e[?25h"
+    conpty = FakeConPTY.new([banner + repaint])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    assert_equal(banner, backend.read_available_output(16_384))
+  ensure
+    backend&.close
+  end
+
+  test "ConPTY backend preserves prior output before multiline cmd resize repaint" do
+    prior_output = "dir\r\nfile.txt\r\nC:\\Users\\kazto>"
+    repaint = "\e[?25l\e[2J\e[m\e[H" \
+              "dir\e[K\r\n" \
+              "file.txt\e[K\r\n" \
+              "\e[K\e[3;16H\e[?25h"
+    conpty = FakeConPTY.new([prior_output + repaint])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    assert_equal(prior_output, backend.read_available_output(16_384))
+  ensure
+    backend&.close
+  end
+
+  test "ConPTY backend drops home-origin multiline cmd repaint" do
+    repaint = "\e[?25l\e[H" \
+              "dir\e[K\r\n" \
+              "\e[K\r\n" \
+              "\e[K\e[2;1H\e[?25h"
+    conpty = FakeConPTY.new([repaint])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    assert_equal("", backend.read_available_output(16_384))
+  ensure
+    backend&.close
+  end
+
   test "ConPTY backend normalizes lone line feeds" do
     conpty = FakeConPTY.new(["a\nb\r\nc\r", "\nd"])
     backend = Echoes::WindowsConPTYBackend.new(
