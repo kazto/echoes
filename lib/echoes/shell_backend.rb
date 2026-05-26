@@ -92,6 +92,7 @@ module Echoes
       require_relative "conpty"
 
       @conpty = conpty || ConPTY.new
+      @console_encoding = Encoding.find("locale")
       @conpty.spawn(command.is_a?(Array) ? command.join(" ") : command, cols: cols, rows: rows, env: env)
       @pid = @conpty.h_process_id.to_i
       @closed = false
@@ -101,7 +102,7 @@ module Echoes
     end
 
     def write(bytes)
-      @conpty.write(bytes)
+      @conpty.write(encode_console_input(bytes))
     end
 
     def read_available_output(max)
@@ -109,7 +110,7 @@ module Echoes
       output = normalize_conpty_repaint(output)
       output = normalize_conpty_home_erase_repaint(output)
       output = normalize_conpty_resize_repaint(output)
-      normalize_output_newlines(output)
+      decode_console_output(normalize_output_newlines(output))
     end
 
     def resize(rows, cols, px_width: 0, px_height: 0)
@@ -142,6 +143,22 @@ module Echoes
 
     private
 
+    def encode_console_input(bytes)
+      bytes.to_s.dup.force_encoding("UTF-8").encode(
+        @console_encoding,
+        invalid: :replace,
+        undef: :replace
+      )
+    end
+
+    def decode_console_output(bytes)
+      bytes.to_s.dup.force_encoding(@console_encoding).encode(
+        "UTF-8",
+        invalid: :replace,
+        undef: :replace
+      )
+    end
+
     CMD_INPUT_REPAINT_PREFIX = "\e[?25l\e[2J\e[m\e[H".b
 
     def normalize_conpty_repaint(output)
@@ -167,7 +184,7 @@ module Echoes
     end
 
     def normalize_output_newlines(output)
-      normalized = +""
+      normalized = +"".b
       output.each_byte do |byte|
         if byte == 10
           normalized << "\r" unless @conpty_output_ended_with_cr

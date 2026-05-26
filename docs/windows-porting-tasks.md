@@ -34,6 +34,7 @@
   - 2026-05-25 追加調査: Windows GUI の IME marked text 描画を GDI font fallback 経路に接続。通常セル描画と同じ `font_runs_for_text` で日本語 composition 文字列を fallback font run に分割して描画する。
   - 2026-05-26 追加調査: Windows GUI の mouse wheel scroll を追加。`WM_MOUSEWHEEL` を処理し、active pane の `scroll_offset` を scrollback 範囲で clamp して更新する。
   - 2026-05-26 追加調査: Windows GUI の pane input helper を追加。スクロール中の key input / paste で `scroll_offset` と `scroll_accum` を live output に戻してから shell へ送る。
+  - 2026-05-26 追加調査: Windows ConPTY backend の日本語文字化けを修正。ConPTY の console code page 由来 bytes を locale encoding から UTF-8 へ decode し、入力は UTF-8 から locale encoding へ encode する。newline normalizer は non-ASCII byte を壊さないよう binary buffer に変更。
 
 ## 引き継ぎ用残タスクまとめ
 
@@ -206,6 +207,7 @@
   - `WindowsConPTYBackend` で `cmd.exe` の read/write と explicit env を確認する Windows 限定テストを追加済み。
   - `cmd.exe` の初回入力 repaint prefix 除去、Backspace 時の home erase repaint 補正、ConPTY 出力の LF 正規化テストを追加済み。
   - ConPTY process tree cleanup の単体テストと、marker 付き `ruby -e "sleep 60"` を使った残存確認 smoke を追加確認済み。
+  - ConPTY の locale encoding decode / encode を追加し、`dir /b` の日本語 filename が UTF-8 として parser に渡ることを Windows 限定テストで確認済み。
 
 ## Phase 6: 設定と Preferences
 
@@ -357,10 +359,12 @@
   - Windows GUI IME marked text fallback 描画テスト追加後: 621 tests, 1335 assertions, 0 failures, 8 omissions。
   - Windows GUI mouse wheel scroll テスト追加後: 623 tests, 1343 assertions, 0 failures, 8 omissions。
   - Windows GUI input snap-to-bottom テスト追加後: 624 tests, 1346 assertions, 0 failures, 8 omissions。
+  - Windows ConPTY locale encoding テスト追加後: 627 tests, 1351 assertions, 0 failures, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - 2026-05-25: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 12 tests, 21 assertions, 0 failures。
   - ConPTY process tree cleanup テスト追加後: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 14 tests, 23 assertions, 0 failures。
+  - Windows ConPTY locale encoding テスト追加後: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 17 tests, 28 assertions, 0 failures。
   - `pane_test.rb`, `tab_test.rb` も ConPTY backend 統合後に通過済み。
 - [ ] Windows GUI 手動確認を実施する。
 - [x] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。

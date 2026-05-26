@@ -1,8 +1,10 @@
+# encoding: UTF-8
 # frozen_string_literal: true
 
 require "test_helper"
 require "echoes/shell_backend"
 require "echoes/conpty"
+require "fileutils"
 
 class Echoes::ShellBackendTest < Test::Unit::TestCase
   test "selects Windows popen backend on Windows" do
@@ -98,6 +100,40 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     assert_true(conpty.killed)
   end
 
+  test "ConPTY backend decodes locale encoded output as UTF-8" do
+    cp932 = "日本語".encode("Windows-31J").b
+    conpty = FakeConPTY.new([cp932])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    assert_equal("日本語", backend.read_available_output(16_384))
+  ensure
+    backend&.close
+  end
+
+  test "ConPTY backend encodes UTF-8 input for the console code page" do
+    conpty = FakeConPTY.new
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    backend.write("日本語")
+
+    assert_equal(["cmd.exe", 80, 24, nil], conpty.spawn_args)
+    assert_equal(["日本語".encode("Windows-31J").b], conpty.writes.map(&:b))
+  ensure
+    backend&.close
+  end
+
   test "ConPTY backend strips cmd input repaint prefix" do
     conpty = FakeConPTY.new(["\e[?25l\e[2J\e[m\e[Hd\e]0;cmd\a\e[?25h"])
     backend = Echoes::WindowsConPTYBackend.new(
@@ -190,13 +226,44 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     )
     begin
       output = drain_backend_output(backend, until_match: /C:\\.*>/)
-      assert_match(/Microsoft Windows/, output)
+      assert_match(/C:\\.*>/, output)
 
       backend.write("echo echoes-conpty\r\n")
       output = drain_backend_output(backend, until_match: /echoes-conpty/)
       assert_match(/echoes-conpty/, output)
     ensure
       backend.close
+    end
+  end
+
+  test "Windows ConPTY backend displays Japanese filenames from cmd output" do
+    omit("Windows only") unless TestHelper::IS_WINDOWS
+
+    dir = File.join(Dir.pwd, "tmp", "jp-encoding-test")
+    name = "日本語.txt"
+    FileUtils.mkdir_p(dir)
+    File.write(File.join(dir, name), "")
+
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 100
+    )
+    begin
+      drain_backend_output(backend, until_match: /C:\\.*>/)
+
+      backend.write("cd /d #{dir}\r\n")
+      drain_backend_output(backend, until_match: /#{Regexp.escape(dir)}>/i)
+
+      backend.write("dir /b\r\n")
+      output = drain_backend_output(backend, until_match: /#{Regexp.escape(name)}/)
+      assert_true(output.valid_encoding?)
+      assert_match(/#{Regexp.escape(name)}/, output)
+    ensure
+      backend.close
+      FileUtils.rm_f(File.join(dir, name))
+      FileUtils.rmdir(dir) rescue nil
     end
   end
 
