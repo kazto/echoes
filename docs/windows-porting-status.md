@@ -17,7 +17,7 @@
 - インストーラは OS 別に分岐済みです。macOS では `~/Applications` に `Echoes.app` / `EchoesEmbed.app` のラッパーを作り、Windows では `~/bin/echoes.bat` を生成します。
 - Preferences は OS 別 backend に分離済みです。macOS では `NSUserDefaults`、Windows では JSON file persistence を使います。
 - CI には Windows core test job を追加済みです。ただしリモート CI の成功は未確認です。
-- Windows ローカルでは `ruby -S rake test:core` が通過しています。2026-05-26 時点では 629 tests, 1356 assertions, 0 failures, 8 omissions です。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
+- Windows ローカルでは `ruby -S rake test:core` が通過しています。2026-05-26 時点では 630 tests, 1358 assertions, 0 failures, 8 omissions です。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
 
 ## Windows 対応の主なブロッカー
 

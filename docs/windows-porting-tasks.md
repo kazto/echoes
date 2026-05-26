@@ -362,6 +362,7 @@
   - Windows ConPTY locale encoding テスト追加後: 627 tests, 1351 assertions, 0 failures, 8 omissions。
   - Windows GUI wide-char continuation 描画テスト追加後: 628 tests, 1352 assertions, 0 failures, 8 omissions。
   - Windows GUI initial client-size sync テスト追加後: 629 tests, 1356 assertions, 0 failures, 8 omissions。
+  - Windows GUI double buffered paint テスト追加後: 630 tests, 1358 assertions, 0 failures, 8 omissions。
 - [x] Windows backend テストを実行する。
   - `ruby "-Ilib;test" test/echoes/shell_backend_test.rb`: 7 tests, 14 assertions, 0 failures。
   - 2026-05-25: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 12 tests, 21 assertions, 0 failures。

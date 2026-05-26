@@ -112,67 +112,18 @@ module Echoes
           Win32::PostQuitMessage.call(0)
           0
 
+        when Win32::WM_ERASEBKGND
+          1
+
         when Win32::WM_PAINT
           ps = Fiddle::Pointer.malloc(Win32::PAINTSTRUCT_SIZE, Fiddle::RUBY_FREE)
           ps[0, Win32::PAINTSTRUCT_SIZE] = "\x00" * Win32::PAINTSTRUCT_SIZE
           hdc = Win32::BeginPaint.call(hwnd, ps)
           begin
-            old_font = Win32::SelectObject.call(hdc, @hfont)
-            Win32::SetBkMode.call(hdc, Win32::OPAQUE)
-
-            if (tab = current_tab)
-              # セルサイズを動的に測定
-              if !@cell_width || @cell_width == 0
-                size_ptr = Fiddle::Pointer.malloc(8, Fiddle::RUBY_FREE)
-                size_ptr[0, 8] = "\x00" * 8
-                test_str = Win32.to_wstring("A")
-                Win32::GetTextExtentPoint32W.call(hdc, Fiddle::Pointer[test_str], 1, size_ptr)
-                @cell_width = size_ptr[0, 4].unpack1('L')
-                @cell_height = size_ptr[4, 4].unpack1('L')
-                @cell_width = 8 if @cell_width == 0
-                @cell_height = 16 if @cell_height == 0
-                sync_window_size_from_client_rect
-              end
-
-              # 全ペインのレイアウトを取得して描画
-              layout = tab.pane_tree.layout(0, 0, @cols, @rows)
-              layout.each do |rect|
-                pane = rect[:pane]
-                gx = rect[:x]
-                gy = rect[:y]
-                gw = rect[:w]
-                gh = rect[:h]
-
-                px = gx * @cell_width
-                py = gy * @cell_height
-                pw = gw * @cell_width
-                ph = gh * @cell_height
-
-                is_active = (pane == tab.active_pane)
-
-                # ペインのピクセルサイズを更新
-                pane.screen.cell_pixel_width = @cell_width.to_f
-                pane.screen.cell_pixel_height = @cell_height.to_f
-
-                # ペインの内容描画
-                draw_pane_content(hdc, pane, px, py, pw, ph, is_active)
-
-                # ペイン境界線（デバイダーおよびアクティブ強調）の描画
-                if layout.size > 1
-                  border_rect = Fiddle::Pointer.malloc(Win32::RECT_SIZE, Fiddle::RUBY_FREE)
-                  border_rect[0, Win32::RECT_SIZE] = [px, py, px + pw, py + ph].pack('l4')
-                  if is_active
-                    # アクティブなペインは明るい枠線
-                    Win32::FrameRect.call(hdc, border_rect, @active_border_brush)
-                  else
-                    # 非アクティブなペインは暗い枠線
-                    Win32::FrameRect.call(hdc, border_rect, @inactive_border_brush)
-                  end
-                end
-              end
+            paint_width, paint_height = paint_target_size
+            with_double_buffered_paint(hdc, paint_width, paint_height) do |paint_hdc|
+              paint_window(paint_hdc)
             end
-
-            Win32::SelectObject.call(hdc, old_font)
           ensure
             Win32::EndPaint.call(hwnd, ps)
           end
@@ -279,7 +230,7 @@ module Echoes
 
       icon = 0
       cursor = 0
-      bg_brush = Win32::CreateSolidBrush.call(@default_bg) # バックグラウンド色で塗り潰すブラシ
+      bg_brush = 0
 
       wnd_class[32, 8] = [icon].pack('Q')      # hIcon
       wnd_class[40, 8] = [cursor].pack('Q')    # hCursor
@@ -493,6 +444,117 @@ module Echoes
       @rows = rows
       current_tab&.resize(rows, cols)
       true
+    end
+
+    private def paint_window(hdc)
+      old_font = Win32::SelectObject.call(hdc, @hfont)
+      Win32::SetBkMode.call(hdc, Win32::OPAQUE)
+
+      if (tab = current_tab)
+        # セルサイズを動的に測定
+        if !@cell_width || @cell_width == 0
+          size_ptr = Fiddle::Pointer.malloc(8, Fiddle::RUBY_FREE)
+          size_ptr[0, 8] = "\x00" * 8
+          test_str = Win32.to_wstring("A")
+          Win32::GetTextExtentPoint32W.call(hdc, Fiddle::Pointer[test_str], 1, size_ptr)
+          @cell_width = size_ptr[0, 4].unpack1('L')
+          @cell_height = size_ptr[4, 4].unpack1('L')
+          @cell_width = 8 if @cell_width == 0
+          @cell_height = 16 if @cell_height == 0
+          sync_window_size_from_client_rect
+        end
+
+        # 全ペインのレイアウトを取得して描画
+        layout = tab.pane_tree.layout(0, 0, @cols, @rows)
+        layout.each do |rect|
+          pane = rect[:pane]
+          gx = rect[:x]
+          gy = rect[:y]
+          gw = rect[:w]
+          gh = rect[:h]
+
+          px = gx * @cell_width
+          py = gy * @cell_height
+          pw = gw * @cell_width
+          ph = gh * @cell_height
+
+          is_active = (pane == tab.active_pane)
+
+          # ペインのピクセルサイズを更新
+          pane.screen.cell_pixel_width = @cell_width.to_f
+          pane.screen.cell_pixel_height = @cell_height.to_f
+
+          # ペインの内容描画
+          draw_pane_content(hdc, pane, px, py, pw, ph, is_active)
+
+          # ペイン境界線（デバイダーおよびアクティブ強調）の描画
+          if layout.size > 1
+            border_rect = Fiddle::Pointer.malloc(Win32::RECT_SIZE, Fiddle::RUBY_FREE)
+            border_rect[0, Win32::RECT_SIZE] = [px, py, px + pw, py + ph].pack('l4')
+            if is_active
+              # アクティブなペインは明るい枠線
+              Win32::FrameRect.call(hdc, border_rect, @active_border_brush)
+            else
+              # 非アクティブなペインは暗い枠線
+              Win32::FrameRect.call(hdc, border_rect, @inactive_border_brush)
+            end
+          end
+        end
+      end
+    ensure
+      Win32::SelectObject.call(hdc, old_font) if old_font
+    end
+
+    private def paint_target_size
+      width, height = client_size || []
+      width ||= @cell_width && @cols ? @cell_width * @cols : 0
+      height ||= @cell_height && @rows ? @cell_height * @rows : 0
+      [width.to_i, height.to_i]
+    end
+
+    private def with_double_buffered_paint(target_hdc, width, height)
+      return yield(target_hdc) if width <= 0 || height <= 0
+
+      mem_dc = nil
+      bitmap = nil
+      old_bitmap = nil
+      mem_dc = create_compatible_dc(target_hdc)
+      return yield(target_hdc) unless mem_dc && mem_dc != 0
+
+      bitmap = create_compatible_bitmap(target_hdc, width, height)
+      return yield(target_hdc) unless bitmap && bitmap != 0
+
+      old_bitmap = select_gdi_object(mem_dc, bitmap)
+      yield(mem_dc)
+      bit_blt(target_hdc, 0, 0, width, height, mem_dc, 0, 0)
+    ensure
+      select_gdi_object(mem_dc, old_bitmap) if mem_dc && old_bitmap
+      delete_gdi_object(bitmap) if bitmap && bitmap != 0
+      delete_dc(mem_dc) if mem_dc && mem_dc != 0
+    end
+
+    private def create_compatible_dc(hdc)
+      Win32::CreateCompatibleDC.call(hdc)
+    end
+
+    private def create_compatible_bitmap(hdc, width, height)
+      Win32::CreateCompatibleBitmap.call(hdc, width, height)
+    end
+
+    private def select_gdi_object(hdc, object)
+      Win32::SelectObject.call(hdc, object)
+    end
+
+    private def bit_blt(dst, x, y, width, height, src, sx, sy)
+      Win32::BitBlt.call(dst, x, y, width, height, src, sx, sy, Win32::SRCCOPY)
+    end
+
+    private def delete_gdi_object(object)
+      Win32::DeleteObject.call(object)
+    end
+
+    private def delete_dc(hdc)
+      Win32::DeleteDC.call(hdc)
     end
 
     private def sync_window_size_from_client_rect

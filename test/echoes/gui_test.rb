@@ -273,6 +273,35 @@ if Echoes::Platform.windows?
       assert_equal [[35, 125]], tab.resizes
     end
 
+    test "Windows double buffered paint renders into memory DC then blits" do
+      gui = Echoes::GUI.allocate
+      calls = []
+      gui.define_singleton_method(:create_compatible_dc) { |hdc| calls << [:create_dc, hdc]; :mem_dc }
+      gui.define_singleton_method(:create_compatible_bitmap) { |hdc, width, height| calls << [:create_bitmap, hdc, width, height]; :bitmap }
+      gui.define_singleton_method(:select_gdi_object) { |hdc, object| calls << [:select, hdc, object]; :old_bitmap }
+      gui.define_singleton_method(:bit_blt) { |dst, x, y, width, height, src, sx, sy| calls << [:bit_blt, dst, x, y, width, height, src, sx, sy] }
+      gui.define_singleton_method(:delete_gdi_object) { |object| calls << [:delete_object, object] }
+      gui.define_singleton_method(:delete_dc) { |hdc| calls << [:delete_dc, hdc] }
+
+      yielded = nil
+      gui.send(:with_double_buffered_paint, :target_dc, 100, 50) do |paint_dc|
+        yielded = paint_dc
+        calls << [:paint, paint_dc]
+      end
+
+      assert_equal :mem_dc, yielded
+      assert_equal [
+        [:create_dc, :target_dc],
+        [:create_bitmap, :target_dc, 100, 50],
+        [:select, :mem_dc, :bitmap],
+        [:paint, :mem_dc],
+        [:bit_blt, :target_dc, 0, 0, 100, 50, :mem_dc, 0, 0],
+        [:select, :mem_dc, :old_bitmap],
+        [:delete_object, :bitmap],
+        [:delete_dc, :mem_dc]
+      ], calls
+    end
+
     test "Windows GUI cleanup closes tabs once and clears the tab list" do
       tab1 = StubClosableTab.new(0)
       tab2 = StubClosableTab.new(0)

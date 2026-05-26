@@ -82,6 +82,10 @@ module Echoes
     SetBkMode         = new_func(GDI32, 'SetBkMode', [P, I], I)
     TextOutW          = new_func(GDI32, 'TextOutW', [P, I, I, P, I], I)
     ExtTextOutW       = new_func(GDI32, 'ExtTextOutW', [P, I, I, U, P, P, I, P], I)
+    CreateCompatibleDC = new_func(GDI32, 'CreateCompatibleDC', [P], P)
+    DeleteDC          = new_func(GDI32, 'DeleteDC', [P], I)
+    CreateCompatibleBitmap = new_func(GDI32, 'CreateCompatibleBitmap', [P, I, I], P)
+    BitBlt            = new_func(GDI32, 'BitBlt', [P, I, I, I, I, P, I, I, L], I)
     CreateFontW       = new_func(GDI32, 'CreateFontW', [I, I, I, I, I, L, L, L, L, L, L, L, L, P], P)
     GetTextExtentPoint32W = new_func(GDI32, 'GetTextExtentPoint32W', [P, P, I, P], I)
     GetGlyphIndicesW  = new_func(GDI32, 'GetGlyphIndicesW', [P, P, I, P, U], U)
@@ -99,6 +103,7 @@ module Echoes
     WM_SIZE            = 0x0005
     WM_PAINT           = 0x000F
     WM_CLOSE           = 0x0010
+    WM_ERASEBKGND      = 0x0014
     WM_LBUTTONDOWN     = 0x0201
     WM_LBUTTONUP       = 0x0202
     WM_MOUSEMOVE       = 0x0200
