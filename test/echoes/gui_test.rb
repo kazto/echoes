@@ -1201,6 +1201,21 @@ if Echoes::Platform.windows?
       assert_equal "IEND", png.byteslice(-8, 4)
     end
 
+    test "Windows PDF encoder wraps RGB pixels in an image PDF" do
+      gui = Echoes::GUI.allocate
+      rgb = "\xFF\x00\x00\x00\xFF\x00".b
+
+      pdf = gui.send(:encode_pdf_rgb_image, 2, 1, rgb)
+
+      assert_equal "%PDF-1.4", pdf.byteslice(0, 8)
+      assert_include pdf, "/Subtype /Image"
+      assert_include pdf, "/Width 2"
+      assert_include pdf, "/Height 1"
+      assert_include pdf, "/ColorSpace /DeviceRGB"
+      assert_include pdf, "xref"
+      assert_include pdf, "%%EOF"
+    end
+
     test "Windows capture writes PNG bytes for pane rect" do
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       pane = StubInputPane.new(screen, [], 0, 0.0)
@@ -1224,13 +1239,26 @@ if Echoes::Platform.windows?
       end
     end
 
-    test "Windows capture ignores non-PNG formats until PDF is implemented" do
+    test "Windows capture writes PDF bytes for non-PNG paths" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 2, pane: pane}])
       gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      args = nil
+      gui.define_singleton_method(:pdf_bytes_for_pane_capture) do |source_pane, width, height, is_active|
+        args = [source_pane, width, height, is_active]
+        "%PDF".b
+      end
 
       Dir.mktmpdir do |dir|
         path = File.join(dir, "snap.pdf")
-        assert_false gui.send(:capture_pane_to_png, nil, path)
-        assert_false File.exist?(path)
+        assert_true gui.send(:capture_pane_to_png, pane, path)
+        assert_equal [pane, 80, 32, true], args
+        assert_equal "%PDF".b, File.binread(path)
       end
     end
 

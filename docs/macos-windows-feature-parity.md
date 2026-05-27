@@ -71,7 +71,7 @@ Inventory date: 2026-05-26.
 | Notifications | `terminal-notifier` fallback on macOS | Window title fallback | Alternate | `lib/echoes/gui_win32.rb` | OSC 9 / OSC 777 requests set the Win32 window title; no native toast implementation. |
 | Screen enumeration | `NSScreen.screens`, `frame`, `visibleFrame`, `backingScaleFactor` | `EnumDisplayMonitors`, `GetMonitorInfoW`, `MonitorFromWindow` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | OSC display-info returns monitor and work-area geometry plus primary/current flags. Backing scale factor is not represented. |
 | External/presentation windows | New `NSWindow` on selected `NSScreen` | Child Echoes process with monitor geometry env | Partial | `lib/echoes/gui_win32.rb` | OSC open-window launches a separate Windows Echoes process on the requested monitor with decoded argv and initial geometry. It is process-based rather than an in-process multi-window model. |
-| Pane capture to PDF/PNG | `dataWithPDFInsideRect:`, `NSBitmapImageRep` capture | GDI bitmap capture / pure-Ruby PNG encoder | Partial | `lib/echoes/gui_win32.rb`, `lib/echoes/win32.rb` | OSC capture writes PNG files on Windows. PDF/vector capture is not implemented. |
+| Pane capture to PDF/PNG | `dataWithPDFInsideRect:`, `NSBitmapImageRep` capture | GDI bitmap capture / pure-Ruby PNG and raster PDF encoders | Partial | `lib/echoes/gui_win32.rb`, `lib/echoes/win32.rb` | OSC capture writes PNG files or one-page raster PDFs on Windows. AppKit-style vector PDF capture is not implemented. |
 | Preferences storage | `NSUserDefaults` suite | JSON file under `%APPDATA%/Echoes` or `ECHOES_CONFIG_HOME` | Alternate | `lib/echoes/preferences.rb` | Feature exists through a platform-specific backend, not the Windows registry. |
 | Shell process backend | macOS PTY backend | ConPTY backend | Done | `lib/echoes/conpty.rb`, `lib/echoes/shell_backend.rb`, `lib/echoes/pane.rb` | Normal panes use ConPTY on Windows. Ctrl-C delivery remains a known gap. |
 | Shell resize | PTY window size/ioctl | `ResizePseudoConsole` | Done | `lib/echoes/conpty.rb`, `lib/echoes/gui_win32.rb` | Resize propagation is implemented. |
@@ -90,13 +90,14 @@ Windows currently covers the core terminal path:
 - Keyboard input, special keys, mouse wheel, basic mouse selection, clipboard text, OSC 52, and minimal OSC notification fallback.
 - OSC display-info and process-based OSC open-window launch on a selected monitor.
 - Basic Window menu integration backed by a shared Win32 window registry.
+- OSC capture to PNG and raster PDF.
 - JSON preferences and `.bat` installer.
 
 The largest remaining AppKit parity gaps are:
 
 - Full native menu command parity and completion popup.
 - In-process multiple native windows and full AppKit-style Window menu behavior.
-- PDF/vector pane capture.
+- Vector pane capture.
 - Full IME candidate positioning/text-input parity.
 - Full gradient alpha/multi-stop parity, ligature control, cursor rect parity, and richer font shaping.
 - Native toast notifications.

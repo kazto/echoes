@@ -2034,7 +2034,6 @@ module Echoes
     end
 
     private def capture_pane_to_png(pane, path)
-      return false unless self.class.capture_format_for(path) == :png
       return false unless @cell_width && @cell_height
 
       rect = pane_rect_for(pane)
@@ -2044,7 +2043,13 @@ module Echoes
       height = rect[:h] * @cell_height
       return false if width <= 0 || height <= 0
 
-      bytes = png_bytes_for_pane_capture(pane, width, height, pane == current_tab&.active_pane)
+      is_active = pane == current_tab&.active_pane
+      bytes = case self.class.capture_format_for(path)
+              when :png
+                png_bytes_for_pane_capture(pane, width, height, is_active)
+              else
+                pdf_bytes_for_pane_capture(pane, width, height, is_active)
+              end
       return false unless bytes
 
       File.binwrite(path, bytes)
@@ -2067,6 +2072,14 @@ module Echoes
 
       rgba = bgra_to_rgba_opaque(bgra, width, height)
       encode_png_rgba(width, height, rgba)
+    end
+
+    private def pdf_bytes_for_pane_capture(pane, width, height, is_active)
+      bgra = capture_pane_bgra(pane, width, height, is_active)
+      return nil unless bgra
+
+      rgb = bgra_to_rgb_opaque(bgra, width, height)
+      encode_pdf_rgb_image(width, height, rgb)
     end
 
     private def capture_pane_bgra(pane, width, height, is_active)
@@ -2128,6 +2141,51 @@ module Echoes
         rgba << px.getbyte(2) << px.getbyte(1) << px.getbyte(0) << alpha
       end
       rgba
+    end
+
+    private def bgra_to_rgb_opaque(bgra, width, height)
+      return nil unless bgra && bgra.bytesize == width * height * 4
+
+      rgb = String.new(capacity: width * height * 3, encoding: Encoding::BINARY)
+      bgra.scan(/.{4}/m) do |px|
+        rgb << px.getbyte(2) << px.getbyte(1) << px.getbyte(0)
+      end
+      rgb
+    end
+
+    private def encode_pdf_rgb_image(width, height, rgb)
+      return nil unless width.positive? && height.positive?
+      return nil unless rgb && rgb.bytesize == width * height * 3
+
+      image = Zlib::Deflate.deflate(rgb)
+      content = "q\n#{width} 0 0 #{height} 0 0 cm\n/Im0 Do\nQ\n".b
+      objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>\n".b,
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>\n".b,
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 #{width} #{height}] " \
+          "/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\n".b,
+        "<< /Type /XObject /Subtype /Image /Width #{width} /Height #{height} " \
+          "/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode " \
+          "/Length #{image.bytesize} >>\nstream\n".b + image + "\nendstream\n".b,
+        "<< /Length #{content.bytesize} >>\nstream\n".b + content + "endstream\n".b
+      ]
+
+      pdf = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n".b
+      offsets = [0]
+      objects.each_with_index do |obj, index|
+        offsets << pdf.bytesize
+        pdf << "#{index + 1} 0 obj\n".b << obj << "endobj\n".b
+      end
+
+      xref_offset = pdf.bytesize
+      pdf << "xref\n0 #{objects.size + 1}\n".b
+      pdf << "0000000000 65535 f \n".b
+      offsets.drop(1).each do |offset|
+        pdf << format("%010d 00000 n \n", offset).b
+      end
+      pdf << "trailer\n<< /Size #{objects.size + 1} /Root 1 0 R >>\n".b
+      pdf << "startxref\n#{xref_offset}\n%%EOF\n".b
+      pdf
     end
 
     private def encode_png_rgba(width, height, rgba)
