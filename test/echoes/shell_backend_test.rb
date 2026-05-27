@@ -100,6 +100,25 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     assert_true(conpty.killed)
   end
 
+  test "ConPTY backend quotes array argv as a Windows command line" do
+    conpty = FakeConPTY.new
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: ["C:\\Program Files\\Demo\\demo.exe", "--name", "two words", 'quote"me', "C:\\tmp\\trail\\"],
+      env: {"X" => "1"},
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    assert_equal(
+      '"C:\Program Files\Demo\demo.exe" --name "two words" "quote\"me" C:\tmp\trail\\',
+      conpty.spawn_args[0]
+    )
+    assert_equal({"X" => "1"}, conpty.spawn_args[3])
+  ensure
+    backend&.close
+  end
+
   test "ConPTY backend decodes locale encoded output as UTF-8" do
     cp932 = "日本語".encode("Windows-31J").b
     conpty = FakeConPTY.new([cp932])

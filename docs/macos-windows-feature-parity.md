@@ -69,7 +69,7 @@ Inventory date: 2026-05-26.
 | About panel | `orderFrontStandardAboutPanelWithOptions:` | `MessageBoxW` custom dialog | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows shows About content through a native message box from the Help menu. |
 | Notifications | `terminal-notifier` fallback on macOS | Window title fallback | Alternate | `lib/echoes/gui_win32.rb` | OSC 9 / OSC 777 requests set the Win32 window title; no native toast implementation. |
 | Screen enumeration | `NSScreen.screens`, `frame`, `visibleFrame`, `backingScaleFactor` | `EnumDisplayMonitors`, `GetMonitorInfoW`, `MonitorFromWindow` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | OSC display-info returns monitor and work-area geometry plus primary/current flags. Backing scale factor is not represented. |
-| External/presentation windows | New `NSWindow` on selected `NSScreen` | Additional Win32 windows / monitor APIs | Missing | - | OSC open-window/display support is not implemented on Windows. |
+| External/presentation windows | New `NSWindow` on selected `NSScreen` | Child Echoes process with monitor geometry env | Partial | `lib/echoes/gui_win32.rb` | OSC open-window launches a separate Windows Echoes process on the requested monitor with decoded argv and initial geometry. It is process-based rather than an in-process multi-window model. |
 | Pane capture to PDF/PNG | `dataWithPDFInsideRect:`, `NSBitmapImageRep` capture | GDI bitmap capture / pure-Ruby PNG encoder | Partial | `lib/echoes/gui_win32.rb`, `lib/echoes/win32.rb` | OSC capture writes PNG files on Windows. PDF/vector capture is not implemented. |
 | Preferences storage | `NSUserDefaults` suite | JSON file under `%APPDATA%/Echoes` or `ECHOES_CONFIG_HOME` | Alternate | `lib/echoes/preferences.rb` | Feature exists through a platform-specific backend, not the Windows registry. |
 | Shell process backend | macOS PTY backend | ConPTY backend | Done | `lib/echoes/conpty.rb`, `lib/echoes/shell_backend.rb`, `lib/echoes/pane.rb` | Normal panes use ConPTY on Windows. Ctrl-C delivery remains a known gap. |
@@ -87,12 +87,13 @@ Windows currently covers the core terminal path:
 - GDI text rendering, font selection, basic font fallback, decorations, selections, and image blitting.
 - GDI+ PNG decode and raw RGB/RGBA conversion.
 - Keyboard input, special keys, mouse wheel, basic mouse selection, clipboard text, OSC 52, and minimal OSC notification fallback.
+- OSC display-info and process-based OSC open-window launch on a selected monitor.
 - JSON preferences and `.bat` installer.
 
 The largest remaining AppKit parity gaps are:
 
 - Full native menu command parity and completion popup.
-- Multiple native windows, screen enumeration, and OSC external-window/display support.
+- In-process multiple native windows and Window menu integration.
 - PDF/vector pane capture.
 - Full IME candidate positioning/text-input parity.
 - Full gradient alpha/multi-stop parity, ligature control, cursor rect parity, and richer font shaping.

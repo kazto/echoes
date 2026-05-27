@@ -93,7 +93,8 @@ module Echoes
 
       @conpty = conpty || ConPTY.new
       @console_encoding = self.class.windows_console_encoding
-      @conpty.spawn(command.is_a?(Array) ? command.join(" ") : command, cols: cols, rows: rows, env: env)
+      command_line = command.is_a?(Array) ? self.class.windows_command_line(command) : command
+      @conpty.spawn(command_line, cols: cols, rows: rows, env: env)
       @pid = @conpty.h_process_id.to_i
       @closed = false
       @conpty_output_ended_with_cr = false
@@ -151,6 +152,33 @@ module Echoes
       Encoding.find("CP#{get_oem_cp.call}")
     rescue StandardError
       Encoding.find("locale")
+    end
+
+    def self.windows_command_line(argv)
+      argv.map { |arg| quote_windows_arg(arg.to_s) }.join(" ")
+    end
+
+    def self.quote_windows_arg(arg)
+      return '""' if arg.empty?
+      return arg unless arg.match?(/[\s"]/)
+
+      quoted = +"\""
+      backslashes = 0
+      arg.each_char do |char|
+        if char == "\\"
+          backslashes += 1
+        elsif char == '"'
+          quoted << ("\\" * (backslashes * 2 + 1))
+          quoted << '"'
+          backslashes = 0
+        else
+          quoted << ("\\" * backslashes)
+          quoted << char
+          backslashes = 0
+        end
+      end
+      quoted << ("\\" * (backslashes * 2))
+      quoted << '"'
     end
 
     def encode_console_input(bytes)

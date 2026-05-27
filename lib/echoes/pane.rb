@@ -79,13 +79,12 @@ module Echoes
           # Array of [argv0, *args] (execve directly, no shell). The
           # array form is what the OSC 7772 ;open-window handler
           # uses so user-supplied argv isn't subject to shell quoting.
-          spawn_args = command.is_a?(Array) ? command : [command]
           backend_class = if Platform.windows?
                             ShellBackend.for_platform(windows_backend: :conpty)
                           else
                             ShellBackend.for_platform
                           end
-          @shell_backend = backend_class.new(command: spawn_args,
+          @shell_backend = backend_class.new(command: command,
                                              env: env,
                                              rows: rows,
                                              cols: cols,

@@ -70,7 +70,7 @@ if Echoes::Platform.windows?
     end
     StubDrawPane = Struct.new(:screen, :scroll_offset)
     StubHandlerScreen = Struct.new(:clipboard_handler, :glyph_measurer, :capture_handler, :display_info_handler,
-                                   :cell_pixel_width, :cell_pixel_height, :notification_handler)
+                                   :open_window_handler, :cell_pixel_width, :cell_pixel_height, :notification_handler)
     StubHandlerPane = Struct.new(:screen) do
       def refresh_pty_pixel_size
         @refreshed = true
@@ -1055,6 +1055,21 @@ if Echoes::Platform.windows?
       assert_equal "json:#{pane.object_id}", screen.display_info_handler.call
     end
 
+    test "Windows screen handlers wire OSC open-window" do
+      screen = StubHandlerScreen.new
+      pane = StubHandlerPane.new(screen)
+      gui = Echoes::GUI.allocate
+      seen = []
+      gui.define_singleton_method(:open_window_from_osc) do |source_pane, args|
+        seen << [source_pane, args]
+      end
+
+      gui.send(:wire_screen_handlers, pane)
+      screen.open_window_handler.call("display=1")
+
+      assert_equal [[pane, "display=1"]], seen
+    end
+
     test "Windows notification title falls back to window title" do
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@hwnd, :hwnd)
@@ -1090,6 +1105,81 @@ if Echoes::Platform.windows?
         end
       end
       assert_equal 99, seen_hwnd
+    end
+
+    test "Windows open-window decodes argv and launches child Echoes on requested monitor" do
+      monitors = [
+        {handle: 11, x: 0, y: 0, w: 800, h: 600, work_x: 0, work_y: 0, work_w: 800, work_h: 560, primary: true},
+        {handle: 22, x: 800, y: 0, w: 1024, h: 768, work_x: 800, work_y: 20, work_w: 1024, work_h: 728, primary: false}
+      ]
+      argv = ["C:/Program Files/Demo/demo.exe", "--show"]
+      args = "display=1:program=#{[JSON.generate(argv)].pack('m0')}:fullscreen=no"
+      spawned = []
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      gui.define_singleton_method(:child_env_for_open_window) { {"PATH" => "C:\\Windows"} }
+      gui.define_singleton_method(:spawn_external_echoes) do |env|
+        spawned << env
+        12345
+      end
+
+      with_win32_singleton_method(:display_monitors, -> { monitors }) do
+        with_process_detach(->(pid) { spawned << [:detach, pid] }) do
+          assert_true gui.send(:open_window_from_osc, nil, args)
+        end
+      end
+
+      env = spawned.first
+      assert_equal argv, JSON.parse(env["ECHOES_OPEN_WINDOW_PROGRAM"].unpack1("m0"))
+      assert_equal "800", env["ECHOES_WINDOW_X"]
+      assert_equal "20", env["ECHOES_WINDOW_Y"]
+      assert_equal "1024", env["ECHOES_WINDOW_W"]
+      assert_equal "728", env["ECHOES_WINDOW_H"]
+      assert_equal "45", env["ECHOES_ROWS"]
+      assert_equal "128", env["ECHOES_COLS"]
+      assert_equal [:detach, 12345], spawned.last
+    end
+
+    test "Windows open-window uses full monitor rect for fullscreen" do
+      monitors = [
+        {handle: 11, x: 50, y: 60, w: 900, h: 700, work_x: 70, work_y: 80, work_w: 860, work_h: 640, primary: true}
+      ]
+      argv = ["demo.exe"]
+      args = "display=0:program=#{[JSON.generate(argv)].pack('m0')}:fullscreen=yes"
+      envs = []
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@cell_width, 10)
+      gui.instance_variable_set(:@cell_height, 20)
+      gui.define_singleton_method(:child_env_for_open_window) { {} }
+      gui.define_singleton_method(:spawn_external_echoes) { |env| envs << env; nil }
+
+      with_win32_singleton_method(:display_monitors, -> { monitors }) do
+        assert_false gui.send(:open_window_from_osc, nil, args)
+      end
+
+      assert_equal "50", envs.first["ECHOES_WINDOW_X"]
+      assert_equal "60", envs.first["ECHOES_WINDOW_Y"]
+      assert_equal "900", envs.first["ECHOES_WINDOW_W"]
+      assert_equal "700", envs.first["ECHOES_WINDOW_H"]
+    end
+
+    test "Windows open-window env can seed command and initial window rect" do
+      gui = Echoes::GUI.allocate
+      argv = ["demo.exe", "--arg"]
+      env = {
+        "ECHOES_OPEN_WINDOW_PROGRAM" => [JSON.generate(argv)].pack("m0"),
+        "ECHOES_ROWS" => "33",
+        "ECHOES_COLS" => "120",
+        "ECHOES_WINDOW_X" => "10",
+        "ECHOES_WINDOW_Y" => "20",
+        "ECHOES_WINDOW_W" => "640",
+        "ECHOES_WINDOW_H" => "480"
+      }
+
+      assert_equal argv, gui.send(:command_from_env, env)
+      assert_equal 33, gui.send(:positive_env_integer, "ECHOES_ROWS", env)
+      assert_equal({x: 10, y: 20, w: 640, h: 480}, gui.send(:initial_window_rect_from_env, env))
     end
 
     test "Windows PNG encoder writes a valid RGBA PNG container" do
@@ -1181,6 +1271,17 @@ if Echoes::Platform.windows?
     ensure
       singleton.send(:remove_method, name)
       singleton.define_method(name) { |*args, **kwargs| original.call(*args, **kwargs) }
+    end
+
+    def with_process_detach(replacement)
+      singleton = class << Process; self; end
+      original = Process.method(:detach)
+      singleton.send(:remove_method, :detach)
+      singleton.define_method(:detach) { |pid| replacement.call(pid) }
+      yield
+    ensure
+      singleton.send(:remove_method, :detach)
+      singleton.define_method(:detach) { |pid| original.call(pid) }
     end
   end
 end

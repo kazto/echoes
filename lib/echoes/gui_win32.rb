@@ -56,10 +56,11 @@ module Echoes
 
       ENV['TERM_PROGRAM']         = 'Echoes'
       ENV['TERM_PROGRAM_VERSION'] = Echoes::VERSION
-      @rows = rows
-      @cols = cols
+      @rows = positive_env_integer('ECHOES_ROWS') || rows
+      @cols = positive_env_integer('ECHOES_COLS') || cols
       @font_size = font_size || Preferences.fetch_double(:font_size, default: Echoes.config.font_size)
-      @command = command
+      @command = command_from_env || command
+      @initial_window_rect = initial_window_rect_from_env
       @tabs = []
       @active_tab = 0
       @font_cache = {}
@@ -297,8 +298,8 @@ module Echoes
         Fiddle::Pointer[class_name],           # lpClassName
         Fiddle::Pointer[window_title],         # lpWindowName
         Win32::WS_OVERLAPPEDWINDOW | Win32::WS_VISIBLE, # dwStyle
-        100, 100,                              # x, y
-        800, 600,                              # nWidth, nHeight
+        @initial_window_rect[:x], @initial_window_rect[:y],
+        @initial_window_rect[:w], @initial_window_rect[:h],
         0, 0, 0, 0                             # hWndParent, hMenu, hInstance, lpParam
       )
 
@@ -1239,10 +1240,39 @@ module Echoes
       pane.screen.glyph_measurer = method(:measure_glyph)
       pane.screen.capture_handler = ->(path) { capture_pane_to_png(pane, path) }
       pane.screen.display_info_handler = -> { display_info_json(pane) }
+      pane.screen.open_window_handler = ->(args) { open_window_from_osc(pane, args) }
       pane.screen.notification_handler = ->(title, message) { post_notification(pane, title, message) }
       pane.screen.cell_pixel_width = @cell_width if @cell_width
       pane.screen.cell_pixel_height = @cell_height if @cell_height
       pane.refresh_pty_pixel_size if @cell_width && @cell_height
+    end
+
+    private def positive_env_integer(key, env = ENV)
+      value = env[key]
+      return nil if value.nil? || value.empty?
+
+      integer = Integer(value, exception: false)
+      integer if integer && integer.positive?
+    end
+
+    private def command_from_env(env = ENV)
+      encoded = env['ECHOES_OPEN_WINDOW_PROGRAM']
+      return nil if encoded.nil? || encoded.empty?
+
+      decoded = encoded.delete("\r\n\t ").unpack1('m0')
+      argv = JSON.parse(decoded)
+      argv if argv.is_a?(Array) && !argv.empty?
+    rescue StandardError
+      nil
+    end
+
+    private def initial_window_rect_from_env(env = ENV)
+      {
+        x: Integer(env.fetch('ECHOES_WINDOW_X', 100), exception: false) || 100,
+        y: Integer(env.fetch('ECHOES_WINDOW_Y', 100), exception: false) || 100,
+        w: positive_env_integer('ECHOES_WINDOW_W', env) || 800,
+        h: positive_env_integer('ECHOES_WINDOW_H', env) || 600
+      }
     end
 
     private def post_notification(pane, title, message)
@@ -1274,6 +1304,111 @@ module Echoes
     rescue StandardError => e
       warn "echoes display-info: #{e.class}: #{e.message}"
       "[]"
+    end
+
+    private def open_window_from_osc(_pane, args_str)
+      params = parse_open_window_args(args_str)
+      program_b64 = params['program']
+      return false if program_b64.nil? || program_b64.empty?
+
+      argv = decode_open_window_argv(program_b64)
+      return false unless argv
+
+      open_external_window(
+        argv: argv,
+        display_index: (params['display'] || '0').to_i,
+        fullscreen: params['fullscreen'] == 'yes'
+      )
+    rescue StandardError => e
+      warn "echoes open-window: #{e.class}: #{e.message}"
+      false
+    end
+
+    private def parse_open_window_args(args_str)
+      params = {}
+      args_str.to_s.split(':').each do |pair|
+        key, value = pair.split('=', 2)
+        next if key.nil? || key.empty? || value.nil?
+
+        params[key] = value
+      end
+      params
+    end
+
+    private def decode_open_window_argv(program_b64)
+      json = program_b64.delete("\r\n\t ").unpack1('m0')
+      argv = JSON.parse(json)
+      return nil unless argv.is_a?(Array) && !argv.empty?
+
+      argv.map(&:to_s)
+    rescue StandardError
+      nil
+    end
+
+    private def open_external_window(argv:, display_index:, fullscreen:)
+      monitor = Win32.display_monitors[display_index]
+      monitor ||= Win32.display_monitors.first
+      return false unless monitor
+
+      rect = fullscreen ? monitor_rect(monitor) : monitor_work_rect(monitor)
+      cell_w = @cell_width || 10
+      cell_h = @cell_height || 20
+      rows = [(rect[:h] / cell_h).floor, 5].max
+      cols = [(rect[:w] / cell_w).floor, 20].max
+      env = child_env_for_open_window.merge(
+        'ECHOES_OPEN_WINDOW_PROGRAM' => [JSON.generate(argv)].pack('m0'),
+        'ECHOES_ROWS' => rows.to_s,
+        'ECHOES_COLS' => cols.to_s,
+        'ECHOES_WINDOW_X' => rect[:x].to_i.to_s,
+        'ECHOES_WINDOW_Y' => rect[:y].to_i.to_s,
+        'ECHOES_WINDOW_W' => rect[:w].to_i.to_s,
+        'ECHOES_WINDOW_H' => rect[:h].to_i.to_s
+      )
+      pid = spawn_external_echoes(env)
+      Process.detach(pid) if pid
+      !!pid
+    end
+
+    private def monitor_rect(monitor)
+      {x: monitor[:x], y: monitor[:y], w: monitor[:w], h: monitor[:h]}
+    end
+
+    private def monitor_work_rect(monitor)
+      {x: monitor[:work_x], y: monitor[:work_y], w: monitor[:work_w], h: monitor[:work_h]}
+    end
+
+    private def child_env_for_open_window
+      env = ENV.to_h
+      env['PATH'] = merge_windows_path(env['PATH'])
+      env['USERPROFILE'] ||= Dir.home
+      env['TERM'] ||= Echoes.config.term
+      env
+    end
+
+    private def merge_windows_path(parent_path)
+      defaults = [
+        ENV['SystemRoot'] && File.join(ENV['SystemRoot'], 'System32'),
+        ENV['SystemRoot']
+      ].compact
+      seen = {}
+      (parent_path.to_s.split(';') + defaults).filter_map do |path|
+        next if path.empty?
+        key = path.downcase
+        next if seen[key]
+
+        seen[key] = true
+        path
+      end.join(';')
+    end
+
+    private def spawn_external_echoes(env)
+      Process.spawn(env, *external_echoes_command)
+    end
+
+    private def external_echoes_command
+      exe = File.expand_path('../../exe/echoes', __dir__)
+      target = File.exist?(exe) ? exe : $PROGRAM_NAME
+      [RbConfig.ruby, target]
     end
 
     private def set_window_title(title)
