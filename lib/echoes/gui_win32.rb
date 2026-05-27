@@ -152,7 +152,7 @@ module Echoes
           1
 
         when Win32::WM_SETCURSOR
-          set_terminal_cursor ? 1 : Win32::DefWindowProcW.call(hwnd, msg, wparam, lparam)
+          handle_set_cursor(hwnd, msg, wparam, lparam)
 
         when Win32::WM_COMMAND
           dispatch_menu_command(wparam.to_i & 0xFFFF)
@@ -657,6 +657,13 @@ module Echoes
 
       Win32::SetCursor.call(cursor)
       true
+    end
+
+    private def handle_set_cursor(hwnd, msg, wparam, lparam)
+      hit_test = lparam.to_i & 0xFFFF
+      return Win32::DefWindowProcW.call(hwnd, msg, wparam, lparam) if hit_test != Win32::HTCLIENT
+
+      set_terminal_cursor ? 1 : Win32::DefWindowProcW.call(hwnd, msg, wparam, lparam)
     end
 
     private def toggle_pointer_hidden

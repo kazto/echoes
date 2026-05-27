@@ -201,6 +201,7 @@ module Echoes
 
     VK_CONTROL         = 0x11
     IDC_IBEAM          = 32513
+    HTCLIENT           = 1
 
     MB_OK              = 0x00000000
     MB_ICONINFORMATION = 0x00000040

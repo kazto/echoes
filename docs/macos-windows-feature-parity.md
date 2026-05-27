@@ -51,7 +51,7 @@ Inventory date: 2026-05-26.
 | IME composition | `NSTextInputClient` | IMM32: `WM_IME_*`, `ImmGetContext`, `ImmGetCompositionStringW`, `ImmSetCandidateWindow` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Inline composition, result commit, and cursor-based candidate positioning exist. Full Cocoa text-input parity is not implemented. |
 | Mouse click/drag | `mouseDown:`, `mouseDragged:`, `mouseUp:` and right/other variants | `WM_LBUTTONDOWN`, `WM_LBUTTONUP`, `WM_MBUTTONDOWN`, `WM_MBUTTONUP`, `WM_RBUTTONDOWN`, `WM_RBUTTONUP`, `WM_XBUTTONDOWN`, `WM_XBUTTONUP`, `WM_MOUSEMOVE`, `WM_MOUSEWHEEL` | Done | `lib/echoes/gui_win32.rb` | Left/middle/right/X-button press, drag, release, and wheel are routed to terminal mouse reporting. |
 | Mouse wheel | `scrollWheel:`, `deltaY` | `WM_MOUSEWHEEL` | Done | `lib/echoes/gui_win32.rb` | Scroll accumulation and pane scrolling are implemented. |
-| Pointer cursor shape/visibility | `NSCursor.IBeamCursor`, `hide`, `unhide`, cursor rects | `LoadCursorW`, `SetCursor`, `ShowCursor`, `WM_SETCURSOR` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Terminal window uses the I-beam cursor. Hide/unhide is available from the View menu and Ctrl+Shift+P, with shake-to-show support; cursor rect parity is not implemented. |
+| Pointer cursor shape/visibility | `NSCursor.IBeamCursor`, `hide`, `unhide`, cursor rects | `LoadCursorW`, `SetCursor`, `ShowCursor`, `WM_SETCURSOR` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Terminal client area uses the I-beam cursor while non-client areas keep the default cursor. Hide/unhide is available from the View menu and Ctrl+Shift+P, with shake-to-show support. Per-cell cursor rects are not implemented. |
 | Text fill drawing | `NSColor#setFill`, `NSRectFill` | GDI `CreateSolidBrush`, `FillRect` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Used for background, selection, decorations, cursor, and pane borders. |
 | Text drawing | `NSString#drawAtPoint:withAttributes:` | GDI `TextOutW`, `ExtTextOutW` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Regular terminal text and multicell text are drawn with GDI. |
 | Font creation | `NSFont fontWithName:size:`, `monospacedSystemFontOfSize:weight:` | `CreateFontW` | Done | `lib/echoes/gui_win32.rb` | Regular, bold, italic, bold-italic fonts are created. |
@@ -99,7 +99,7 @@ The largest remaining AppKit parity gaps are:
 - In-process multiple native windows and full AppKit-style Window menu behavior.
 - Vector pane capture.
 - Full Cocoa-style IME/text-input parity.
-- Full gradient alpha/multi-stop parity, ligature control, cursor rect parity, and richer font shaping.
+- Full gradient alpha/multi-stop parity, ligature control, per-cell cursor rect parity, and richer font shaping.
 - Native toast notifications.
 - Embedded rubish mode and robust Ctrl-C delivery through ConPTY.
 

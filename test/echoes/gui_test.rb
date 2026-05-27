@@ -449,6 +449,24 @@ if Echoes::Platform.windows?
       ], calls
     end
 
+    test "Windows set cursor applies terminal cursor only in client area" do
+      gui = Echoes::GUI.allocate
+      applied = 0
+      defaults = []
+      gui.define_singleton_method(:set_terminal_cursor) { applied += 1; true }
+
+      with_win32_const(:DefWindowProcW, ->(hwnd, msg, wparam, lparam) {
+        defaults << [hwnd, msg, wparam, lparam]
+        55
+      }) do
+        assert_equal 1, gui.send(:handle_set_cursor, :hwnd, Echoes::Win32::WM_SETCURSOR, :wparam, Echoes::Win32::HTCLIENT)
+        assert_equal 55, gui.send(:handle_set_cursor, :hwnd, Echoes::Win32::WM_SETCURSOR, :wparam, 2)
+      end
+
+      assert_equal 1, applied
+      assert_equal [[:hwnd, Echoes::Win32::WM_SETCURSOR, :wparam, 2]], defaults
+    end
+
     test "Windows menu bar installs File View Window and Help menus" do
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@hwnd, 99)
