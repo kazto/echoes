@@ -64,9 +64,9 @@ Inventory date: 2026-05-26.
 | Raw RGB/RGBA conversion | `CGDataProviderCreateWithData`, `CGImageCreate` | Ruby buffer conversion / GDI+ path | Done | `lib/echoes/kitty_graphics_win32.rb` | `from_rgb` and `from_rgba` exist. |
 | Clipboard text | `NSPasteboard` with `NSPasteboardTypeString` | Win32 clipboard `CF_UNICODETEXT` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Copy/paste and OSC 52 use the Win32 helper. |
 | File URL drag/drop | `NSPasteboardTypeFileURL`, `readObjectsForClasses:options:` | `WM_DROPFILES`, `DragQueryFileW` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Dropped file paths are shell-quoted and pasted into the active pane, including bracketed paste mode. |
-| Open file dialog | `NSOpenPanel` | Common Item Dialog / `GetOpenFileNameW` | Missing | - | Windows has native APIs, but Echoes does not currently bind or use them. |
+| Open file dialog | `NSOpenPanel` | `GetOpenFileNameW` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows can prompt for a single editor file, starting from the active pane's OSC 7 working directory when available. |
 | URL open | `NSWorkspace.openURL:` | `ShellExecuteW` / Ctrl-click URL detection | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows Ctrl-click opens OSC 8 hyperlinks or detected `http(s)` URLs through `ShellExecuteW`. |
-| About panel | `orderFrontStandardAboutPanelWithOptions:` | Custom dialog / message box | Missing | - | No Win32 About dialog or menu surface exists. |
+| About panel | `orderFrontStandardAboutPanelWithOptions:` | `MessageBoxW` custom dialog | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows has the About dialog content and native message box, but no native menu surface yet. |
 | Notifications | `terminal-notifier` fallback on macOS | Window title fallback | Alternate | `lib/echoes/gui_win32.rb` | OSC 9 / OSC 777 requests set the Win32 window title; no native toast implementation. |
 | Screen enumeration | `NSScreen.screens`, `frame`, `visibleFrame`, `backingScaleFactor` | Monitor APIs such as `EnumDisplayMonitors` | Missing | - | No Win32 monitor enumeration binding is present. |
 | External/presentation windows | New `NSWindow` on selected `NSScreen` | Additional Win32 windows / monitor APIs | Missing | - | OSC open-window/display support is not implemented on Windows. |
@@ -91,9 +91,9 @@ Windows currently covers the core terminal path:
 
 The largest remaining AppKit parity gaps are:
 
-- Native menu bar, command accelerators, completion popup, and About panel.
+- Native menu bar, command accelerators, and completion popup.
 - Multiple native windows, screen enumeration, and OSC external-window/display support.
-- File open dialog and pane capture.
+- Pane capture.
 - Full IME candidate positioning/text-input parity.
 - Gradient backgrounds, ligature control, pointer hide/unhide, and richer font shaping.
 - Native toast notifications.

@@ -293,6 +293,65 @@ if Echoes::Platform.windows?
       ], calls
     end
 
+    test "Windows prompt for file opens dialog at the pane local cwd" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      screen.current_directory = "file://localhost/C:/Users"
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hwnd, :hwnd)
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.define_singleton_method(:current_tab) { @tabs[@active_tab] }
+
+      calls = []
+      with_win32_singleton_method(:open_file_dialog, ->(**kwargs) {
+        calls << kwargs
+        "C:/Users/demo.txt"
+      }) do
+        assert_equal "C:/Users/demo.txt", gui.send(:prompt_for_file_to_edit)
+      end
+
+      assert_equal [{hwnd: :hwnd, initial_dir: "C:/Users", title: "Open File"}], calls
+    end
+
+    test "Windows about panel text includes runtime and curated environment only" do
+      gui = Echoes::GUI.allocate
+      old_path = ENV["PATH"]
+      old_secret = ENV["AWS_SECRET_ACCESS_KEY"]
+      ENV["PATH"] = "C:\\bin"
+      ENV["AWS_SECRET_ACCESS_KEY"] = "secret"
+
+      text = gui.send(:about_panel_text)
+
+      assert_include text, "Echoes #{Echoes::VERSION}"
+      assert_include text, "Ruby #{RUBY_VERSION}"
+      assert_include text, "PATH=C:\\bin"
+      assert_not_include text, "AWS_SECRET_ACCESS_KEY"
+    ensure
+      ENV["PATH"] = old_path
+      if old_secret
+        ENV["AWS_SECRET_ACCESS_KEY"] = old_secret
+      else
+        ENV.delete("AWS_SECRET_ACCESS_KEY")
+      end
+    end
+
+    test "Windows about panel uses MessageBox helper" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hwnd, :hwnd)
+      gui.define_singleton_method(:about_panel_text) { "about text" }
+      calls = []
+
+      with_win32_singleton_method(:show_message_box, ->(hwnd, title, message) {
+        calls << [hwnd, title, message]
+        true
+      }) do
+        assert_true gui.send(:show_about_panel)
+      end
+
+      assert_equal [[:hwnd, "About Echoes", "about text"]], calls
+    end
+
     test "Windows IME composition updates marked text when composition string is present" do
       gui = Echoes::GUI.allocate
       gui.define_singleton_method(:read_ime_composition_string) do |hwnd, flag|
@@ -753,6 +812,17 @@ if Echoes::Platform.windows?
     ensure
       Echoes::Win32.send(:remove_const, name)
       Echoes::Win32.const_set(name, original)
+    end
+
+    def with_win32_singleton_method(name, replacement)
+      singleton = class << Echoes::Win32; self; end
+      original = Echoes::Win32.method(name)
+      singleton.send(:remove_method, name)
+      singleton.define_method(name, &replacement)
+      yield
+    ensure
+      singleton.send(:remove_method, name)
+      singleton.define_method(name) { |*args, **kwargs| original.call(*args, **kwargs) }
     end
   end
 end

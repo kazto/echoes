@@ -11,6 +11,7 @@ module Echoes
     DWRITE   = Fiddle.dlopen('dwrite.dll') rescue nil
     IMM32    = Fiddle.dlopen('imm32.dll') rescue nil
     SHELL32  = Fiddle.dlopen('shell32.dll') rescue nil
+    COMDLG32 = Fiddle.dlopen('comdlg32.dll') rescue nil
 
     # Type aliases matching Win32 / Fiddle
     P  = Fiddle::TYPE_VOIDP
@@ -63,12 +64,16 @@ module Echoes
     GetClipboardData  = new_func(USER32, 'GetClipboardData', [U], P)
     LoadCursorW       = new_func(USER32, 'LoadCursorW', [P, P], P)
     SetCursor         = new_func(USER32, 'SetCursor', [P], P)
+    MessageBoxW       = new_func(USER32, 'MessageBoxW', [P, P, P, U], I)
 
     # --- Shell32 Functions ---
     ShellExecuteW     = new_func(SHELL32, 'ShellExecuteW', [P, P, P, P, P, I], P)
     DragAcceptFiles   = new_func(SHELL32, 'DragAcceptFiles', [P, I], V)
     DragQueryFileW    = new_func(SHELL32, 'DragQueryFileW', [P, U, P, U], U)
     DragFinish        = new_func(SHELL32, 'DragFinish', [P], V)
+
+    # --- Comdlg32 Functions ---
+    GetOpenFileNameW  = new_func(COMDLG32, 'GetOpenFileNameW', [P], I)
 
     # --- Kernel32 Functions ---
     GlobalAlloc       = new_func(KERNEL32, 'GlobalAlloc', [U, S], P)
@@ -152,6 +157,15 @@ module Echoes
 
     VK_CONTROL         = 0x11
     IDC_IBEAM          = 32513
+
+    MB_OK              = 0x00000000
+    MB_ICONINFORMATION = 0x00000040
+
+    OFN_FILEMUSTEXIST  = 0x00001000
+    OFN_HIDEREADONLY   = 0x00000004
+    OFN_NOCHANGEDIR    = 0x00000008
+    OFN_PATHMUSTEXIST  = 0x00000800
+    OPENFILENAMEW_SIZE = Fiddle::SIZEOF_VOIDP == 8 ? 152 : 88
 
     # Struct sizes
     WNDCLASSEXW_SIZE   = 80
@@ -278,6 +292,76 @@ module Echoes
       end
     ensure
       DragFinish.call(hdrop) if DragFinish && hdrop && !null_pointer?(hdrop)
+    end
+
+    def self.show_message_box(hwnd, title, message, flags: MB_OK | MB_ICONINFORMATION)
+      return false unless MessageBoxW
+
+      MessageBoxW.call(
+        hwnd || 0,
+        Fiddle::Pointer[to_wstring(message.to_s)],
+        Fiddle::Pointer[to_wstring(title.to_s)],
+        flags
+      )
+      true
+    end
+
+    def self.open_file_dialog(hwnd: 0, initial_dir: nil, title: "Open File")
+      return nil unless GetOpenFileNameW
+
+      path_buf_chars = 32_768
+      path_buf = Fiddle::Pointer.malloc(path_buf_chars * 2, Fiddle::RUBY_FREE)
+      path_buf[0, path_buf_chars * 2] = "\x00" * (path_buf_chars * 2)
+
+      filter = to_wstring("All Files\0*.*\0")
+      title_w = to_wstring(title.to_s)
+      initial_dir_w = initial_dir && !initial_dir.empty? ? to_wstring(initial_dir.to_s) : nil
+      ofn = build_openfilenamew(
+        hwnd: hwnd,
+        file_buffer: path_buf,
+        max_file_chars: path_buf_chars,
+        filter: Fiddle::Pointer[filter],
+        title: Fiddle::Pointer[title_w],
+        initial_dir: initial_dir_w ? Fiddle::Pointer[initial_dir_w] : nil
+      )
+
+      return nil if GetOpenFileNameW.call(ofn) == 0
+
+      raw = path_buf[0, path_buf_chars * 2]
+      nul_at = utf16_nul_index(raw)
+      raw = raw[0...nul_at] if nul_at
+      return nil if raw.empty?
+
+      raw.force_encoding('UTF-16LE').encode('UTF-8')
+    end
+
+    def self.build_openfilenamew(hwnd:, file_buffer:, max_file_chars:, filter:, title:, initial_dir: nil)
+      ofn = Fiddle::Pointer.malloc(OPENFILENAMEW_SIZE, Fiddle::RUBY_FREE)
+      ofn[0, OPENFILENAMEW_SIZE] = "\x00" * OPENFILENAMEW_SIZE
+      flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST
+
+      if Fiddle::SIZEOF_VOIDP == 8
+        ofn[0, 4] = [OPENFILENAMEW_SIZE].pack('L')
+        ofn[8, 8] = [(hwnd || 0).to_i].pack('Q')
+        ofn[24, 8] = [filter.to_i].pack('Q')
+        ofn[44, 4] = [1].pack('L')
+        ofn[48, 8] = [file_buffer.to_i].pack('Q')
+        ofn[56, 4] = [max_file_chars].pack('L')
+        ofn[80, 8] = [(initial_dir || 0).to_i].pack('Q')
+        ofn[88, 8] = [title.to_i].pack('Q')
+        ofn[96, 4] = [flags].pack('L')
+      else
+        ofn[0, 4] = [OPENFILENAMEW_SIZE].pack('L')
+        ofn[4, 4] = [(hwnd || 0).to_i].pack('L')
+        ofn[12, 4] = [filter.to_i].pack('L')
+        ofn[24, 4] = [1].pack('L')
+        ofn[28, 4] = [file_buffer.to_i].pack('L')
+        ofn[32, 4] = [max_file_chars].pack('L')
+        ofn[44, 4] = [(initial_dir || 0).to_i].pack('L')
+        ofn[48, 4] = [title.to_i].pack('L')
+        ofn[52, 4] = [flags].pack('L')
+      end
+      ofn
     end
 
     def self.null_pointer?(ptr)

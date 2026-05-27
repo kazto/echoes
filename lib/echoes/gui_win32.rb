@@ -6,6 +6,7 @@ require_relative 'pane'
 require_relative 'preferences'
 require_relative 'profile'
 require_relative 'configuration'
+require 'rbconfig'
 require 'socket'
 require 'uri'
 
@@ -433,6 +434,50 @@ module Echoes
 
     private def open_url(url)
       Win32.open_url(url, hwnd: @hwnd)
+    end
+
+    private def prompt_for_file_to_edit
+      Win32.open_file_dialog(
+        hwnd: @hwnd,
+        initial_dir: self.class.pane_local_cwd(current_tab&.active_pane) || Dir.pwd,
+        title: "Open File"
+      )
+    end
+
+    ABOUT_PANEL_ENV_KEYS = %w[
+      LANG LC_ALL LC_CTYPE
+      TERM SHELL HOME USER PWD
+      PATH
+      RBENV_VERSION RBENV_ROOT
+      BUNDLE_GEMFILE GEM_HOME GEM_PATH
+      ECHOES_EMBED ECHOES_HELPER_NO_RC
+    ].freeze
+
+    private def show_about_panel
+      Win32.show_message_box(@hwnd, "About Echoes", about_panel_text)
+    end
+
+    private def about_panel_text
+      lines = [
+        "Ruby #{RUBY_VERSION}p#{RUBY_PATCHLEVEL} (#{RUBY_PLATFORM})",
+        RbConfig.ruby,
+        "",
+        "Echoes #{Echoes::VERSION}"
+      ]
+      lines << "rubish #{Rubish::VERSION}" if defined?(Rubish::VERSION)
+      lines << "rvim #{Rvim::VERSION}" if defined?(Rvim::VERSION)
+
+      env_lines = ABOUT_PANEL_ENV_KEYS.filter_map do |key|
+        value = ENV[key]
+        value && !value.empty? ? "#{key}=#{value}" : nil
+      end
+      unless env_lines.empty?
+        lines << ""
+        lines << "Environment:"
+        lines.concat(env_lines)
+      end
+
+      lines.join("\n")
     end
 
     private def handle_file_drop(hdrop)
