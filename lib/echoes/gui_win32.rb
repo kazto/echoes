@@ -39,6 +39,7 @@ module Echoes
     MENU_FIND_PREVIOUS = 10_021
     MENU_WINDOW_BASE = 10_100
     MENU_PROFILE_BASE = 10_200
+    MENU_COMPLETION_BASE = 10_400
 
     ACCELERATORS = [
       [Win32::FCONTROL | Win32::FVIRTKEY, 0x54, MENU_NEW_TAB],   # Ctrl+T
@@ -310,7 +311,12 @@ module Echoes
 
           escape_sequence = nil
           unless handled_key
-            escape_sequence = windows_key_sequence(vk, ctrl_pressed: ctrl_pressed)
+            if vk == 0x09 && !ctrl_pressed && !shift_pressed && (pane = current_tab&.active_pane) &&
+               handle_completion_tab(pane)
+              handled_key = true
+              Win32::InvalidateRect.call(hwnd, nil, 1)
+            end
+            escape_sequence = windows_key_sequence(vk, ctrl_pressed: ctrl_pressed) unless handled_key
             if escape_sequence && (tab = current_tab) && (pane = tab.active_pane)
               write_pane_input(pane, escape_sequence)
             end
@@ -685,6 +691,89 @@ module Echoes
         panes.each { |pane| pane.screen.mark_all_dirty if pane.screen.respond_to?(:mark_all_dirty) }
       end
       true
+    end
+
+    private def handle_completion_tab(pane)
+      return false unless pane.respond_to?(:embedded?) && pane.embedded?
+      return false unless pane.respond_to?(:embedded_shell)
+      return false if pane.embedded_shell.running?
+
+      req = pane.completion_request
+      return false unless req && req[:candidates].size > 1
+
+      show_completion_popup(pane, req)
+    end
+
+    private def show_completion_popup(pane, req)
+      return false unless Win32::CreatePopupMenu && Win32::TrackPopupMenu
+
+      candidates = req[:candidates]
+      return false if candidates.nil? || candidates.empty?
+
+      menu = Win32::CreatePopupMenu.call
+      return false if !menu || Win32.null_pointer?(menu)
+
+      candidates.each_with_index do |candidate, index|
+        break if index >= 100
+
+        append_menu_item(menu, MENU_COMPLETION_BASE + index, candidate)
+      end
+
+      @completion_state = {pane: pane, word_start: req[:word_start], candidates: candidates}
+      x, y = client_to_screen(*completion_anchor_point(pane))
+      command_id = Win32::TrackPopupMenu.call(
+        menu,
+        Win32::TPM_RETURNCMD | Win32::TPM_RIGHTBUTTON,
+        x,
+        y,
+        0,
+        @hwnd || 0,
+        nil
+      )
+      command_id.to_i > 0 ? completion_picked_by_command(command_id.to_i) : false
+    ensure
+      @completion_state = nil unless command_id.to_i > 0
+      Win32::DestroyMenu.call(menu) if defined?(menu) && menu && Win32::DestroyMenu
+    end
+
+    private def completion_anchor_point(pane)
+      return [0, 0] unless @cell_width && @cell_height
+
+      tab = current_tab
+      return [0, 0] unless tab&.respond_to?(:pane_tree)
+
+      rect = tab.pane_tree.layout(0, 0, @cols, @rows).find { |entry| entry[:pane] == pane }
+      cursor = pane&.screen&.cursor
+      return [0, 0] unless rect && cursor
+
+      [
+        ((rect[:x] + cursor.col) * @cell_width).to_i,
+        ((rect[:y] + cursor.row + 1) * @cell_height).to_i
+      ]
+    end
+
+    private def client_to_screen(x, y)
+      return [x.to_i, y.to_i] unless Win32::ClientToScreen && @hwnd && !Win32.null_pointer?(@hwnd)
+
+      point = Fiddle::Pointer.malloc(Win32::POINT_SIZE, Fiddle::RUBY_FREE)
+      point[0, Win32::POINT_SIZE] = [x.to_i, y.to_i].pack('l2')
+      return [x.to_i, y.to_i] if Win32::ClientToScreen.call(@hwnd, point) == 0
+
+      point[0, Win32::POINT_SIZE].unpack('l2')
+    end
+
+    private def completion_picked_by_command(command_id)
+      state = @completion_state
+      return false unless state
+
+      index = command_id - MENU_COMPLETION_BASE
+      candidate = state[:candidates][index]
+      return false unless candidate
+
+      state[:pane].apply_completion(word_start: state[:word_start], completion: candidate)
+      true
+    ensure
+      @completion_state = nil
     end
 
     private def close_tab(index)

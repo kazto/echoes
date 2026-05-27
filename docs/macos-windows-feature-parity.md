@@ -45,7 +45,7 @@ Inventory date: 2026-05-26.
 | Window focus notifications | `NSNotificationCenter` for key/resign notifications | `WM_SETFOCUS` / `WM_KILLFOCUS` equivalent | Done | `lib/echoes/gui_win32.rb` | Win32 focus changes update focused state and send focus reporting sequences when `?1004` is enabled. |
 | Menu bar | `NSMenu`, `NSMenuItem`, `setMainMenu:` | Win32 menus and accelerator table | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows has File/Edit/View/Window/Shell/Help menus and accelerators for common tab, pane, search, profile, pointer, About, and Exit commands. App-level macOS services are not equivalent. |
 | Window menu | `NSApplication#setWindowsMenu:` | Win32 menu plus shared process window registry | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb`, `lib/echoes/window_registry.rb` | Windows lists open Echoes windows across processes and can focus, minimize, maximize, or restore the current window. It is process-registry based rather than AppKit's in-process windows menu. |
-| Completion popup | `NSMenu#popUpMenuPositioningItem:atLocation:inView:` | Popup menu or custom overlay | Missing | - | Current Win32 GUI does not implement the completion popup. |
+| Completion popup | `NSMenu#popUpMenuPositioningItem:atLocation:inView:` | `TrackPopupMenu` anchored at the terminal cursor | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows has a native popup substrate for embedded-pane completion requests. Embedded rubish mode is still unsupported on Windows, so the normal Windows GUI cannot exercise this path yet. |
 | Keyboard input | `NSEvent#characters`, `keyCode`, `modifierFlags`, `interpretKeyEvents:` | `WM_CHAR`, `WM_KEYDOWN`, virtual-key mapping | Done | `lib/echoes/gui_win32.rb` | Special keys and Ctrl-letter mappings are implemented. |
 | Copy mode/search key routing | AppKit keyboard callbacks | Win32 `WM_CHAR` / `WM_KEYDOWN` routed to shared pane logic | Partial | `lib/echoes/gui_win32.rb` | Search mode, live query updates, next/previous navigation, and selection helpers exist, but the Windows UI surface is smaller than AppKit. |
 | IME composition | `NSTextInputClient` | IMM32: `WM_IME_*`, `ImmGetContext`, `ImmGetCompositionStringW`, `ImmSetCandidateWindow` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Inline composition, result commit, and cursor-based candidate positioning exist. Full Cocoa text-input parity is not implemented. |
@@ -90,18 +90,20 @@ Windows currently covers the core terminal path:
 - Keyboard input, special keys, mouse wheel, basic mouse selection, clipboard text, OSC 52, and minimal OSC notification fallback.
 - OSC display-info and process-based OSC open-window launch on a selected monitor.
 - Basic Window menu integration backed by a shared Win32 window registry.
+- Native completion popup substrate for embedded-pane completion requests.
 - OSC capture to PNG and raster PDF.
 - JSON preferences and `.bat` installer.
 
 The largest remaining AppKit parity gaps are:
 
-- Completion popup and app-level macOS menu services.
+- App-level macOS menu services.
 - In-process multiple native windows and full AppKit-style Window menu behavior.
 - Vector pane capture.
 - Full Cocoa-style IME/text-input parity.
 - Full gradient alpha/multi-stop parity, ligature control, per-cell cursor rect parity, and richer font shaping.
 - Native toast notifications.
-- Embedded rubish mode and robust Ctrl-C delivery through ConPTY.
+- Embedded rubish mode, which also blocks user-visible completion popup parity on Windows.
+- Robust Ctrl-C delivery through ConPTY.
 
 ## Maintenance Notes
 

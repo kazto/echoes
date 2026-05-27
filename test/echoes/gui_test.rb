@@ -19,6 +19,15 @@ if Echoes::Platform.windows?
         writes << str
       end
     end
+    StubEmbeddedPane = Struct.new(:screen, :request, :applied) do
+      def embedded? = true
+      def embedded_shell = self
+      def running? = false
+      def completion_request = request
+      def apply_completion(word_start:, completion:)
+        applied << [word_start, completion]
+      end
+    end
     StubTab = Struct.new(:active_pane) do
       def screen
         active_pane.screen
@@ -599,6 +608,64 @@ if Echoes::Platform.windows?
       assert_equal gui.send(:make_color, *profile.foreground), gui.instance_variable_get(:@default_fg)
       assert_equal gui.send(:make_color, *profile.background), gui.instance_variable_get(:@default_bg)
       assert_equal Set.new([0, 1]), screen.dirty_rows
+    end
+
+    test "Windows completion popup applies selected candidate" do
+      screen = Echoes::Screen.new(rows: 4, cols: 10)
+      screen.cursor.row = 2
+      screen.cursor.col = 3
+      req = {word_start: 4, candidates: ["alpha", "alpine", "alto"]}
+      pane = StubEmbeddedPane.new(screen, req, [])
+      pane_tree = StubPaneTree.new(pane, [{x: 5, y: 1, w: 10, h: 4, pane: pane}])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hwnd, 99)
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
+      gui.instance_variable_set(:@cols, 20)
+      gui.instance_variable_set(:@rows, 8)
+      gui.instance_variable_set(:@cell_width, 10)
+      gui.instance_variable_set(:@cell_height, 20)
+      calls = []
+
+      with_win32_const(:CreatePopupMenu, -> { calls << [:create]; 500 }) do
+        with_win32_const(:AppendMenuW, ->(menu, flags, id, _label) { calls << [:append, menu, flags, id]; 1 }) do
+          with_win32_const(:ClientToScreen, ->(_hwnd, point) {
+            x, y = point[0, Echoes::Win32::POINT_SIZE].unpack("l2")
+            point[0, Echoes::Win32::POINT_SIZE] = [x + 100, y + 200].pack("l2")
+            calls << [:client_to_screen, x, y]
+            1
+          }) do
+            with_win32_const(:TrackPopupMenu, ->(menu, flags, x, y, _reserved, hwnd, _rect) {
+              calls << [:track, menu, flags, x, y, hwnd]
+              Echoes::GUI::MENU_COMPLETION_BASE + 1
+            }) do
+              with_win32_const(:DestroyMenu, ->(menu) { calls << [:destroy, menu]; 1 }) do
+                assert_true gui.send(:show_completion_popup, pane, req)
+              end
+            end
+          end
+        end
+      end
+
+      assert_include calls, [:append, 500, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_COMPLETION_BASE]
+      assert_include calls, [:append, 500, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_COMPLETION_BASE + 1]
+      assert_include calls, [:client_to_screen, 80, 80]
+      assert_include calls, [:track, 500, Echoes::Win32::TPM_RETURNCMD | Echoes::Win32::TPM_RIGHTBUTTON, 180, 280, 99]
+      assert_include calls, [:destroy, 500]
+      assert_equal [[4, "alpine"]], pane.applied
+      assert_nil gui.instance_variable_get(:@completion_state)
+    end
+
+    test "Windows embedded tab key uses completion popup for multiple candidates" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      req = {word_start: 0, candidates: ["cat", "cd"]}
+      pane = StubEmbeddedPane.new(screen, req, [])
+      gui = Echoes::GUI.allocate
+      shown = []
+      gui.define_singleton_method(:show_completion_popup) { |shown_pane, shown_req| shown << [shown_pane, shown_req]; true }
+
+      assert_true gui.send(:handle_completion_tab, pane)
+      assert_equal [[pane, req]], shown
     end
 
     test "Windows accelerator table encodes menu shortcuts" do

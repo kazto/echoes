@@ -70,8 +70,11 @@ module Echoes
     CreatePopupMenu   = new_func(USER32, 'CreatePopupMenu', [], P)
     AppendMenuW       = new_func(USER32, 'AppendMenuW', [P, U, S, P], I)
     DeleteMenu        = new_func(USER32, 'DeleteMenu', [P, U, U], I)
+    DestroyMenu       = new_func(USER32, 'DestroyMenu', [P], I)
+    TrackPopupMenu    = new_func(USER32, 'TrackPopupMenu', [P, U, I, I, I, P, P], I)
     SetMenu           = new_func(USER32, 'SetMenu', [P, P], I)
     DrawMenuBar       = new_func(USER32, 'DrawMenuBar', [P], I)
+    ClientToScreen    = new_func(USER32, 'ClientToScreen', [P, P], I)
     LoadAcceleratorsW = new_func(USER32, 'LoadAcceleratorsW', [P, P], P)
     CreateAcceleratorTableW = new_func(USER32, 'CreateAcceleratorTableW', [P, I], P)
     DestroyAcceleratorTable = new_func(USER32, 'DestroyAcceleratorTable', [P], I)
@@ -210,6 +213,8 @@ module Echoes
     MF_SEPARATOR       = 0x00000800
     MF_POPUP           = 0x00000010
     MF_BYPOSITION      = 0x00000400
+    TPM_RIGHTBUTTON    = 0x00000002
+    TPM_RETURNCMD      = 0x00000100
 
     FVIRTKEY           = 0x01
     FSHIFT             = 0x04
@@ -243,6 +248,7 @@ module Echoes
     MSG_SIZE           = 48
     PAINTSTRUCT_SIZE   = 72
     RECT_SIZE          = 16
+    POINT_SIZE         = 8
 
     # Convert Ruby UTF-8 string to Win32 wide character string (UTF-16LE, null terminated)
     def self.to_wstring(str)
