@@ -492,6 +492,9 @@ if Echoes::Platform.windows?
       assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_EXIT]
       assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_COPY]
       assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_PASTE]
+      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_FIND]
+      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_FIND_NEXT]
+      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_FIND_PREVIOUS]
       assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_TOGGLE_POINTER]
       assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MINIMIZE]
       assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MAXIMIZE]
@@ -527,6 +530,9 @@ if Echoes::Platform.windows?
       split_rights = 0
       split_downs = 0
       close_panes = 0
+      finds = 0
+      nexts = 0
+      prevs = 0
       gui.define_singleton_method(:create_tab) { |editor_file: nil| created << editor_file }
       gui.define_singleton_method(:prompt_for_file_to_edit) { "C:/tmp/demo.txt" }
       gui.define_singleton_method(:invalidate_window) { invalidations += 1 }
@@ -537,6 +543,9 @@ if Echoes::Platform.windows?
       gui.define_singleton_method(:close_tab) { |_index| close_tabs += 1 }
       gui.define_singleton_method(:split_active_pane) { |direction| direction == :vertical ? split_rights += 1 : split_downs += 1 }
       gui.define_singleton_method(:close_active_pane) { close_panes += 1 }
+      gui.define_singleton_method(:toggle_search) { finds += 1 }
+      gui.define_singleton_method(:search_next) { nexts += 1 }
+      gui.define_singleton_method(:search_prev) { prevs += 1 }
 
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_NEW_TAB)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_OPEN_FILE)
@@ -548,11 +557,14 @@ if Echoes::Platform.windows?
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_SPLIT_RIGHT)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_SPLIT_DOWN)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_CLOSE_PANE)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_FIND)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_FIND_NEXT)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_FIND_PREVIOUS)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_EXIT)
       assert_false gui.send(:dispatch_menu_command, 999_999)
 
       assert_equal [nil, "C:/tmp/demo.txt"], created
-      assert_equal 7, invalidations
+      assert_equal 10, invalidations
       assert_equal 1, about
       assert_equal 1, toggles
       assert_equal 1, copies
@@ -561,6 +573,9 @@ if Echoes::Platform.windows?
       assert_equal 1, split_rights
       assert_equal 1, split_downs
       assert_equal 1, close_panes
+      assert_equal 1, finds
+      assert_equal 1, nexts
+      assert_equal 1, prevs
       assert_false gui.instance_variable_get(:@running)
     end
 
@@ -572,8 +587,9 @@ if Echoes::Platform.windows?
 
       assert_equal Echoes::GUI::ACCELERATORS.size, entries.size
       assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x54, Echoes::GUI::MENU_NEW_TAB], entries[0]
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x57, Echoes::GUI::MENU_CLOSE_TAB], entries[2]
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x50, Echoes::GUI::MENU_TOGGLE_POINTER], entries[5]
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x46, Echoes::GUI::MENU_FIND], entries[2]
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x57, Echoes::GUI::MENU_CLOSE_TAB], entries[5]
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x50, Echoes::GUI::MENU_TOGGLE_POINTER], entries[8]
       assert_equal [Echoes::Win32::FVIRTKEY | 0x80, 0x70, Echoes::GUI::MENU_ABOUT], entries[-1]
     end
 
@@ -869,6 +885,57 @@ if Echoes::Platform.windows?
       assert_false gui.send(:poll_active_pane_output)
       assert_equal ["unread"], dead_pane.outputs
       assert_equal [], parser.fed
+    end
+
+    test "Windows search finds grid and scrollback matches" do
+      screen = Echoes::Screen.new(rows: 2, cols: 12)
+      "foo here".chars.each_with_index { |char, i| screen.grid[0][i].char = char }
+      "bar foo".chars.each_with_index { |char, i| screen.grid[1][i].char = char }
+      scroll_row = Array.new(12) { Echoes::Cell.new }
+      "old foo".chars.each_with_index { |char, i| scroll_row[i].char = char }
+      screen.scrollback << scroll_row
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.instance_variable_set(:@rows, 2)
+      gui.instance_variable_set(:@search_query, "foo")
+      gui.instance_variable_set(:@search_matches, [])
+      gui.instance_variable_set(:@search_index, -1)
+      gui.instance_variable_set(:@search_regex_mode, false)
+      gui.instance_variable_set(:@search_case_insensitive, false)
+
+      gui.send(:perform_search)
+
+      assert_equal [[0, 4, 3], [1, 0, 3], [2, 4, 3]], gui.instance_variable_get(:@search_matches)
+      assert_equal 2, gui.instance_variable_get(:@search_index)
+      assert_equal 0, pane.scroll_offset
+    end
+
+    test "Windows search key handling updates query and modes" do
+      screen = Echoes::Screen.new(rows: 1, cols: 12)
+      "Foo foo".chars.each_with_index { |char, i| screen.grid[0][i].char = char }
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.instance_variable_set(:@rows, 1)
+      gui.instance_variable_set(:@search_mode, true)
+      gui.instance_variable_set(:@search_query, +"")
+      gui.instance_variable_set(:@search_matches, [])
+      gui.instance_variable_set(:@search_index, -1)
+      gui.instance_variable_set(:@search_regex_mode, false)
+      gui.instance_variable_set(:@search_case_insensitive, false)
+
+      assert_true gui.send(:handle_search_char, "f")
+      assert_equal "f", gui.instance_variable_get(:@search_query)
+      assert_equal [[0, 4, 1]], gui.instance_variable_get(:@search_matches)
+      assert_true gui.send(:handle_search_keydown, 0x49, ctrl_pressed: true, shift_pressed: false)
+      assert_equal [[0, 0, 1], [0, 4, 1]], gui.instance_variable_get(:@search_matches)
+      assert_true gui.send(:handle_search_keydown, 0x08, ctrl_pressed: false, shift_pressed: false)
+      assert_equal "", gui.instance_variable_get(:@search_query)
+      assert_true gui.send(:handle_search_keydown, 0x1B, ctrl_pressed: false, shift_pressed: false)
+      assert_false gui.instance_variable_get(:@search_mode)
     end
 
     test "Windows resize updates rows and cols from pixel dimensions" do

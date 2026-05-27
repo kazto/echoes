@@ -34,11 +34,17 @@ module Echoes
     MENU_NEXT_TAB = 10_016
     MENU_PREVIOUS_PANE = 10_017
     MENU_NEXT_PANE = 10_018
+    MENU_FIND = 10_019
+    MENU_FIND_NEXT = 10_020
+    MENU_FIND_PREVIOUS = 10_021
     MENU_WINDOW_BASE = 10_100
 
     ACCELERATORS = [
       [Win32::FCONTROL | Win32::FVIRTKEY, 0x54, MENU_NEW_TAB],   # Ctrl+T
       [Win32::FCONTROL | Win32::FVIRTKEY, 0x4F, MENU_OPEN_FILE], # Ctrl+O
+      [Win32::FCONTROL | Win32::FVIRTKEY, 0x46, MENU_FIND],      # Ctrl+F
+      [Win32::FVIRTKEY, 0x72, MENU_FIND_NEXT],                   # F3
+      [Win32::FSHIFT | Win32::FVIRTKEY, 0x72, MENU_FIND_PREVIOUS], # Shift+F3
       [Win32::FCONTROL | Win32::FVIRTKEY, 0x57, MENU_CLOSE_TAB], # Ctrl+W
       [Win32::FCONTROL | Win32::FSHIFT | Win32::FVIRTKEY, 0x44, MENU_SPLIT_DOWN], # Ctrl+Shift+D
       [Win32::FCONTROL | Win32::FSHIFT | Win32::FVIRTKEY, 0x57, MENU_CLOSE_PANE], # Ctrl+Shift+W
@@ -109,12 +115,20 @@ module Echoes
       @window_menu_handle = nil
       @window_menu_update_counter = 0
       @window_menu_dynamic_count = 0
+      @search_mode = false
+      @search_query = +""
+      @search_matches = []
+      @search_index = -1
+      @search_regex_mode = false
+      @search_case_insensitive = false
 
       # カラーテーマの初期化
       @active_profile = Echoes.config.active_profile rescue nil
       @colors = build_color_table
       @default_fg = make_color(*default_fg_rgb)
       @default_bg = make_color(*default_bg_rgb)
+      @search_match_bg = make_color(0.45, 0.38, 0.0)
+      @search_current_bg = make_color(0.1, 0.45, 0.55)
 
       # 境界線・デバイダー用ブラシの作成
       @active_border_brush = Win32::CreateSolidBrush.call(make_color(0.2, 0.4, 0.8))
@@ -260,6 +274,11 @@ module Echoes
           char_code = wparam.to_i
           unless [0x08, 0x09, 0x0D, 0x1B].include?(char_code)
             utf8_char = [char_code].pack('S').force_encoding('UTF-16LE').encode('UTF-8') rescue nil
+            if utf8_char && @search_mode
+              handle_search_char(utf8_char)
+              Win32::InvalidateRect.call(hwnd, nil, 1)
+              return 0
+            end
             if utf8_char && (tab = current_tab) && (pane = tab.active_pane)
               write_pane_input(pane, utf8_char)
             end
@@ -270,6 +289,11 @@ module Echoes
           vk = wparam.to_i
           ctrl_pressed = (Win32::GetKeyState.call(0x11) & 0x8000) != 0
           shift_pressed = (Win32::GetKeyState.call(0x10) & 0x8000) != 0
+
+          if @search_mode && handle_search_keydown(vk, ctrl_pressed: ctrl_pressed, shift_pressed: shift_pressed)
+            Win32::InvalidateRect.call(hwnd, nil, 1)
+            return 0
+          end
 
           handled_key = false
           if ctrl_pressed && shift_pressed
@@ -443,6 +467,10 @@ module Echoes
       append_menu_item(file_menu, MENU_EXIT, "Exit")
       append_menu_item(edit_menu, MENU_COPY, "Copy")
       append_menu_item(edit_menu, MENU_PASTE, "Paste")
+      append_menu_item(view_menu, MENU_FIND, "Find")
+      append_menu_item(view_menu, MENU_FIND_NEXT, "Find Next")
+      append_menu_item(view_menu, MENU_FIND_PREVIOUS, "Find Previous")
+      append_menu_separator(view_menu)
       append_menu_item(view_menu, MENU_TOGGLE_POINTER, "Hide Mouse Pointer")
       append_menu_item(window_menu, MENU_WINDOW_MINIMIZE, "Minimize")
       append_menu_item(window_menu, MENU_WINDOW_MAXIMIZE, "Maximize")
@@ -559,6 +587,18 @@ module Echoes
         true
       when MENU_CLOSE_PANE
         close_active_pane
+        invalidate_window
+        true
+      when MENU_FIND
+        toggle_search
+        invalidate_window
+        true
+      when MENU_FIND_NEXT
+        search_next
+        invalidate_window
+        true
+      when MENU_FIND_PREVIOUS
+        search_prev
         invalidate_window
         true
       when MENU_WINDOW_MINIMIZE
@@ -1863,6 +1903,9 @@ module Echoes
           if selected
             fg_color, bg_color = bg_color, fg_color
           end
+          if (search_colors = search_colors_for_cell(is_active, src, c))
+            fg_color, bg_color = search_colors
+          end
 
           if cell.multicell.is_a?(Hash)
             draw_multicell_text(hdc, cell, px + c * @cell_width, y, fg_color, bg_color)
@@ -1901,6 +1944,9 @@ module Echoes
             n_selected = is_active && cell_selected?(src, c + run_length)
             if n_selected
               n_fg_color, n_bg_color = n_bg_color, n_fg_color
+            end
+            if (n_search_colors = search_colors_for_cell(is_active, src, c + run_length))
+              n_fg_color, n_bg_color = n_search_colors
             end
 
             break if n_fg_color != fg_color ||
@@ -2431,6 +2477,142 @@ module Echoes
         end
       end
       false
+    end
+
+    private def search_colors_for_cell(is_active, abs_row, col)
+      return nil unless is_active && @search_mode
+      return [@default_fg, @search_current_bg] if current_search_match_at?(abs_row, col)
+      return [@default_fg, @search_match_bg] if search_match_at?(abs_row, col)
+
+      nil
+    end
+
+    private def toggle_search
+      @search_mode = !@search_mode
+      if @search_mode
+        @search_query = +""
+        @search_matches = []
+        @search_index = -1
+      end
+      true
+    end
+
+    private def handle_search_char(chars)
+      return false if chars.nil? || chars.empty?
+
+      @search_query << chars
+      perform_search
+      true
+    end
+
+    private def handle_search_keydown(vk, ctrl_pressed:, shift_pressed:)
+      case vk
+      when 0x1B
+        @search_mode = false
+        @search_matches = []
+        true
+      when 0x0D
+        shift_pressed ? search_prev : search_next
+        true
+      when 0x08
+        @search_query.chop!
+        perform_search
+        true
+      when 0x49
+        return false unless ctrl_pressed
+
+        @search_case_insensitive = !@search_case_insensitive
+        perform_search
+        true
+      when 0x52
+        return false unless ctrl_pressed
+
+        @search_regex_mode = !@search_regex_mode
+        perform_search
+        true
+      else
+        false
+      end
+    end
+
+    private def perform_search
+      @search_matches = []
+      @search_index = -1
+      return if @search_query.empty?
+
+      tab = current_tab
+      return unless tab
+
+      screen = tab.screen
+      matcher = build_search_matcher(@search_query)
+      return unless matcher
+
+      screen.scrollback.each_with_index do |row, abs_row|
+        scan_row_for_matches(row, abs_row, matcher)
+      end
+      screen.grid.each_with_index do |row, grid_row|
+        scan_row_for_matches(row, screen.scrollback.size + grid_row, matcher)
+      end
+
+      @search_index = @search_matches.size - 1 if @search_matches.any?
+      scroll_to_match if @search_index >= 0
+    end
+
+    private def scan_row_for_matches(row, abs_row, matcher)
+      text = row.map { |cell| cell&.char.to_s }.join
+      pos = 0
+      while pos <= text.length && (hit = matcher.call(text, pos))
+        idx, len = hit
+        break if idx < pos
+
+        step = [len, 1].max
+        @search_matches << [abs_row, idx, step]
+        pos = idx + step
+      end
+    end
+
+    private def search_next
+      return false if @search_matches.empty?
+
+      @search_index = (@search_index + 1) % @search_matches.size
+      scroll_to_match
+      true
+    end
+
+    private def search_prev
+      return false if @search_matches.empty?
+
+      @search_index = (@search_index - 1) % @search_matches.size
+      scroll_to_match
+      true
+    end
+
+    private def scroll_to_match
+      return false if @search_index < 0 || @search_index >= @search_matches.size
+
+      abs_row, = @search_matches[@search_index]
+      tab = current_tab
+      return false unless tab
+
+      scrollback_size = tab.screen.scrollback.size
+      scroll_target = tab.respond_to?(:scroll_offset=) ? tab : tab.active_pane
+      if abs_row < scrollback_size
+        scroll_target.scroll_offset = (scrollback_size - abs_row - (@rows / 2)).clamp(0, scrollback_size)
+      else
+        scroll_target.scroll_offset = 0
+      end
+      true
+    end
+
+    private def search_match_at?(abs_row, col)
+      @search_matches.any? { |row, start, len| row == abs_row && col >= start && col < start + len }
+    end
+
+    private def current_search_match_at?(abs_row, col)
+      return false if @search_index < 0 || @search_index >= @search_matches.size
+
+      row, start, len = @search_matches[@search_index]
+      row == abs_row && col >= start && col < start + len
     end
 
     private def build_search_matcher(query)
