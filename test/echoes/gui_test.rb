@@ -364,18 +364,20 @@ if Echoes::Platform.windows?
       ], calls
     end
 
-    test "Windows menu bar installs File View and Help menus" do
+    test "Windows menu bar installs File View Window and Help menus" do
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@hwnd, 99)
-      popup_handles = [200, 201, 202]
+      popup_handles = [200, 201, 202, 203]
       calls = []
 
-      with_win32_const(:CreateMenu, -> { calls << [:create_menu]; 100 }) do
-        with_win32_const(:CreatePopupMenu, -> { handle = popup_handles.shift; calls << [:create_popup, handle]; handle }) do
-          with_win32_const(:AppendMenuW, ->(menu, flags, id, _label) { calls << [:append, menu, flags, id]; 1 }) do
-            with_win32_const(:SetMenu, ->(hwnd, menu) { calls << [:set_menu, hwnd, menu]; 1 }) do
-              with_win32_const(:DrawMenuBar, ->(hwnd) { calls << [:draw, hwnd]; 1 }) do
-                assert_true gui.send(:setup_menu)
+      with_window_registry_windows([]) do
+        with_win32_const(:CreateMenu, -> { calls << [:create_menu]; 100 }) do
+          with_win32_const(:CreatePopupMenu, -> { handle = popup_handles.shift; calls << [:create_popup, handle]; handle }) do
+            with_win32_const(:AppendMenuW, ->(menu, flags, id, _label) { calls << [:append, menu, flags, id]; 1 }) do
+              with_win32_const(:SetMenu, ->(hwnd, menu) { calls << [:set_menu, hwnd, menu]; 1 }) do
+                with_win32_const(:DrawMenuBar, ->(hwnd) { calls << [:draw, hwnd]; 1 }) do
+                  assert_true gui.send(:setup_menu)
+                end
               end
             end
           end
@@ -386,10 +388,14 @@ if Echoes::Platform.windows?
       assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_OPEN_FILE]
       assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_EXIT]
       assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_TOGGLE_POINTER]
-      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_ABOUT]
+      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MINIMIZE]
+      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MAXIMIZE]
+      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_FULLSCREEN]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_ABOUT]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 200]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 201]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 202]
+      assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 203]
       assert_include calls, [:set_menu, 99, 100]
       assert_include calls, [:draw, 99]
     end
@@ -1260,6 +1266,17 @@ if Echoes::Platform.windows?
     ensure
       Echoes::Win32.send(:remove_const, name)
       Echoes::Win32.const_set(name, original)
+    end
+
+    def with_window_registry_windows(windows)
+      singleton = class << Echoes::WindowRegistry; self; end
+      original = Echoes::WindowRegistry.method(:list_windows)
+      singleton.send(:remove_method, :list_windows)
+      singleton.define_method(:list_windows) { windows }
+      yield
+    ensure
+      singleton.send(:remove_method, :list_windows)
+      singleton.define_method(:list_windows) { original.call }
     end
 
     def with_win32_singleton_method(name, replacement)

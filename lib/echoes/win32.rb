@@ -69,6 +69,7 @@ module Echoes
     CreateMenu        = new_func(USER32, 'CreateMenu', [], P)
     CreatePopupMenu   = new_func(USER32, 'CreatePopupMenu', [], P)
     AppendMenuW       = new_func(USER32, 'AppendMenuW', [P, U, S, P], I)
+    DeleteMenu        = new_func(USER32, 'DeleteMenu', [P, U, U], I)
     SetMenu           = new_func(USER32, 'SetMenu', [P, P], I)
     DrawMenuBar       = new_func(USER32, 'DrawMenuBar', [P], I)
     LoadAcceleratorsW = new_func(USER32, 'LoadAcceleratorsW', [P, P], P)
@@ -94,6 +95,21 @@ module Echoes
     GlobalLock        = new_func(KERNEL32, 'GlobalLock', [P], P)
     GlobalUnlock      = new_func(KERNEL32, 'GlobalUnlock', [P], I)
     GlobalSize        = new_func(KERNEL32, 'GlobalSize', [P], S)
+
+    # Shared memory functions
+    CreateFileMappingW = new_func(KERNEL32, 'CreateFileMappingW', [P, L, L, L, L, P], P)
+    MapViewOfFile      = new_func(KERNEL32, 'MapViewOfFile', [P, L, L, L, L], P)
+    UnmapViewOfFile    = new_func(KERNEL32, 'UnmapViewOfFile', [P], I)
+    CloseHandle        = new_func(KERNEL32, 'CloseHandle', [P], I)
+
+    # Mutex functions
+    CreateMutexW       = new_func(KERNEL32, 'CreateMutexW', [P, I, P], P)
+    WaitForSingleObject = new_func(KERNEL32, 'WaitForSingleObject', [P, L], L)
+    ReleaseMutex       = new_func(KERNEL32, 'ReleaseMutex', [P], I)
+
+    # Window management functions
+    SetForegroundWindow = new_func(USER32, 'SetForegroundWindow', [P], I)
+    GetWindowTextW      = new_func(USER32, 'GetWindowTextW', [P, P, I], I)
 
     # --- Imm32 (IME) Functions ---
     ImmGetContext            = new_func(IMM32, 'ImmGetContext', [P], P)
@@ -125,6 +141,9 @@ module Echoes
     WS_OVERLAPPEDWINDOW = 0x00CF0000
     WS_VISIBLE         = 0x10000000
     SW_SHOWNORMAL      = 1
+    SW_MINIMIZE        = 2
+    SW_MAXIMIZE        = 3
+    SW_RESTORE         = 9
 
     # Windows Messages
     WM_DESTROY         = 0x0002
@@ -180,6 +199,7 @@ module Echoes
     MF_STRING          = 0x00000000
     MF_SEPARATOR       = 0x00000800
     MF_POPUP           = 0x00000010
+    MF_BYPOSITION      = 0x00000400
 
     FVIRTKEY           = 0x01
     FSHIFT             = 0x04
@@ -194,6 +214,19 @@ module Echoes
     MONITORINFO_SIZE   = 40
     MONITORINFOF_PRIMARY = 0x00000001
     MONITOR_DEFAULTTONEAREST = 0x00000002
+
+    # Shared memory constants
+    PAGE_READWRITE     = 0x04
+    FILE_MAP_ALL_ACCESS = 0xF001F
+    INVALID_HANDLE_VALUE = Fiddle::SIZEOF_VOIDP == 8 ? 0xFFFFFFFFFFFFFFFF : 0xFFFFFFFF
+
+    # Mutex constants
+    INFINITE           = 0xFFFFFFFF
+    WAIT_OBJECT_0      = 0x00000000
+    WAIT_TIMEOUT       = 0x00000102
+
+    # Alternate INFINITE for signed integers
+    INFINITE_SIGNED    = -1
 
     # Struct sizes
     WNDCLASSEXW_SIZE   = 80

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative 'win32'
+require_relative 'window_registry'
 require_relative 'tab'
 require_relative 'pane'
 require_relative 'preferences'
@@ -20,6 +21,10 @@ module Echoes
     MENU_EXIT = 10_003
     MENU_ABOUT = 10_004
     MENU_TOGGLE_POINTER = 10_005
+    MENU_WINDOW_MINIMIZE = 10_010
+    MENU_WINDOW_MAXIMIZE = 10_011
+    MENU_WINDOW_FULLSCREEN = 10_012
+    MENU_WINDOW_BASE = 10_100
 
     ACCELERATORS = [
       [Win32::FCONTROL | Win32::FVIRTKEY, 0x54, MENU_NEW_TAB],   # Ctrl+T
@@ -87,6 +92,10 @@ module Echoes
       @pointer_hidden = false
       @shake_detector = nil
       @marked_text = nil # IME inline composition string
+      @fullscreen_state = false
+      @window_menu_handle = nil
+      @window_menu_update_counter = 0
+      @window_menu_dynamic_count = 0
 
       # カラーテーマの初期化
       @active_profile = Echoes.config.active_profile rescue nil
@@ -126,6 +135,7 @@ module Echoes
         case msg
         when Win32::WM_DESTROY
           @running = false
+          WindowRegistry.unregister_window(Process.pid)
           close_tabs
           delete_font_handles
           if @active_border_brush
@@ -134,6 +144,7 @@ module Echoes
           if @inactive_border_brush
             Win32::DeleteObject.call(@inactive_border_brush)
           end
+          WindowRegistry.cleanup
           Win32::PostQuitMessage.call(0)
           0
 
@@ -311,6 +322,10 @@ module Echoes
       Win32::UpdateWindow.call(@hwnd)
       Win32::SetFocus.call(@hwnd)
 
+      # Register window in the registry after it's created
+      WindowRegistry.register_window(@hwnd, Echoes.config.window_title)
+      @window_menu_update_counter = 0
+
       # 3. Message Loop & I/O 同期ポーリング
       @running = true
       pm_remove = 1
@@ -340,7 +355,11 @@ module Echoes
           warn "echoes win32: I/O polling error: #{e.message}"
         end
 
-        # C. CPU負荷低減と Ruby の GVL 解放のため、適度にスリープ
+        # C. Periodic window menu update (every ~2 seconds)
+        @window_menu_update_counter += 1
+        update_window_menu_periodic
+
+        # D. CPU負荷低減と Ruby の GVL 解放のため、適度にスリープ
         sleep 0.015
       end
 
@@ -382,17 +401,26 @@ module Echoes
       menu = Win32::CreateMenu.call
       file_menu = Win32::CreatePopupMenu.call
       view_menu = Win32::CreatePopupMenu.call
+      window_menu = Win32::CreatePopupMenu.call
       help_menu = Win32::CreatePopupMenu.call
-      return false if [menu, file_menu, view_menu, help_menu].any? { |handle| !handle || Win32.null_pointer?(handle) }
+      return false if [menu, file_menu, view_menu, window_menu, help_menu].any? { |handle| !handle || Win32.null_pointer?(handle) }
 
       append_menu_item(file_menu, MENU_NEW_TAB, "New Tab")
       append_menu_item(file_menu, MENU_OPEN_FILE, "Open File...")
       append_menu_separator(file_menu)
       append_menu_item(file_menu, MENU_EXIT, "Exit")
       append_menu_item(view_menu, MENU_TOGGLE_POINTER, "Hide Mouse Pointer")
+      append_menu_item(window_menu, MENU_WINDOW_MINIMIZE, "Minimize")
+      append_menu_item(window_menu, MENU_WINDOW_MAXIMIZE, "Maximize")
+      append_menu_item(window_menu, MENU_WINDOW_FULLSCREEN, "Enter Full Screen")
+      append_menu_separator(window_menu)
+      @window_menu_handle = window_menu
+      @window_menu_dynamic_count = 0
+      update_window_list
       append_menu_item(help_menu, MENU_ABOUT, "About Echoes")
       append_menu_popup(menu, file_menu, "File")
       append_menu_popup(menu, view_menu, "View")
+      append_menu_popup(menu, window_menu, "Window")
       append_menu_popup(menu, help_menu, "Help")
 
       return false if Win32::SetMenu.call(@hwnd, menu) == 0
@@ -463,6 +491,18 @@ module Echoes
       when MENU_TOGGLE_POINTER
         toggle_pointer_hidden
         true
+      when MENU_WINDOW_MINIMIZE
+        minimize_window
+        true
+      when MENU_WINDOW_MAXIMIZE
+        maximize_window
+        true
+      when MENU_WINDOW_FULLSCREEN
+        toggle_fullscreen
+        true
+      when (MENU_WINDOW_BASE...(MENU_WINDOW_BASE + 9))
+        focus_window_by_menu(command_id)
+        true
       when MENU_EXIT
         if @hwnd && !Win32.null_pointer?(@hwnd)
           Win32::DestroyWindow.call(@hwnd)
@@ -473,6 +513,85 @@ module Echoes
       else
         false
       end
+    end
+
+    private def update_window_list
+      return unless @window_menu_handle
+
+      clear_window_menu_entries
+
+      windows = WindowRegistry.list_windows
+      windows.each_with_index do |win, i|
+        break if i >= 9
+        menu_id = MENU_WINDOW_BASE + i
+        label = "#{i + 1}. #{win[:title]}"
+        append_menu_item(@window_menu_handle, menu_id, label)
+        @window_menu_dynamic_count += 1
+      end
+
+      Win32::DrawMenuBar.call(@hwnd) if Win32::DrawMenuBar
+    end
+
+    private def clear_window_menu_entries
+      return unless @window_menu_handle
+      return unless Win32::DeleteMenu
+
+      (@window_menu_dynamic_count || 0).times do
+        Win32::DeleteMenu.call(@window_menu_handle, 4, Win32::MF_BYPOSITION)
+      end
+      @window_menu_dynamic_count = 0
+    end
+
+    private def update_window_menu_periodic
+      return unless @window_menu_handle
+      return if (@window_menu_update_counter || 0) < 120
+
+      current_windows = WindowRegistry.list_windows
+      @window_menu_update_counter = 0
+      return if current_windows.empty?
+
+      # Rebuild window list periodically
+      update_window_list
+    end
+
+    private def focus_window_by_menu(menu_id)
+      window_index = menu_id - MENU_WINDOW_BASE
+      windows = WindowRegistry.list_windows
+
+      if (target = windows[window_index])
+        WindowRegistry.focus_window(target[:hwnd])
+      end
+    end
+
+    private def minimize_window
+      return false unless @hwnd && Win32::ShowWindow
+      Win32::ShowWindow.call(@hwnd, Win32::SW_MINIMIZE)
+      true
+    end
+
+    private def maximize_window
+      return false unless @hwnd && Win32::ShowWindow
+      Win32::ShowWindow.call(@hwnd, Win32::SW_MAXIMIZE)
+      true
+    end
+
+    private def toggle_fullscreen
+      return false unless @hwnd && Win32::ShowWindow
+
+      if @fullscreen_state
+        restore_window
+      else
+        maximize_window
+        @fullscreen_state = true
+      end
+      true
+    end
+
+    private def restore_window
+      return false unless @hwnd && Win32::ShowWindow
+      Win32::ShowWindow.call(@hwnd, Win32::SW_RESTORE)
+      @fullscreen_state = false
+      true
     end
 
     private def invalidate_window
@@ -1415,6 +1534,7 @@ module Echoes
       return if !@hwnd || Win32.null_pointer?(@hwnd)
 
       Win32::SetWindowTextW.call(@hwnd, Fiddle::Pointer[Win32.to_wstring(title.to_s)])
+      WindowRegistry.update_title(Process.pid, title.to_s)
     end
 
     private def handle_clipboard(action, text)
