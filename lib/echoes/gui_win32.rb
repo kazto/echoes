@@ -6,6 +6,7 @@ require_relative 'pane'
 require_relative 'preferences'
 require_relative 'profile'
 require_relative 'configuration'
+require 'json'
 require 'rbconfig'
 require 'socket'
 require 'uri'
@@ -17,6 +18,13 @@ module Echoes
     MENU_OPEN_FILE = 10_002
     MENU_EXIT = 10_003
     MENU_ABOUT = 10_004
+
+    ACCELERATORS = [
+      [Win32::FCONTROL | Win32::FVIRTKEY, 0x54, MENU_NEW_TAB],   # Ctrl+T
+      [Win32::FCONTROL | Win32::FVIRTKEY, 0x4F, MENU_OPEN_FILE], # Ctrl+O
+      [Win32::FALT | Win32::FVIRTKEY, 0x73, MENU_EXIT],          # Alt+F4
+      [Win32::FVIRTKEY, 0x70, MENU_ABOUT]                        # F1
+    ].freeze
 
     def self.pane_local_cwd(pane)
       uri_str = pane&.screen&.current_directory
@@ -54,6 +62,7 @@ module Echoes
       @font_cache = {}
       @hwnd = nil
       @cursor_handle = nil
+      @accelerators = nil
       @hfont = nil
       @bold_hfont = nil
       @italic_hfont = nil
@@ -293,6 +302,8 @@ module Echoes
             @running = false
             break
           end
+          next if translate_accelerator(msg_struct)
+
           Win32::TranslateMessage.call(msg_struct)
           Win32::DispatchMessageW.call(msg_struct)
         end
@@ -313,6 +324,7 @@ module Echoes
       # Cleanup
       close_tabs
       delete_font_handles
+      destroy_accelerators
       Win32::DeleteObject.call(bg_brush)
     end
 
@@ -360,7 +372,39 @@ module Echoes
       return false if Win32::SetMenu.call(@hwnd, menu) == 0
 
       Win32::DrawMenuBar.call(@hwnd) if Win32::DrawMenuBar
+      setup_accelerators
       true
+    end
+
+    private def setup_accelerators
+      return false unless Win32::CreateAcceleratorTableW
+
+      table = accelerator_table_bytes(ACCELERATORS)
+      handle = Win32::CreateAcceleratorTableW.call(Fiddle::Pointer[table], ACCELERATORS.size)
+      return false if !handle || Win32.null_pointer?(handle)
+
+      @accelerators = handle
+      true
+    end
+
+    private def accelerator_table_bytes(entries)
+      entries.each_with_index.map do |(flags, key, command_id), index|
+        flags |= 0x80 if index == entries.size - 1
+        [flags, key, command_id].pack("Cxvv")
+      end.join
+    end
+
+    private def translate_accelerator(msg_struct)
+      return false unless @hwnd && @accelerators && Win32::TranslateAcceleratorW
+
+      Win32::TranslateAcceleratorW.call(@hwnd, @accelerators, msg_struct) != 0
+    end
+
+    private def destroy_accelerators
+      return unless @accelerators && Win32::DestroyAcceleratorTable
+
+      Win32::DestroyAcceleratorTable.call(@accelerators)
+      @accelerators = nil
     end
 
     private def append_menu_item(menu, id, label)
@@ -1034,6 +1078,7 @@ module Echoes
       pane.screen.clipboard_handler = method(:handle_clipboard)
       pane.screen.glyph_measurer = method(:measure_glyph)
       pane.screen.capture_handler = ->(path) { capture_pane_to_png(pane, path) }
+      pane.screen.display_info_handler = -> { display_info_json(pane) }
       pane.screen.notification_handler = ->(title, message) { post_notification(pane, title, message) }
       pane.screen.cell_pixel_width = @cell_width if @cell_width
       pane.screen.cell_pixel_height = @cell_height if @cell_height
@@ -1046,6 +1091,29 @@ module Echoes
       set_window_title(text)
     rescue StandardError => e
       warn "echoes notification: #{e.class}: #{e.message}"
+    end
+
+    private def display_info_json(_pane)
+      current_handle = Win32.monitor_from_window(@hwnd)
+      entries = Win32.display_monitors.each_with_index.map do |monitor, index|
+        {
+          "index" => index,
+          "x" => monitor[:x],
+          "y" => monitor[:y],
+          "w" => monitor[:w],
+          "h" => monitor[:h],
+          "work_x" => monitor[:work_x],
+          "work_y" => monitor[:work_y],
+          "work_w" => monitor[:work_w],
+          "work_h" => monitor[:work_h],
+          "primary" => !!monitor[:primary],
+          "current" => current_handle && monitor[:handle] == current_handle
+        }
+      end
+      JSON.generate(entries)
+    rescue StandardError => e
+      warn "echoes display-info: #{e.class}: #{e.message}"
+      "[]"
     end
 
     private def set_window_title(title)

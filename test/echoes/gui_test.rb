@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "json"
 require "shellwords"
 require "tmpdir"
 
@@ -62,8 +63,8 @@ if Echoes::Platform.windows?
       def cursor_style = 0
     end
     StubDrawPane = Struct.new(:screen, :scroll_offset)
-    StubHandlerScreen = Struct.new(:clipboard_handler, :glyph_measurer, :capture_handler, :cell_pixel_width,
-                                   :cell_pixel_height, :notification_handler)
+    StubHandlerScreen = Struct.new(:clipboard_handler, :glyph_measurer, :capture_handler, :display_info_handler,
+                                   :cell_pixel_width, :cell_pixel_height, :notification_handler)
     StubHandlerPane = Struct.new(:screen) do
       def refresh_pty_pixel_size
         @refreshed = true
@@ -343,6 +344,40 @@ if Echoes::Platform.windows?
       assert_equal 2, invalidations
       assert_equal 1, about
       assert_false gui.instance_variable_get(:@running)
+    end
+
+    test "Windows accelerator table encodes menu shortcuts" do
+      gui = Echoes::GUI.allocate
+
+      bytes = gui.send(:accelerator_table_bytes, Echoes::GUI::ACCELERATORS)
+      entries = bytes.bytes.each_slice(6).map { |chunk| chunk.pack("C*").unpack("Cxvv") }
+
+      assert_equal Echoes::GUI::ACCELERATORS.size, entries.size
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x54, Echoes::GUI::MENU_NEW_TAB], entries[0]
+      assert_equal [Echoes::Win32::FVIRTKEY | 0x80, 0x70, Echoes::GUI::MENU_ABOUT], entries[-1]
+    end
+
+    test "Windows setup and destroy accelerators use native accelerator table" do
+      gui = Echoes::GUI.allocate
+      calls = []
+
+      with_win32_const(:CreateAcceleratorTableW, ->(_table, count) {
+        calls << [:create, count]
+        1234
+      }) do
+        assert_true gui.send(:setup_accelerators)
+      end
+      assert_equal 1234, gui.instance_variable_get(:@accelerators)
+
+      with_win32_const(:DestroyAcceleratorTable, ->(handle) {
+        calls << [:destroy, handle]
+        1
+      }) do
+        gui.send(:destroy_accelerators)
+      end
+
+      assert_equal [[:create, Echoes::GUI::ACCELERATORS.size], [:destroy, 1234]], calls
+      assert_nil gui.instance_variable_get(:@accelerators)
     end
 
     test "Windows prompt for file opens dialog at the pane local cwd" do
@@ -836,6 +871,17 @@ if Echoes::Platform.windows?
       assert_equal [[pane, "C:/tmp/snap.png"]], captured
     end
 
+    test "Windows screen handlers wire OSC display info" do
+      screen = StubHandlerScreen.new
+      pane = StubHandlerPane.new(screen)
+      gui = Echoes::GUI.allocate
+      gui.define_singleton_method(:display_info_json) { |source_pane| "json:#{source_pane.object_id}" }
+
+      gui.send(:wire_screen_handlers, pane)
+
+      assert_equal "json:#{pane.object_id}", screen.display_info_handler.call
+    end
+
     test "Windows notification title falls back to window title" do
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@hwnd, :hwnd)
@@ -845,6 +891,32 @@ if Echoes::Platform.windows?
       gui.send(:post_notification, nil, nil, "Build complete")
 
       assert_equal ["Echoes - Build complete"], titles
+    end
+
+    test "Windows display info JSON includes monitor geometry and current monitor" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hwnd, 99)
+      monitors = [
+        {handle: 10, x: 0, y: 0, w: 1920, h: 1080, work_x: 0, work_y: 0, work_w: 1920, work_h: 1040, primary: true},
+        {handle: 20, x: 1920, y: 0, w: 1280, h: 720, work_x: 1920, work_y: 0, work_w: 1280, work_h: 680, primary: false}
+      ]
+      seen_hwnd = nil
+
+      with_win32_singleton_method(:display_monitors, -> { monitors }) do
+        with_win32_singleton_method(:monitor_from_window, ->(hwnd) {
+          seen_hwnd = hwnd
+          20
+        }) do
+          entries = JSON.parse(gui.send(:display_info_json, nil))
+
+          assert_equal 2, entries.size
+          assert_equal({"index" => 0, "x" => 0, "y" => 0, "w" => 1920, "h" => 1080,
+                        "work_x" => 0, "work_y" => 0, "work_w" => 1920, "work_h" => 1040,
+                        "primary" => true, "current" => false}, entries[0])
+          assert_equal true, entries[1]["current"]
+        end
+      end
+      assert_equal 99, seen_hwnd
     end
 
     test "Windows PNG encoder writes a valid RGBA PNG container" do

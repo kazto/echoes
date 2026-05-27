@@ -70,6 +70,13 @@ module Echoes
     AppendMenuW       = new_func(USER32, 'AppendMenuW', [P, U, S, P], I)
     SetMenu           = new_func(USER32, 'SetMenu', [P, P], I)
     DrawMenuBar       = new_func(USER32, 'DrawMenuBar', [P], I)
+    LoadAcceleratorsW = new_func(USER32, 'LoadAcceleratorsW', [P, P], P)
+    CreateAcceleratorTableW = new_func(USER32, 'CreateAcceleratorTableW', [P, I], P)
+    DestroyAcceleratorTable = new_func(USER32, 'DestroyAcceleratorTable', [P], I)
+    TranslateAcceleratorW = new_func(USER32, 'TranslateAcceleratorW', [P, P, P], I)
+    EnumDisplayMonitors = new_func(USER32, 'EnumDisplayMonitors', [P, P, P, P], I)
+    GetMonitorInfoW   = new_func(USER32, 'GetMonitorInfoW', [P, P], I)
+    MonitorFromWindow = new_func(USER32, 'MonitorFromWindow', [P, U], P)
 
     # --- Shell32 Functions ---
     ShellExecuteW     = new_func(SHELL32, 'ShellExecuteW', [P, P, P, P, P, I], P)
@@ -172,11 +179,18 @@ module Echoes
     MF_SEPARATOR       = 0x00000800
     MF_POPUP           = 0x00000010
 
+    FVIRTKEY           = 0x01
+    FCONTROL           = 0x08
+    FALT               = 0x10
+
     OFN_FILEMUSTEXIST  = 0x00001000
     OFN_HIDEREADONLY   = 0x00000004
     OFN_NOCHANGEDIR    = 0x00000008
     OFN_PATHMUSTEXIST  = 0x00000800
     OPENFILENAMEW_SIZE = Fiddle::SIZEOF_VOIDP == 8 ? 152 : 88
+    MONITORINFO_SIZE   = 40
+    MONITORINFOF_PRIMARY = 0x00000001
+    MONITOR_DEFAULTTONEAREST = 0x00000002
 
     # Struct sizes
     WNDCLASSEXW_SIZE   = 80
@@ -373,6 +387,49 @@ module Echoes
         ofn[52, 4] = [flags].pack('L')
       end
       ofn
+    end
+
+    def self.display_monitors
+      return [] unless EnumDisplayMonitors && GetMonitorInfoW
+
+      monitors = []
+      callback = Fiddle::Closure::BlockCaller.new(I, [P, P, P, P]) do |hmonitor, _hdc, _rect, _data|
+        info = Fiddle::Pointer.malloc(MONITORINFO_SIZE, Fiddle::RUBY_FREE)
+        info[0, MONITORINFO_SIZE] = "\x00" * MONITORINFO_SIZE
+        info[0, 4] = [MONITORINFO_SIZE].pack('L')
+
+        if GetMonitorInfoW.call(hmonitor, info) != 0
+          left, top, right, bottom = info[4, 16].unpack('l4')
+          work_left, work_top, work_right, work_bottom = info[20, 16].unpack('l4')
+          flags = info[36, 4].unpack1('L')
+          monitors << {
+            handle: hmonitor.to_i,
+            x: left,
+            y: top,
+            w: right - left,
+            h: bottom - top,
+            work_x: work_left,
+            work_y: work_top,
+            work_w: work_right - work_left,
+            work_h: work_bottom - work_top,
+            primary: (flags & MONITORINFOF_PRIMARY) != 0
+          }
+        end
+        1
+      end
+
+      EnumDisplayMonitors.call(0, nil, callback, 0)
+      monitors
+    end
+
+    def self.monitor_from_window(hwnd)
+      return nil unless MonitorFromWindow
+      return nil if hwnd.nil? || null_pointer?(hwnd)
+
+      monitor = MonitorFromWindow.call(hwnd, MONITOR_DEFAULTTONEAREST)
+      return nil if null_pointer?(monitor)
+
+      monitor.to_i
     end
 
     def self.null_pointer?(ptr)

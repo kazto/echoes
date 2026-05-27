@@ -42,7 +42,7 @@ Inventory date: 2026-05-26.
 | Resize callback | `setFrameSize:` hook | `WM_SIZE`, `GetClientRect` | Done | `lib/echoes/gui_win32.rb` | Resize updates terminal rows/cols and ConPTY size. |
 | Timer / polling repaint | `NSTimer scheduledTimerWithTimeInterval:` | Manual polling in message loop with short sleep/repaint | Partial | `lib/echoes/gui_win32.rb` | Functional polling exists; it is not a native Win32 timer abstraction. |
 | Window focus notifications | `NSNotificationCenter` for key/resign notifications | `WM_SETFOCUS` / `WM_KILLFOCUS` equivalent | Done | `lib/echoes/gui_win32.rb` | Win32 focus changes update focused state and send focus reporting sequences when `?1004` is enabled. |
-| Menu bar | `NSMenu`, `NSMenuItem`, `setMainMenu:` | Win32 menus / accelerators | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows has a basic File/Help menu for New Tab, Open File, About, and Exit. Full macOS command set and accelerators are not implemented. |
+| Menu bar | `NSMenu`, `NSMenuItem`, `setMainMenu:` | Win32 menus and accelerator table | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows has a basic File/Help menu and accelerators for New Tab, Open File, About, and Exit. Full macOS command set is not implemented. |
 | Window menu | `NSApplication#setWindowsMenu:` | Win32 menu/window list | Missing | - | Multiple native windows and Window menu integration are not present. |
 | Completion popup | `NSMenu#popUpMenuPositioningItem:atLocation:inView:` | Popup menu or custom overlay | Missing | - | Current Win32 GUI does not implement the completion popup. |
 | Keyboard input | `NSEvent#characters`, `keyCode`, `modifierFlags`, `interpretKeyEvents:` | `WM_CHAR`, `WM_KEYDOWN`, virtual-key mapping | Done | `lib/echoes/gui_win32.rb` | Special keys and Ctrl-letter mappings are implemented. |
@@ -68,7 +68,7 @@ Inventory date: 2026-05-26.
 | URL open | `NSWorkspace.openURL:` | `ShellExecuteW` / Ctrl-click URL detection | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows Ctrl-click opens OSC 8 hyperlinks or detected `http(s)` URLs through `ShellExecuteW`. |
 | About panel | `orderFrontStandardAboutPanelWithOptions:` | `MessageBoxW` custom dialog | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows shows About content through a native message box from the Help menu. |
 | Notifications | `terminal-notifier` fallback on macOS | Window title fallback | Alternate | `lib/echoes/gui_win32.rb` | OSC 9 / OSC 777 requests set the Win32 window title; no native toast implementation. |
-| Screen enumeration | `NSScreen.screens`, `frame`, `visibleFrame`, `backingScaleFactor` | Monitor APIs such as `EnumDisplayMonitors` | Missing | - | No Win32 monitor enumeration binding is present. |
+| Screen enumeration | `NSScreen.screens`, `frame`, `visibleFrame`, `backingScaleFactor` | `EnumDisplayMonitors`, `GetMonitorInfoW`, `MonitorFromWindow` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | OSC display-info returns monitor and work-area geometry plus primary/current flags. Backing scale factor is not represented. |
 | External/presentation windows | New `NSWindow` on selected `NSScreen` | Additional Win32 windows / monitor APIs | Missing | - | OSC open-window/display support is not implemented on Windows. |
 | Pane capture to PDF/PNG | `dataWithPDFInsideRect:`, `NSBitmapImageRep` capture | GDI bitmap capture / pure-Ruby PNG encoder | Partial | `lib/echoes/gui_win32.rb`, `lib/echoes/win32.rb` | OSC capture writes PNG files on Windows. PDF/vector capture is not implemented. |
 | Preferences storage | `NSUserDefaults` suite | JSON file under `%APPDATA%/Echoes` or `ECHOES_CONFIG_HOME` | Alternate | `lib/echoes/preferences.rb` | Feature exists through a platform-specific backend, not the Windows registry. |
@@ -91,7 +91,7 @@ Windows currently covers the core terminal path:
 
 The largest remaining AppKit parity gaps are:
 
-- Full native menu command parity, command accelerators, and completion popup.
+- Full native menu command parity and completion popup.
 - Multiple native windows, screen enumeration, and OSC external-window/display support.
 - PDF/vector pane capture.
 - Full IME candidate positioning/text-input parity.
