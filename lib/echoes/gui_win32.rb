@@ -6,6 +6,7 @@ require_relative 'pane'
 require_relative 'preferences'
 require_relative 'profile'
 require_relative 'configuration'
+require_relative 'shake_detector'
 require 'json'
 require 'rbconfig'
 require 'socket'
@@ -18,10 +19,12 @@ module Echoes
     MENU_OPEN_FILE = 10_002
     MENU_EXIT = 10_003
     MENU_ABOUT = 10_004
+    MENU_TOGGLE_POINTER = 10_005
 
     ACCELERATORS = [
       [Win32::FCONTROL | Win32::FVIRTKEY, 0x54, MENU_NEW_TAB],   # Ctrl+T
       [Win32::FCONTROL | Win32::FVIRTKEY, 0x4F, MENU_OPEN_FILE], # Ctrl+O
+      [Win32::FCONTROL | Win32::FSHIFT | Win32::FVIRTKEY, 0x50, MENU_TOGGLE_POINTER], # Ctrl+Shift+P
       [Win32::FALT | Win32::FVIRTKEY, 0x73, MENU_EXIT],          # Alt+F4
       [Win32::FVIRTKEY, 0x70, MENU_ABOUT]                        # F1
     ].freeze
@@ -79,6 +82,9 @@ module Echoes
       @cell_height = nil
       @running = false
       @window_focused = true
+      @mouse_button_down = nil
+      @pointer_hidden = false
+      @shake_detector = nil
       @marked_text = nil # IME inline composition string
 
       # カラーテーマの初期化
@@ -164,6 +170,22 @@ module Echoes
 
         when Win32::WM_LBUTTONDOWN
           handle_left_button_down(hwnd, lparam.to_i)
+          0
+
+        when Win32::WM_LBUTTONUP
+          handle_mouse_button_up(lparam.to_i)
+          0
+
+        when Win32::WM_RBUTTONDOWN
+          handle_mouse_button_down(hwnd, lparam.to_i, 2, :right)
+          0
+
+        when Win32::WM_RBUTTONUP
+          handle_mouse_button_up(lparam.to_i)
+          0
+
+        when Win32::WM_MOUSEMOVE
+          handle_mouse_move(lparam.to_i)
           0
 
         when Win32::WM_MOUSEWHEEL
@@ -358,15 +380,18 @@ module Echoes
 
       menu = Win32::CreateMenu.call
       file_menu = Win32::CreatePopupMenu.call
+      view_menu = Win32::CreatePopupMenu.call
       help_menu = Win32::CreatePopupMenu.call
-      return false if [menu, file_menu, help_menu].any? { |handle| !handle || Win32.null_pointer?(handle) }
+      return false if [menu, file_menu, view_menu, help_menu].any? { |handle| !handle || Win32.null_pointer?(handle) }
 
       append_menu_item(file_menu, MENU_NEW_TAB, "New Tab")
       append_menu_item(file_menu, MENU_OPEN_FILE, "Open File...")
       append_menu_separator(file_menu)
       append_menu_item(file_menu, MENU_EXIT, "Exit")
+      append_menu_item(view_menu, MENU_TOGGLE_POINTER, "Hide Mouse Pointer")
       append_menu_item(help_menu, MENU_ABOUT, "About Echoes")
       append_menu_popup(menu, file_menu, "File")
+      append_menu_popup(menu, view_menu, "View")
       append_menu_popup(menu, help_menu, "Help")
 
       return false if Win32::SetMenu.call(@hwnd, menu) == 0
@@ -434,6 +459,9 @@ module Echoes
       when MENU_ABOUT
         show_about_panel
         true
+      when MENU_TOGGLE_POINTER
+        toggle_pointer_hidden
+        true
       when MENU_EXIT
         if @hwnd && !Win32.null_pointer?(@hwnd)
           Win32::DestroyWindow.call(@hwnd)
@@ -479,11 +507,42 @@ module Echoes
     end
 
     private def set_terminal_cursor
+      if @pointer_hidden
+        return false unless Win32::SetCursor
+
+        Win32::SetCursor.call(0)
+        return true
+      end
+
       cursor = load_terminal_cursor
       return false if !cursor || Win32.null_pointer?(cursor)
       return false unless Win32::SetCursor
 
       Win32::SetCursor.call(cursor)
+      true
+    end
+
+    private def toggle_pointer_hidden
+      @pointer_hidden ? show_pointer : hide_pointer
+    end
+
+    private def hide_pointer
+      return false unless Win32::ShowCursor
+
+      Win32::ShowCursor.call(0) while Win32::ShowCursor.call(0) >= 0
+      @pointer_hidden = true
+      @shake_detector = ShakeDetector.new
+      set_terminal_cursor
+      true
+    end
+
+    private def show_pointer
+      return false unless Win32::ShowCursor
+
+      Win32::ShowCursor.call(1) while Win32::ShowCursor.call(1) < 0
+      @pointer_hidden = false
+      @shake_detector&.reset
+      set_terminal_cursor
       true
     end
 
@@ -511,6 +570,13 @@ module Echoes
       local_row = cell_y - target_rect[:y]
       col = cell_x - target_rect[:x]
 
+      if pane.screen.mouse_tracking != :off
+        tab.pane_tree.active_pane = pane if pane != tab.active_pane
+        @mouse_button_down = :left
+        send_mouse_event(tab, 0, col, local_row)
+        return true
+      end
+
       if control_pressed?
         abs_row = pane.screen.scrollback.size - pane.scroll_offset.to_i + local_row
         url = hyperlink_at(pane, abs_row, col)
@@ -523,6 +589,100 @@ module Echoes
         return true
       end
 
+      false
+    end
+
+    private def handle_mouse_button_down(hwnd, lparam, button, name)
+      Win32::SetFocus.call(hwnd) if hwnd && !Win32.null_pointer?(hwnd)
+      target = mouse_target_from_lparam(lparam)
+      return false unless target
+
+      tab, pane, row, col = target.values_at(:tab, :pane, :row, :col)
+      return false if pane.screen.mouse_tracking == :off
+
+      tab.pane_tree.active_pane = pane if pane != tab.active_pane
+      @mouse_button_down = name
+      send_mouse_event(tab, button, col, row)
+      true
+    end
+
+    private def handle_mouse_button_up(lparam)
+      target = mouse_target_from_lparam(lparam)
+      @mouse_button_down = nil
+      return false unless target
+
+      tab, pane, row, col = target.values_at(:tab, :pane, :row, :col)
+      return false if pane.screen.mouse_tracking == :off || pane.screen.mouse_tracking == :x10
+
+      tab.pane_tree.active_pane = pane if pane != tab.active_pane
+      send_mouse_event(tab, 3, col, row, release: true)
+      true
+    end
+
+    private def handle_mouse_move(lparam)
+      observe_pointer_shake(lparam)
+      return false unless @mouse_button_down
+
+      target = mouse_target_from_lparam(lparam)
+      return false unless target
+
+      tab, pane, row, col = target.values_at(:tab, :pane, :row, :col)
+      return false unless [:button_event, :any_event].include?(pane.screen.mouse_tracking)
+
+      tab.pane_tree.active_pane = pane if pane != tab.active_pane
+      button = @mouse_button_down == :right ? 34 : 32
+      send_mouse_event(tab, button, col, row)
+      true
+    end
+
+    private def observe_pointer_shake(lparam)
+      return false unless @pointer_hidden
+
+      @shake_detector ||= ShakeDetector.new
+      x_pos = signed_word(lparam.to_i & 0xFFFF)
+      y_pos = signed_word((lparam.to_i >> 16) & 0xFFFF)
+      t = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      return false unless @shake_detector.observe(t, x_pos, y_pos)
+
+      show_pointer
+      true
+    end
+
+    private def mouse_target_from_lparam(lparam)
+      return nil unless @cell_width && @cell_width > 0 && @cell_height && @cell_height > 0
+
+      tab = current_tab
+      return nil unless tab
+
+      x_pos = lparam.to_i & 0xFFFF
+      y_pos = (lparam.to_i >> 16) & 0xFFFF
+      cell_x = x_pos / @cell_width
+      cell_y = y_pos / @cell_height
+      target_rect = tab.pane_tree.layout(0, 0, @cols, @rows).find do |rect|
+        cell_x >= rect[:x] && cell_x < (rect[:x] + rect[:w]) &&
+          cell_y >= rect[:y] && cell_y < (rect[:y] + rect[:h])
+      end
+      return nil unless target_rect
+
+      {
+        tab: tab,
+        pane: target_rect[:pane],
+        row: cell_y - target_rect[:y],
+        col: cell_x - target_rect[:x],
+        rect: target_rect
+      }
+    end
+
+    private def send_mouse_event(tab, button, col, row, release: false)
+      cx = col + 1
+      cy = row + 1
+      if tab.screen.mouse_encoding == :sgr
+        final = release ? "m" : "M"
+        tab.write_input("\e[<#{button};#{cx};#{cy}#{final}")
+      else
+        tab.write_input("\e[M#{(button + 32).chr}#{(cx + 32).chr}#{(cy + 32).chr}")
+      end
+    rescue Errno::EIO, IOError
       false
     end
 
@@ -1197,6 +1357,12 @@ module Echoes
       pane_cols = screen.cols
 
       clear_pane_background(hdc, px, py, pw, ph)
+      if screen.respond_to?(:background) && screen.background
+        draw_pane_background(hdc, screen.background, px, py, pane_cols, pane_rows)
+      end
+      if screen.respond_to?(:bg_fills) && screen.bg_fills && !screen.bg_fills.empty?
+        draw_pane_fills(hdc, screen.bg_fills, px, py, pane_cols, pane_rows)
+      end
 
       pane_rows.times do |r|
         y = py + r * @cell_height
@@ -1361,6 +1527,89 @@ module Echoes
 
     private def clear_pane_background(hdc, px, py, pw, ph)
       fill_rect_color(hdc, px, py, px + pw, py + ph, @default_bg)
+    end
+
+    private def draw_pane_background(hdc, spec, px, py, pane_cols, pane_rows)
+      colors = spec[:colors]
+      return if !colors || colors.empty?
+
+      width = pane_cols * @cell_width
+      height = pane_rows * @cell_height
+      case spec[:type]
+      when :flat
+        fill_rect_color(hdc, px, py, px + width, py + height, rgba_to_color(colors.first))
+      when :linear
+        return if colors.size < 2
+
+        draw_linear_gradient(
+          hdc,
+          px,
+          py,
+          width,
+          height,
+          rgba_to_rgb(colors.first),
+          rgba_to_rgb(colors.last),
+          spec[:angle].to_f
+        )
+      end
+    end
+
+    private def draw_pane_fills(hdc, fills, px, py, pane_cols, pane_rows)
+      fills.each do |fill|
+        rect = fill[:rect]
+        rgba = fill[:color]
+        next unless rect && rgba && rect.size == 4
+
+        r1, c1, r2, c2 = rect
+        r1 = r1.clamp(0, pane_rows - 1)
+        r2 = r2.clamp(0, pane_rows - 1)
+        c1 = c1.clamp(0, pane_cols - 1)
+        c2 = c2.clamp(0, pane_cols - 1)
+        next if r1 > r2 || c1 > c2
+
+        left = px + c1 * @cell_width
+        top = py + r1 * @cell_height
+        right = px + (c2 + 1) * @cell_width
+        bottom = py + (r2 + 1) * @cell_height
+        fill_rect_color(hdc, left, top, right, bottom, rgba_to_color(rgba))
+      end
+    end
+
+    private def draw_linear_gradient(hdc, x, y, width, height, start_rgb, end_rgb, angle)
+      return if width <= 0 || height <= 0
+
+      horizontal = Math.cos(angle * Math::PI / 180.0).abs >= Math.sin(angle * Math::PI / 180.0).abs
+      steps = horizontal ? width : height
+      steps = [steps, 1].max
+
+      steps.times do |i|
+        t = steps == 1 ? 0.0 : i.to_f / (steps - 1)
+        color = interpolate_color(start_rgb, end_rgb, t)
+        if horizontal
+          fill_rect_color(hdc, x + i, y, x + i + 1, y + height, color)
+        else
+          fill_rect_color(hdc, x, y + i, x + width, y + i + 1, color)
+        end
+      end
+    end
+
+    private def interpolate_color(start_rgb, end_rgb, t)
+      r = (start_rgb[0] + (end_rgb[0] - start_rgb[0]) * t).round
+      g = (start_rgb[1] + (end_rgb[1] - start_rgb[1]) * t).round
+      b = (start_rgb[2] + (end_rgb[2] - start_rgb[2]) * t).round
+      (b << 16) | (g << 8) | r
+    end
+
+    private def rgba_to_color(rgba)
+      r, g, b = rgba_to_rgb(rgba)
+      (b << 16) | (g << 8) | r
+    end
+
+    private def rgba_to_rgb(rgba)
+      rgba[0, 3].map do |component|
+        value = component.to_f
+        value <= 1.0 ? (value * 255).round : value.round
+      end
     end
 
     private def draw_multicell_text(hdc, cell, x, y, fg_color, bg_color)

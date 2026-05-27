@@ -64,6 +64,7 @@ module Echoes
     GetClipboardData  = new_func(USER32, 'GetClipboardData', [U], P)
     LoadCursorW       = new_func(USER32, 'LoadCursorW', [P, P], P)
     SetCursor         = new_func(USER32, 'SetCursor', [P], P)
+    ShowCursor        = new_func(USER32, 'ShowCursor', [I], I)
     MessageBoxW       = new_func(USER32, 'MessageBoxW', [P, P, P, U], I)
     CreateMenu        = new_func(USER32, 'CreateMenu', [], P)
     CreatePopupMenu   = new_func(USER32, 'CreatePopupMenu', [], P)
@@ -140,6 +141,7 @@ module Echoes
     WM_MOUSEMOVE       = 0x0200
     WM_MOUSEWHEEL      = 0x020A
     WM_RBUTTONDOWN     = 0x0204
+    WM_RBUTTONUP       = 0x0205
     WM_DROPFILES       = 0x0233
     WM_KEYDOWN         = 0x0100
     WM_KEYUP           = 0x0101
@@ -180,6 +182,7 @@ module Echoes
     MF_POPUP           = 0x00000010
 
     FVIRTKEY           = 0x01
+    FSHIFT             = 0x04
     FCONTROL           = 0x08
     FALT               = 0x10
 

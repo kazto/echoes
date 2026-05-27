@@ -42,15 +42,15 @@ Inventory date: 2026-05-26.
 | Resize callback | `setFrameSize:` hook | `WM_SIZE`, `GetClientRect` | Done | `lib/echoes/gui_win32.rb` | Resize updates terminal rows/cols and ConPTY size. |
 | Timer / polling repaint | `NSTimer scheduledTimerWithTimeInterval:` | Manual polling in message loop with short sleep/repaint | Partial | `lib/echoes/gui_win32.rb` | Functional polling exists; it is not a native Win32 timer abstraction. |
 | Window focus notifications | `NSNotificationCenter` for key/resign notifications | `WM_SETFOCUS` / `WM_KILLFOCUS` equivalent | Done | `lib/echoes/gui_win32.rb` | Win32 focus changes update focused state and send focus reporting sequences when `?1004` is enabled. |
-| Menu bar | `NSMenu`, `NSMenuItem`, `setMainMenu:` | Win32 menus and accelerator table | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows has a basic File/Help menu and accelerators for New Tab, Open File, About, and Exit. Full macOS command set is not implemented. |
+| Menu bar | `NSMenu`, `NSMenuItem`, `setMainMenu:` | Win32 menus and accelerator table | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows has basic File/View/Help menus and accelerators for New Tab, Open File, Hide Mouse Pointer, About, and Exit. Full macOS command set is not implemented. |
 | Window menu | `NSApplication#setWindowsMenu:` | Win32 menu/window list | Missing | - | Multiple native windows and Window menu integration are not present. |
 | Completion popup | `NSMenu#popUpMenuPositioningItem:atLocation:inView:` | Popup menu or custom overlay | Missing | - | Current Win32 GUI does not implement the completion popup. |
 | Keyboard input | `NSEvent#characters`, `keyCode`, `modifierFlags`, `interpretKeyEvents:` | `WM_CHAR`, `WM_KEYDOWN`, virtual-key mapping | Done | `lib/echoes/gui_win32.rb` | Special keys and Ctrl-letter mappings are implemented. |
 | Copy mode/search key routing | AppKit keyboard callbacks | Win32 `WM_CHAR` / `WM_KEYDOWN` routed to shared pane logic | Partial | `lib/echoes/gui_win32.rb` | Search matcher/selection helpers exist, but the Windows UI surface is smaller than AppKit. |
 | IME composition | `NSTextInputClient` | IMM32: `WM_IME_*`, `ImmGetContext`, `ImmGetCompositionStringW` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Inline composition and result commit exist. Candidate window positioning and full Cocoa text-input parity are not implemented. |
-| Mouse click/drag | `mouseDown:`, `mouseDragged:`, `mouseUp:` and right/other variants | `WM_LBUTTONDOWN`, mouse movement/wheel handling | Partial | `lib/echoes/gui_win32.rb` | Left click/drag and wheel are present. Right/other button parity is incomplete despite constants for some messages. |
+| Mouse click/drag | `mouseDown:`, `mouseDragged:`, `mouseUp:` and right/other variants | `WM_LBUTTONDOWN`, `WM_LBUTTONUP`, `WM_RBUTTONDOWN`, `WM_RBUTTONUP`, `WM_MOUSEMOVE`, `WM_MOUSEWHEEL` | Partial | `lib/echoes/gui_win32.rb` | Left/right press, drag, release, and wheel are routed to terminal mouse reporting. Middle/other button parity is still incomplete. |
 | Mouse wheel | `scrollWheel:`, `deltaY` | `WM_MOUSEWHEEL` | Done | `lib/echoes/gui_win32.rb` | Scroll accumulation and pane scrolling are implemented. |
-| Pointer cursor shape/visibility | `NSCursor.IBeamCursor`, `hide`, `unhide`, cursor rects | `LoadCursorW`, `SetCursor`, `WM_SETCURSOR` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Terminal window uses the I-beam cursor. Pointer hide/unhide parity is not implemented. |
+| Pointer cursor shape/visibility | `NSCursor.IBeamCursor`, `hide`, `unhide`, cursor rects | `LoadCursorW`, `SetCursor`, `ShowCursor`, `WM_SETCURSOR` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Terminal window uses the I-beam cursor. Hide/unhide is available from the View menu and Ctrl+Shift+P, with shake-to-show support; cursor rect parity is not implemented. |
 | Text fill drawing | `NSColor#setFill`, `NSRectFill` | GDI `CreateSolidBrush`, `FillRect` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Used for background, selection, decorations, cursor, and pane borders. |
 | Text drawing | `NSString#drawAtPoint:withAttributes:` | GDI `TextOutW`, `ExtTextOutW` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Regular terminal text and multicell text are drawn with GDI. |
 | Font creation | `NSFont fontWithName:size:`, `monospacedSystemFontOfSize:weight:` | `CreateFontW` | Done | `lib/echoes/gui_win32.rb` | Regular, bold, italic, bold-italic fonts are created. |
@@ -58,7 +58,7 @@ Inventory date: 2026-05-26.
 | Font fallback | `CTFontCreateForString` | `GetGlyphIndicesW` plus fallback families | Partial | `lib/echoes/gui_win32.rb` | Fallback runs exist for common Japanese/emoji/symbol fonts. Complex shaping/color emoji are still GDI-limited. |
 | Underline/strikethrough | AppKit text attributes | Explicit GDI rectangle decorations | Done | `lib/echoes/gui_win32.rb` | Decorations are drawn manually. |
 | Ligature suppression | `NSLigatureAttributeName` | GDI text rendering | Missing | - | GDI path does not expose equivalent ligature control. |
-| Gradients | `NSGradient#drawInRect:angle:` | GDI/GDI+ gradient or manual fill | Missing | - | Win32 GUI clears pane backgrounds with flat fills; gradient pane backgrounds are not implemented. |
+| Gradients | `NSGradient#drawInRect:angle:` | Manual GDI scanline fill | Partial | `lib/echoes/gui_win32.rb` | Windows paints OSC flat pane backgrounds, bg-fill overlays, and two-endpoint linear gradients. Alpha blending and multi-stop gradients are not equivalent to AppKit. |
 | CoreGraphics image drawing | `CGContextDrawImage`, `CGImage` | GDI `StretchDIBits` with BGRA DIB | Done | `lib/echoes/gui_win32.rb` | Kitty/iTerm image placements are drawn from RGBA buffers. |
 | PNG decode | `NSData`, `NSBitmapImageRep`, `CGImage` | GDI+ `GdipCreateBitmapFromStream` path | Done | `lib/echoes/kitty_graphics_win32.rb` | PNG decode returns the same RGBA shape expected by renderers. |
 | Raw RGB/RGBA conversion | `CGDataProviderCreateWithData`, `CGImageCreate` | Ruby buffer conversion / GDI+ path | Done | `lib/echoes/kitty_graphics_win32.rb` | `from_rgb` and `from_rgba` exist. |
@@ -95,7 +95,7 @@ The largest remaining AppKit parity gaps are:
 - Multiple native windows, screen enumeration, and OSC external-window/display support.
 - PDF/vector pane capture.
 - Full IME candidate positioning/text-input parity.
-- Gradient backgrounds, ligature control, pointer hide/unhide, and richer font shaping.
+- Full gradient alpha/multi-stop parity, ligature control, cursor rect parity, and richer font shaping.
 - Native toast notifications.
 - Embedded rubish mode and robust Ctrl-C delivery through ConPTY.
 

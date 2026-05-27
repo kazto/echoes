@@ -33,6 +33,12 @@ if Echoes::Platform.windows?
       def active_pane
         pane_tree.active_pane
       end
+      def screen
+        active_pane.screen
+      end
+      def write_input(str)
+        active_pane.write_input(str)
+      end
     end
     StubResizableTab = Struct.new(:resizes) do
       def resize(rows, cols)
@@ -59,7 +65,7 @@ if Echoes::Platform.windows?
       def read_available_output = outputs.shift
     end
     StubCursor = Struct.new(:row, :col, :visible)
-    StubDrawScreen = Struct.new(:scrollback, :rows, :cols, :grid, :placements, :cursor) do
+    StubDrawScreen = Struct.new(:scrollback, :rows, :cols, :grid, :placements, :cursor, :background, :bg_fills) do
       def cursor_style = 0
     end
     StubDrawPane = Struct.new(:screen, :scroll_offset)
@@ -274,6 +280,70 @@ if Echoes::Platform.windows?
       assert_equal ["https://example.test"], opened
     end
 
+    test "Windows left mouse press reports terminal mouse event when tracking is enabled" do
+      screen = Echoes::Screen.new(rows: 4, cols: 10)
+      screen.mouse_tracking = :normal
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      gui.instance_variable_set(:@cols, 10)
+      gui.instance_variable_set(:@rows, 4)
+
+      lparam = (1 * 16 << 16) | (2 * 8)
+      assert_true gui.send(:handle_left_button_down, nil, lparam)
+
+      assert_equal ["\e[M #{(3 + 32).chr}#{(2 + 32).chr}"], pane.writes
+      assert_equal :left, gui.instance_variable_get(:@mouse_button_down)
+    end
+
+    test "Windows mouse drag and release use SGR reporting" do
+      screen = Echoes::Screen.new(rows: 4, cols: 10)
+      screen.mouse_tracking = :button_event
+      screen.mouse_encoding = :sgr
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      gui.instance_variable_set(:@cols, 10)
+      gui.instance_variable_set(:@rows, 4)
+
+      down = (1 * 16 << 16) | (2 * 8)
+      move = (2 * 16 << 16) | (3 * 8)
+      gui.send(:handle_left_button_down, nil, down)
+      assert_true gui.send(:handle_mouse_move, move)
+      assert_true gui.send(:handle_mouse_button_up, move)
+
+      assert_equal ["\e[<0;3;2M", "\e[<32;4;3M", "\e[<3;4;3m"], pane.writes
+      assert_nil gui.instance_variable_get(:@mouse_button_down)
+    end
+
+    test "Windows right mouse reports button two" do
+      screen = Echoes::Screen.new(rows: 4, cols: 10)
+      screen.mouse_tracking = :normal
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      gui.instance_variable_set(:@cols, 10)
+      gui.instance_variable_set(:@rows, 4)
+
+      lparam = (0 * 16 << 16) | (1 * 8)
+      assert_true gui.send(:handle_mouse_button_down, nil, lparam, 2, :right)
+
+      assert_equal ["\e[M\"\"!"], pane.writes
+      assert_equal :right, gui.instance_variable_get(:@mouse_button_down)
+    end
+
     test "Windows terminal cursor loads and applies the I-beam cursor" do
       gui = Echoes::GUI.allocate
       calls = []
@@ -294,10 +364,10 @@ if Echoes::Platform.windows?
       ], calls
     end
 
-    test "Windows menu bar installs File and Help menus" do
+    test "Windows menu bar installs File View and Help menus" do
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@hwnd, 99)
-      popup_handles = [200, 201]
+      popup_handles = [200, 201, 202]
       calls = []
 
       with_win32_const(:CreateMenu, -> { calls << [:create_menu]; 100 }) do
@@ -315,9 +385,11 @@ if Echoes::Platform.windows?
       assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_NEW_TAB]
       assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_OPEN_FILE]
       assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_EXIT]
-      assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_ABOUT]
+      assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_TOGGLE_POINTER]
+      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_ABOUT]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 200]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 201]
+      assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 202]
       assert_include calls, [:set_menu, 99, 100]
       assert_include calls, [:draw, 99]
     end
@@ -329,20 +401,24 @@ if Echoes::Platform.windows?
       created = []
       invalidations = 0
       about = 0
+      toggles = 0
       gui.define_singleton_method(:create_tab) { |editor_file: nil| created << editor_file }
       gui.define_singleton_method(:prompt_for_file_to_edit) { "C:/tmp/demo.txt" }
       gui.define_singleton_method(:invalidate_window) { invalidations += 1 }
       gui.define_singleton_method(:show_about_panel) { about += 1 }
+      gui.define_singleton_method(:toggle_pointer_hidden) { toggles += 1 }
 
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_NEW_TAB)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_OPEN_FILE)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_ABOUT)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_TOGGLE_POINTER)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_EXIT)
       assert_false gui.send(:dispatch_menu_command, 999_999)
 
       assert_equal [nil, "C:/tmp/demo.txt"], created
       assert_equal 2, invalidations
       assert_equal 1, about
+      assert_equal 1, toggles
       assert_false gui.instance_variable_get(:@running)
     end
 
@@ -354,7 +430,63 @@ if Echoes::Platform.windows?
 
       assert_equal Echoes::GUI::ACCELERATORS.size, entries.size
       assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x54, Echoes::GUI::MENU_NEW_TAB], entries[0]
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x50, Echoes::GUI::MENU_TOGGLE_POINTER], entries[2]
       assert_equal [Echoes::Win32::FVIRTKEY | 0x80, 0x70, Echoes::GUI::MENU_ABOUT], entries[-1]
+    end
+
+    test "Windows pointer visibility toggles through ShowCursor and clears cursor while hidden" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@cursor_handle, 4321)
+      calls = []
+      show_returns = [-1, 0]
+
+      with_win32_const(:ShowCursor, ->(visible) {
+        calls << [:show_cursor, visible]
+        show_returns.shift || 0
+      }) do
+        with_win32_const(:SetCursor, ->(cursor) {
+          calls << [:set_cursor, cursor]
+          cursor
+        }) do
+          assert_true gui.send(:toggle_pointer_hidden)
+          assert_true gui.instance_variable_get(:@pointer_hidden)
+          assert_true gui.send(:toggle_pointer_hidden)
+          assert_false gui.instance_variable_get(:@pointer_hidden)
+        end
+      end
+
+      assert_equal [
+        [:show_cursor, 0],
+        [:set_cursor, 0],
+        [:show_cursor, 1],
+        [:set_cursor, 4321]
+      ], calls
+    end
+
+    test "Windows hidden pointer is restored by shake detection" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@pointer_hidden, true)
+      gui.instance_variable_set(:@shake_detector, Echoes::ShakeDetector.new)
+      gui.instance_variable_set(:@mouse_button_down, nil)
+      calls = []
+
+      with_win32_const(:ShowCursor, ->(visible) {
+        calls << [:show_cursor, visible]
+        0
+      }) do
+        with_win32_const(:SetCursor, ->(cursor) {
+          calls << [:set_cursor, cursor]
+          cursor
+        }) do
+          [[0, 0], [70, 0], [0, 0], [80, 0], [0, 0]].each do |x, y|
+            lparam = ((y & 0xFFFF) << 16) | (x & 0xFFFF)
+            gui.send(:handle_mouse_move, lparam)
+          end
+        end
+      end
+
+      assert_false gui.instance_variable_get(:@pointer_hidden)
+      assert_include calls, [:show_cursor, 1]
     end
 
     test "Windows setup and destroy accelerators use native accelerator table" do
@@ -766,7 +898,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows pane drawing clears the pane background before cell drawing" do
-      screen = StubDrawScreen.new([], 0, 0, [], [], StubCursor.new(0, 0, false))
+      screen = StubDrawScreen.new([], 0, 0, [], [], StubCursor.new(0, 0, false), nil, [])
       pane = StubDrawPane.new(screen, 0)
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@default_bg, 0x112233)
@@ -783,6 +915,47 @@ if Echoes::Platform.windows?
       assert_equal [[10, 20, 90, 68, 0x112233]], fills
     end
 
+    test "Windows pane drawing paints flat background and bg fills under cells" do
+      screen = StubDrawScreen.new(
+        [], 2, 4, [], [], StubCursor.new(0, 0, false),
+        {type: :flat, colors: [[1.0, 0.0, 0.0, 1.0]]},
+        [{rect: [1, 1, 5, 9], color: [0.0, 1.0, 0.0, 1.0]}]
+      )
+      pane = StubDrawPane.new(screen, 0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@default_bg, 0x112233)
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+
+      fills = []
+      gui.define_singleton_method(:fill_rect_color) do |_hdc, left, top, right, bottom, color|
+        fills << [left, top, right, bottom, color]
+      end
+
+      gui.send(:draw_pane_content, :hdc, pane, 10, 20, 32, 32, true)
+
+      assert_equal [
+        [10, 20, 42, 52, 0x112233],
+        [10, 20, 42, 52, 0x0000ff],
+        [18, 36, 42, 52, 0x00ff00]
+      ], fills
+    end
+
+    test "Windows linear gradient draws vertical scanlines for 90 degrees" do
+      gui = Echoes::GUI.allocate
+      fills = []
+      gui.define_singleton_method(:fill_rect_color) do |_hdc, left, top, right, bottom, color|
+        fills << [left, top, right, bottom, color]
+      end
+
+      gui.send(:draw_linear_gradient, :hdc, 1, 2, 3, 2, [0, 0, 0], [255, 255, 255], 90)
+
+      assert_equal [
+        [1, 2, 4, 3, 0x000000],
+        [1, 3, 4, 4, 0xffffff]
+      ], fills
+    end
+
     test "Windows pane drawing skips wide-char continuation cells" do
       row = [
         Echoes::Cell.new("日", width: 2),
@@ -792,7 +965,7 @@ if Echoes::Platform.windows?
         Echoes::Cell.new("語", width: 2),
         Echoes::Cell.new(" ", width: 0)
       ]
-      screen = StubDrawScreen.new([], 1, 6, [row], [], StubCursor.new(0, 0, false))
+      screen = StubDrawScreen.new([], 1, 6, [row], [], StubCursor.new(0, 0, false), nil, [])
       pane = StubDrawPane.new(screen, 0)
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@colors, [])
