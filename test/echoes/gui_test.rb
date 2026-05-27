@@ -23,6 +23,16 @@ if Echoes::Platform.windows?
         active_pane.screen
       end
     end
+    StubPaneTree = Struct.new(:active_pane, :layout_rects) do
+      def layout(_x, _y, _cols, _rows)
+        layout_rects
+      end
+    end
+    StubLayoutTab = Struct.new(:pane_tree) do
+      def active_pane
+        pane_tree.active_pane
+      end
+    end
     StubResizableTab = Struct.new(:resizes) do
       def resize(rows, cols)
         resizes << [rows, cols]
@@ -158,6 +168,129 @@ if Echoes::Platform.windows?
       assert_equal ["x"], pane.writes
       assert_equal 0, pane.scroll_offset
       assert_equal 0.0, pane.scroll_accum
+    end
+
+    test "Windows dropped file paths are quoted for shell paste" do
+      gui = Echoes::GUI.allocate
+
+      assert_equal 'C:\tmp\a.txt "C:\tmp\my file.txt"',
+                   gui.send(:file_paths_for_paste, ['C:\tmp\a.txt', 'C:\tmp\my file.txt'])
+      assert_nil gui.send(:file_paths_for_paste, [])
+    end
+
+    test "Windows file drop pastes paths into the active pane" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+
+      singleton = class << Echoes::Win32; self; end
+      original = Echoes::Win32.method(:dropped_file_paths)
+      singleton.send(:remove_method, :dropped_file_paths)
+      singleton.define_method(:dropped_file_paths) { |_hdrop| ['C:\tmp\my file.txt'] }
+      assert_true gui.send(:handle_file_drop, :hdrop)
+
+      assert_equal ['"C:\tmp\my file.txt"'], pane.writes
+    ensure
+      singleton&.send(:remove_method, :dropped_file_paths)
+      singleton&.define_method(:dropped_file_paths) { |hdrop| original.call(hdrop) } if original
+    end
+
+    test "Windows file drop honors bracketed paste mode" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      screen.bracketed_paste_mode = true
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.define_singleton_method(:file_paths_for_paste) { |_paths| 'C:\tmp\a.txt' }
+
+      singleton = class << Echoes::Win32; self; end
+      original = Echoes::Win32.method(:dropped_file_paths)
+      singleton.send(:remove_method, :dropped_file_paths)
+      singleton.define_method(:dropped_file_paths) { |_hdrop| ['C:\tmp\a.txt'] }
+      assert_true gui.send(:handle_file_drop, :hdrop)
+
+      assert_equal ["\e[200~", 'C:\tmp\a.txt', "\e[201~"], pane.writes
+    ensure
+      singleton&.send(:remove_method, :dropped_file_paths)
+      singleton&.define_method(:dropped_file_paths) { |hdrop| original.call(hdrop) } if original
+    end
+
+    test "Windows focus reporting writes focus in and out sequences" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      screen.focus_reporting = true
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.instance_variable_set(:@hwnd, nil)
+
+      assert_true gui.send(:window_focus_changed, true)
+      assert_true gui.send(:window_focus_changed, false)
+
+      assert_equal ["\e[I", "\e[O"], pane.writes
+      assert_false gui.instance_variable_get(:@window_focused)
+    end
+
+    test "Windows focus reporting ignores panes that did not request it" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.instance_variable_set(:@hwnd, nil)
+
+      assert_false gui.send(:window_focus_changed, true)
+
+      assert_equal [], pane.writes
+    end
+
+    test "Windows Ctrl-click opens URL under the clicked cell" do
+      screen = Echoes::Screen.new(rows: 2, cols: 40)
+      "visit https://example.test now".chars.each_with_index do |char, index|
+        screen.grid[0][index].char = char
+      end
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 40, h: 2, pane: pane}])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      gui.instance_variable_set(:@cols, 40)
+      gui.instance_variable_set(:@rows, 2)
+
+      opened = []
+      gui.define_singleton_method(:control_pressed?) { true }
+      gui.define_singleton_method(:open_url) { |url| opened << url; true }
+      gui.define_singleton_method(:current_tab) { @tabs[@active_tab] }
+
+      lparam = (0 * 16 << 16) | (8 * 8)
+      assert_true gui.send(:handle_left_button_down, nil, lparam)
+
+      assert_equal ["https://example.test"], opened
+    end
+
+    test "Windows terminal cursor loads and applies the I-beam cursor" do
+      gui = Echoes::GUI.allocate
+      calls = []
+      load_cursor = ->(instance, cursor_id) { calls << [:load, instance, cursor_id]; 1234 }
+      set_cursor = ->(cursor) { calls << [:set, cursor]; cursor }
+
+      with_win32_const(:LoadCursorW, load_cursor) do
+        with_win32_const(:SetCursor, set_cursor) do
+          assert_true gui.send(:set_terminal_cursor)
+          assert_true gui.send(:set_terminal_cursor)
+        end
+      end
+
+      assert_equal [
+        [:load, 0, Echoes::Win32::IDC_IBEAM],
+        [:set, 1234],
+        [:set, 1234]
+      ], calls
     end
 
     test "Windows IME composition updates marked text when composition string is present" do
@@ -610,6 +743,16 @@ if Echoes::Platform.windows?
     ensure
       singleton.send(:remove_method, :set_clipboard_text)
       singleton.define_method(:set_clipboard_text) { |hwnd, text| original.call(hwnd, text) }
+    end
+
+    def with_win32_const(name, value)
+      original = Echoes::Win32.const_get(name)
+      Echoes::Win32.send(:remove_const, name)
+      Echoes::Win32.const_set(name, value)
+      yield
+    ensure
+      Echoes::Win32.send(:remove_const, name)
+      Echoes::Win32.const_set(name, original)
     end
   end
 end

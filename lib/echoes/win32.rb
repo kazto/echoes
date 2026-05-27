@@ -10,6 +10,7 @@ module Echoes
     KERNEL32 = Fiddle.dlopen('kernel32.dll') rescue nil
     DWRITE   = Fiddle.dlopen('dwrite.dll') rescue nil
     IMM32    = Fiddle.dlopen('imm32.dll') rescue nil
+    SHELL32  = Fiddle.dlopen('shell32.dll') rescue nil
 
     # Type aliases matching Win32 / Fiddle
     P  = Fiddle::TYPE_VOIDP
@@ -60,6 +61,14 @@ module Echoes
     EmptyClipboard    = new_func(USER32, 'EmptyClipboard', [], I)
     SetClipboardData  = new_func(USER32, 'SetClipboardData', [U, P], P)
     GetClipboardData  = new_func(USER32, 'GetClipboardData', [U], P)
+    LoadCursorW       = new_func(USER32, 'LoadCursorW', [P, P], P)
+    SetCursor         = new_func(USER32, 'SetCursor', [P], P)
+
+    # --- Shell32 Functions ---
+    ShellExecuteW     = new_func(SHELL32, 'ShellExecuteW', [P, P, P, P, P, I], P)
+    DragAcceptFiles   = new_func(SHELL32, 'DragAcceptFiles', [P, I], V)
+    DragQueryFileW    = new_func(SHELL32, 'DragQueryFileW', [P, U, P, U], U)
+    DragFinish        = new_func(SHELL32, 'DragFinish', [P], V)
 
     # --- Kernel32 Functions ---
     GlobalAlloc       = new_func(KERNEL32, 'GlobalAlloc', [U, S], P)
@@ -104,11 +113,15 @@ module Echoes
     WM_PAINT           = 0x000F
     WM_CLOSE           = 0x0010
     WM_ERASEBKGND      = 0x0014
+    WM_SETCURSOR       = 0x0020
+    WM_SETFOCUS        = 0x0007
+    WM_KILLFOCUS       = 0x0008
     WM_LBUTTONDOWN     = 0x0201
     WM_LBUTTONUP       = 0x0202
     WM_MOUSEMOVE       = 0x0200
     WM_MOUSEWHEEL      = 0x020A
     WM_RBUTTONDOWN     = 0x0204
+    WM_DROPFILES       = 0x0233
     WM_KEYDOWN         = 0x0100
     WM_KEYUP           = 0x0101
     WM_CHAR            = 0x0102
@@ -136,6 +149,9 @@ module Echoes
     CF_UNICODETEXT     = 13
     GMEM_MOVEABLE      = 0x0002
     GMEM_ZEROINIT      = 0x0040
+
+    VK_CONTROL         = 0x11
+    IDC_IBEAM          = 32513
 
     # Struct sizes
     WNDCLASSEXW_SIZE   = 80
@@ -224,6 +240,44 @@ module Echoes
       ensure
         CloseClipboard.call
       end
+    end
+
+    def self.open_url(url, hwnd: 0)
+      return false unless ShellExecuteW
+
+      result = ShellExecuteW.call(
+        hwnd || 0,
+        Fiddle::Pointer[to_wstring('open')],
+        Fiddle::Pointer[to_wstring(url.to_s)],
+        nil,
+        nil,
+        SW_SHOWNORMAL
+      )
+      result.to_i > 32
+    end
+
+    def self.file_drop_available?
+      DragAcceptFiles && DragQueryFileW && DragFinish
+    end
+
+    def self.dropped_file_paths(hdrop)
+      return [] unless file_drop_available?
+
+      count = DragQueryFileW.call(hdrop, 0xFFFFFFFF, nil, 0)
+      count.times.filter_map do |index|
+        len = DragQueryFileW.call(hdrop, index, nil, 0)
+        next if len <= 0
+
+        buf = Fiddle::Pointer.malloc((len + 1) * 2, Fiddle::RUBY_FREE)
+        buf[0, (len + 1) * 2] = "\x00" * ((len + 1) * 2)
+        copied = DragQueryFileW.call(hdrop, index, buf, len + 1)
+        next if copied <= 0
+
+        raw = buf[0, copied * 2]
+        raw.force_encoding('UTF-16LE').encode('UTF-8')
+      end
+    ensure
+      DragFinish.call(hdrop) if DragFinish && hdrop && !null_pointer?(hdrop)
     end
 
     def self.null_pointer?(ptr)

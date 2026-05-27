@@ -41,7 +41,7 @@ Inventory date: 2026-05-26.
 | Repaint callback | `drawRect:` | `WM_PAINT`, double-buffered GDI paint | Done | `lib/echoes/gui_win32.rb` | Win32 has double buffering with compatible DC/bitmap. |
 | Resize callback | `setFrameSize:` hook | `WM_SIZE`, `GetClientRect` | Done | `lib/echoes/gui_win32.rb` | Resize updates terminal rows/cols and ConPTY size. |
 | Timer / polling repaint | `NSTimer scheduledTimerWithTimeInterval:` | Manual polling in message loop with short sleep/repaint | Partial | `lib/echoes/gui_win32.rb` | Functional polling exists; it is not a native Win32 timer abstraction. |
-| Window focus notifications | `NSNotificationCenter` for key/resign notifications | `WM_SETFOCUS` / `WM_KILLFOCUS` equivalent | Missing | `lib/echoes/gui_win32.rb` | Current Win32 message handling does not list focus messages. |
+| Window focus notifications | `NSNotificationCenter` for key/resign notifications | `WM_SETFOCUS` / `WM_KILLFOCUS` equivalent | Done | `lib/echoes/gui_win32.rb` | Win32 focus changes update focused state and send focus reporting sequences when `?1004` is enabled. |
 | Menu bar | `NSMenu`, `NSMenuItem`, `setMainMenu:` | Win32 menus / accelerators | Missing | - | Windows GUI currently has no native menu bar equivalent. |
 | Window menu | `NSApplication#setWindowsMenu:` | Win32 menu/window list | Missing | - | Multiple native windows and Window menu integration are not present. |
 | Completion popup | `NSMenu#popUpMenuPositioningItem:atLocation:inView:` | Popup menu or custom overlay | Missing | - | Current Win32 GUI does not implement the completion popup. |
@@ -50,7 +50,7 @@ Inventory date: 2026-05-26.
 | IME composition | `NSTextInputClient` | IMM32: `WM_IME_*`, `ImmGetContext`, `ImmGetCompositionStringW` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Inline composition and result commit exist. Candidate window positioning and full Cocoa text-input parity are not implemented. |
 | Mouse click/drag | `mouseDown:`, `mouseDragged:`, `mouseUp:` and right/other variants | `WM_LBUTTONDOWN`, mouse movement/wheel handling | Partial | `lib/echoes/gui_win32.rb` | Left click/drag and wheel are present. Right/other button parity is incomplete despite constants for some messages. |
 | Mouse wheel | `scrollWheel:`, `deltaY` | `WM_MOUSEWHEEL` | Done | `lib/echoes/gui_win32.rb` | Scroll accumulation and pane scrolling are implemented. |
-| Pointer cursor shape/visibility | `NSCursor.IBeamCursor`, `hide`, `unhide`, cursor rects | Win32 cursor APIs | Missing | - | No current Win32 cursor shape/visibility implementation is visible. |
+| Pointer cursor shape/visibility | `NSCursor.IBeamCursor`, `hide`, `unhide`, cursor rects | `LoadCursorW`, `SetCursor`, `WM_SETCURSOR` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Terminal window uses the I-beam cursor. Pointer hide/unhide parity is not implemented. |
 | Text fill drawing | `NSColor#setFill`, `NSRectFill` | GDI `CreateSolidBrush`, `FillRect` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Used for background, selection, decorations, cursor, and pane borders. |
 | Text drawing | `NSString#drawAtPoint:withAttributes:` | GDI `TextOutW`, `ExtTextOutW` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Regular terminal text and multicell text are drawn with GDI. |
 | Font creation | `NSFont fontWithName:size:`, `monospacedSystemFontOfSize:weight:` | `CreateFontW` | Done | `lib/echoes/gui_win32.rb` | Regular, bold, italic, bold-italic fonts are created. |
@@ -63,9 +63,9 @@ Inventory date: 2026-05-26.
 | PNG decode | `NSData`, `NSBitmapImageRep`, `CGImage` | GDI+ `GdipCreateBitmapFromStream` path | Done | `lib/echoes/kitty_graphics_win32.rb` | PNG decode returns the same RGBA shape expected by renderers. |
 | Raw RGB/RGBA conversion | `CGDataProviderCreateWithData`, `CGImageCreate` | Ruby buffer conversion / GDI+ path | Done | `lib/echoes/kitty_graphics_win32.rb` | `from_rgb` and `from_rgba` exist. |
 | Clipboard text | `NSPasteboard` with `NSPasteboardTypeString` | Win32 clipboard `CF_UNICODETEXT` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Copy/paste and OSC 52 use the Win32 helper. |
-| File URL drag/drop | `NSPasteboardTypeFileURL`, `readObjectsForClasses:options:` | `WM_DROPFILES` / OLE drag-drop | Missing | - | File drag/drop is not implemented in Win32 GUI. |
+| File URL drag/drop | `NSPasteboardTypeFileURL`, `readObjectsForClasses:options:` | `WM_DROPFILES`, `DragQueryFileW` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Dropped file paths are shell-quoted and pasted into the active pane, including bracketed paste mode. |
 | Open file dialog | `NSOpenPanel` | Common Item Dialog / `GetOpenFileNameW` | Missing | - | Windows has native APIs, but Echoes does not currently bind or use them. |
-| URL open | `NSWorkspace.openURL:` | `ShellExecuteW` / `Start-Process` equivalent | Missing | - | No Windows URL opener is implemented in current source. |
+| URL open | `NSWorkspace.openURL:` | `ShellExecuteW` / Ctrl-click URL detection | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows Ctrl-click opens OSC 8 hyperlinks or detected `http(s)` URLs through `ShellExecuteW`. |
 | About panel | `orderFrontStandardAboutPanelWithOptions:` | Custom dialog / message box | Missing | - | No Win32 About dialog or menu surface exists. |
 | Notifications | `terminal-notifier` fallback on macOS | Window title fallback | Alternate | `lib/echoes/gui_win32.rb` | OSC 9 / OSC 777 requests set the Win32 window title; no native toast implementation. |
 | Screen enumeration | `NSScreen.screens`, `frame`, `visibleFrame`, `backingScaleFactor` | Monitor APIs such as `EnumDisplayMonitors` | Missing | - | No Win32 monitor enumeration binding is present. |
@@ -93,9 +93,9 @@ The largest remaining AppKit parity gaps are:
 
 - Native menu bar, command accelerators, completion popup, and About panel.
 - Multiple native windows, screen enumeration, and OSC external-window/display support.
-- File drag/drop, file open dialog, URL opener, and pane capture.
+- File open dialog and pane capture.
 - Full IME candidate positioning/text-input parity.
-- Gradient backgrounds, ligature control, cursor shape/visibility, and richer font shaping.
+- Gradient backgrounds, ligature control, pointer hide/unhide, and richer font shaping.
 - Native toast notifications.
 - Embedded rubish mode and robust Ctrl-C delivery through ConPTY.
 

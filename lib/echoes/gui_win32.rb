@@ -46,6 +46,7 @@ module Echoes
       @active_tab = 0
       @font_cache = {}
       @hwnd = nil
+      @cursor_handle = nil
       @hfont = nil
       @bold_hfont = nil
       @italic_hfont = nil
@@ -61,6 +62,7 @@ module Echoes
       @cell_width = nil
       @cell_height = nil
       @running = false
+      @window_focused = true
       @marked_text = nil # IME inline composition string
 
       # カラーテーマの初期化
@@ -115,6 +117,9 @@ module Echoes
         when Win32::WM_ERASEBKGND
           1
 
+        when Win32::WM_SETCURSOR
+          set_terminal_cursor ? 1 : Win32::DefWindowProcW.call(hwnd, msg, wparam, lparam)
+
         when Win32::WM_PAINT
           ps = Fiddle::Pointer.malloc(Win32::PAINTSTRUCT_SIZE, Fiddle::RUBY_FREE)
           ps[0, Win32::PAINTSTRUCT_SIZE] = "\x00" * Win32::PAINTSTRUCT_SIZE
@@ -129,26 +134,16 @@ module Echoes
           end
           0
 
+        when Win32::WM_SETFOCUS
+          window_focus_changed(true)
+          0
+
+        when Win32::WM_KILLFOCUS
+          window_focus_changed(false)
+          0
+
         when Win32::WM_LBUTTONDOWN
-          Win32::SetFocus.call(hwnd)
-          x_pos = lparam.to_i & 0xFFFF
-          y_pos = (lparam.to_i >> 16) & 0xFFFF
-
-          if @cell_width && @cell_width > 0 && @cell_height && @cell_height > 0 && (tab = current_tab)
-            cell_x = x_pos / @cell_width
-            cell_y = y_pos / @cell_height
-
-            layout = tab.pane_tree.layout(0, 0, @cols, @rows)
-            target_rect = layout.find do |rect|
-              cell_x >= rect[:x] && cell_x < (rect[:x] + rect[:w]) &&
-              cell_y >= rect[:y] && cell_y < (rect[:y] + rect[:h])
-            end
-
-            if target_rect && target_rect[:pane] != tab.active_pane
-              tab.pane_tree.active_pane = target_rect[:pane]
-              Win32::InvalidateRect.call(hwnd, nil, 1)
-            end
-          end
+          handle_left_button_down(hwnd, lparam.to_i)
           0
 
         when Win32::WM_MOUSEWHEEL
@@ -156,6 +151,10 @@ module Echoes
           if handle_mouse_wheel_delta(delta)
             Win32::InvalidateRect.call(hwnd, nil, 1)
           end
+          0
+
+        when Win32::WM_DROPFILES
+          handle_file_drop(wparam)
           0
 
         when Win32::WM_IME_STARTCOMPOSITION
@@ -229,7 +228,7 @@ module Echoes
       wnd_class[24, 8] = [0].pack('Q') # hInstance
 
       icon = 0
-      cursor = 0
+      cursor = load_terminal_cursor
       bg_brush = 0
 
       wnd_class[32, 8] = [icon].pack('Q')      # hIcon
@@ -263,6 +262,7 @@ module Echoes
 
       raise "echoes win32: failed to create window" if @hwnd.null?
 
+      Win32::DragAcceptFiles.call(@hwnd, 1) if Win32::DragAcceptFiles
       Win32::ShowWindow.call(@hwnd, Win32::SW_SHOWNORMAL)
       Win32::UpdateWindow.call(@hwnd)
       Win32::SetFocus.call(@hwnd)
@@ -344,6 +344,124 @@ module Echoes
       lines = pane.scroll_accum.to_i
       pane.scroll_offset = (pane.scroll_offset + lines).clamp(0, pane.screen.scrollback.size)
       pane.scroll_accum -= lines
+      true
+    end
+
+    private def load_terminal_cursor
+      return 0 unless Win32::LoadCursorW
+
+      @cursor_handle ||= Win32::LoadCursorW.call(0, Win32::IDC_IBEAM)
+    end
+
+    private def set_terminal_cursor
+      cursor = load_terminal_cursor
+      return false if !cursor || Win32.null_pointer?(cursor)
+      return false unless Win32::SetCursor
+
+      Win32::SetCursor.call(cursor)
+      true
+    end
+
+    URL_REGEX = /https?:\/\/\S+/
+
+    private def handle_left_button_down(hwnd, lparam)
+      Win32::SetFocus.call(hwnd) if hwnd && !Win32.null_pointer?(hwnd)
+      return false unless @cell_width && @cell_width > 0 && @cell_height && @cell_height > 0
+
+      tab = current_tab
+      return false unless tab
+
+      x_pos = lparam.to_i & 0xFFFF
+      y_pos = (lparam.to_i >> 16) & 0xFFFF
+      cell_x = x_pos / @cell_width
+      cell_y = y_pos / @cell_height
+
+      target_rect = tab.pane_tree.layout(0, 0, @cols, @rows).find do |rect|
+        cell_x >= rect[:x] && cell_x < (rect[:x] + rect[:w]) &&
+          cell_y >= rect[:y] && cell_y < (rect[:y] + rect[:h])
+      end
+      return false unless target_rect
+
+      pane = target_rect[:pane]
+      local_row = cell_y - target_rect[:y]
+      col = cell_x - target_rect[:x]
+
+      if control_pressed?
+        abs_row = pane.screen.scrollback.size - pane.scroll_offset.to_i + local_row
+        url = hyperlink_at(pane, abs_row, col)
+        return true if url && open_url(url)
+      end
+
+      if pane != tab.active_pane
+        tab.pane_tree.active_pane = pane
+        Win32::InvalidateRect.call(hwnd, nil, 1)
+        return true
+      end
+
+      false
+    end
+
+    private def control_pressed?
+      (Win32::GetKeyState.call(Win32::VK_CONTROL) & 0x8000) != 0
+    end
+
+    private def hyperlink_at(pane, abs_row, col)
+      row = row_at(pane, abs_row)
+      return nil unless row
+
+      cell = row[col]
+      return cell.hyperlink if cell&.respond_to?(:hyperlink) && cell.hyperlink
+
+      text = row.map { |c| c&.char.to_s }.join
+      text.scan(URL_REGEX) do |url|
+        start = Regexp.last_match.begin(0)
+        return url if col >= start && col < start + url.length
+      end
+      nil
+    end
+
+    private def row_at(pane, abs_row)
+      return nil if abs_row < 0
+
+      scrollback = pane.screen.scrollback
+      if abs_row < scrollback.size
+        scrollback[abs_row]
+      elsif abs_row - scrollback.size < pane.screen.rows
+        pane.screen.grid[abs_row - scrollback.size]
+      end
+    end
+
+    private def open_url(url)
+      Win32.open_url(url, hwnd: @hwnd)
+    end
+
+    private def handle_file_drop(hdrop)
+      paste_text_to_active_pane(file_paths_for_paste(Win32.dropped_file_paths(hdrop)))
+    rescue Errno::EIO, IOError
+      false
+    end
+
+    private def file_paths_for_paste(paths)
+      clean_paths = paths.compact.map(&:to_s).reject(&:empty?)
+      return nil if clean_paths.empty?
+
+      clean_paths.map { |path| shell_quote_path(path) }.join(" ")
+    end
+
+    private def shell_quote_path(path)
+      return path if path.match?(/\A[A-Za-z]:\\[^\s&()^|<>"]+\z/)
+
+      %("#{path.gsub('"', '""')}")
+    end
+
+    private def window_focus_changed(focused)
+      @window_focused = focused
+      Win32::InvalidateRect.call(@hwnd, nil, 1) if @hwnd && !Win32.null_pointer?(@hwnd)
+
+      pane = current_tab&.active_pane
+      return false unless pane&.screen&.focus_reporting?
+
+      write_pane_input(pane, focused ? "\e[I" : "\e[O")
       true
     end
 
@@ -824,8 +942,14 @@ module Echoes
       str = Win32.get_clipboard_text(@hwnd)
       return if str.nil? || str.empty?
 
+      paste_text_to_active_pane(str)
+    rescue Errno::EIO, IOError
+    end
+
+    private def paste_text_to_active_pane(str)
       pane = current_tab&.active_pane
-      return unless pane
+      return false unless pane
+      return false if str.nil? || str.empty?
 
       if pane.screen.bracketed_paste_mode?
         write_pane_input(pane, "\e[200~")
@@ -834,7 +958,7 @@ module Echoes
       else
         write_pane_input(pane, str)
       end
-    rescue Errno::EIO, IOError
+      true
     end
 
     private def copy_to_clipboard
