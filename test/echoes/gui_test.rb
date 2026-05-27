@@ -467,10 +467,10 @@ if Echoes::Platform.windows?
       assert_equal [[:hwnd, Echoes::Win32::WM_SETCURSOR, :wparam, 2]], defaults
     end
 
-    test "Windows menu bar installs File View Window and Help menus" do
+    test "Windows menu bar installs File Edit View Window Shell and Help menus" do
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@hwnd, 99)
-      popup_handles = [200, 201, 202, 203]
+      popup_handles = [200, 201, 202, 203, 204, 205]
       calls = []
 
       with_window_registry_windows([]) do
@@ -490,15 +490,25 @@ if Echoes::Platform.windows?
       assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_NEW_TAB]
       assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_OPEN_FILE]
       assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_EXIT]
-      assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_TOGGLE_POINTER]
-      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MINIMIZE]
-      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MAXIMIZE]
-      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_FULLSCREEN]
-      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_ABOUT]
+      assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_COPY]
+      assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_PASTE]
+      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_TOGGLE_POINTER]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MINIMIZE]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MAXIMIZE]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_FULLSCREEN]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_PREVIOUS_TAB]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_NEXT_TAB]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_CLOSE_TAB]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_SPLIT_RIGHT]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_SPLIT_DOWN]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_CLOSE_PANE]
+      assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_ABOUT]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 200]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 201]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 202]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 203]
+      assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 204]
+      assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 205]
       assert_include calls, [:set_menu, 99, 100]
       assert_include calls, [:draw, 99]
     end
@@ -511,23 +521,46 @@ if Echoes::Platform.windows?
       invalidations = 0
       about = 0
       toggles = 0
+      copies = 0
+      pastes = 0
+      close_tabs = 0
+      split_rights = 0
+      split_downs = 0
+      close_panes = 0
       gui.define_singleton_method(:create_tab) { |editor_file: nil| created << editor_file }
       gui.define_singleton_method(:prompt_for_file_to_edit) { "C:/tmp/demo.txt" }
       gui.define_singleton_method(:invalidate_window) { invalidations += 1 }
       gui.define_singleton_method(:show_about_panel) { about += 1 }
       gui.define_singleton_method(:toggle_pointer_hidden) { toggles += 1 }
+      gui.define_singleton_method(:copy_to_clipboard) { copies += 1 }
+      gui.define_singleton_method(:paste_from_clipboard) { pastes += 1 }
+      gui.define_singleton_method(:close_tab) { |_index| close_tabs += 1 }
+      gui.define_singleton_method(:split_active_pane) { |direction| direction == :vertical ? split_rights += 1 : split_downs += 1 }
+      gui.define_singleton_method(:close_active_pane) { close_panes += 1 }
 
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_NEW_TAB)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_OPEN_FILE)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_ABOUT)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_TOGGLE_POINTER)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_COPY)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_PASTE)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_CLOSE_TAB)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_SPLIT_RIGHT)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_SPLIT_DOWN)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_CLOSE_PANE)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_EXIT)
       assert_false gui.send(:dispatch_menu_command, 999_999)
 
       assert_equal [nil, "C:/tmp/demo.txt"], created
-      assert_equal 2, invalidations
+      assert_equal 7, invalidations
       assert_equal 1, about
       assert_equal 1, toggles
+      assert_equal 1, copies
+      assert_equal 1, pastes
+      assert_equal 1, close_tabs
+      assert_equal 1, split_rights
+      assert_equal 1, split_downs
+      assert_equal 1, close_panes
       assert_false gui.instance_variable_get(:@running)
     end
 
@@ -539,7 +572,8 @@ if Echoes::Platform.windows?
 
       assert_equal Echoes::GUI::ACCELERATORS.size, entries.size
       assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x54, Echoes::GUI::MENU_NEW_TAB], entries[0]
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x50, Echoes::GUI::MENU_TOGGLE_POINTER], entries[2]
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x57, Echoes::GUI::MENU_CLOSE_TAB], entries[2]
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x50, Echoes::GUI::MENU_TOGGLE_POINTER], entries[5]
       assert_equal [Echoes::Win32::FVIRTKEY | 0x80, 0x70, Echoes::GUI::MENU_ABOUT], entries[-1]
     end
 

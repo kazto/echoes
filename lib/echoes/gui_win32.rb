@@ -21,14 +21,27 @@ module Echoes
     MENU_EXIT = 10_003
     MENU_ABOUT = 10_004
     MENU_TOGGLE_POINTER = 10_005
+    MENU_COPY = 10_006
+    MENU_PASTE = 10_007
+    MENU_CLOSE_TAB = 10_008
+    MENU_SPLIT_RIGHT = 10_009
     MENU_WINDOW_MINIMIZE = 10_010
     MENU_WINDOW_MAXIMIZE = 10_011
     MENU_WINDOW_FULLSCREEN = 10_012
+    MENU_SPLIT_DOWN = 10_013
+    MENU_CLOSE_PANE = 10_014
+    MENU_PREVIOUS_TAB = 10_015
+    MENU_NEXT_TAB = 10_016
+    MENU_PREVIOUS_PANE = 10_017
+    MENU_NEXT_PANE = 10_018
     MENU_WINDOW_BASE = 10_100
 
     ACCELERATORS = [
       [Win32::FCONTROL | Win32::FVIRTKEY, 0x54, MENU_NEW_TAB],   # Ctrl+T
       [Win32::FCONTROL | Win32::FVIRTKEY, 0x4F, MENU_OPEN_FILE], # Ctrl+O
+      [Win32::FCONTROL | Win32::FVIRTKEY, 0x57, MENU_CLOSE_TAB], # Ctrl+W
+      [Win32::FCONTROL | Win32::FSHIFT | Win32::FVIRTKEY, 0x44, MENU_SPLIT_DOWN], # Ctrl+Shift+D
+      [Win32::FCONTROL | Win32::FSHIFT | Win32::FVIRTKEY, 0x57, MENU_CLOSE_PANE], # Ctrl+Shift+W
       [Win32::FCONTROL | Win32::FSHIFT | Win32::FVIRTKEY, 0x50, MENU_TOGGLE_POINTER], # Ctrl+Shift+P
       [Win32::FALT | Win32::FVIRTKEY, 0x73, MENU_EXIT],          # Alt+F4
       [Win32::FVIRTKEY, 0x70, MENU_ABOUT]                        # F1
@@ -417,27 +430,44 @@ module Echoes
 
       menu = Win32::CreateMenu.call
       file_menu = Win32::CreatePopupMenu.call
+      edit_menu = Win32::CreatePopupMenu.call
       view_menu = Win32::CreatePopupMenu.call
       window_menu = Win32::CreatePopupMenu.call
+      shell_menu = Win32::CreatePopupMenu.call
       help_menu = Win32::CreatePopupMenu.call
-      return false if [menu, file_menu, view_menu, window_menu, help_menu].any? { |handle| !handle || Win32.null_pointer?(handle) }
+      return false if [menu, file_menu, edit_menu, view_menu, window_menu, shell_menu, help_menu].any? { |handle| !handle || Win32.null_pointer?(handle) }
 
       append_menu_item(file_menu, MENU_NEW_TAB, "New Tab")
       append_menu_item(file_menu, MENU_OPEN_FILE, "Open File...")
       append_menu_separator(file_menu)
       append_menu_item(file_menu, MENU_EXIT, "Exit")
+      append_menu_item(edit_menu, MENU_COPY, "Copy")
+      append_menu_item(edit_menu, MENU_PASTE, "Paste")
       append_menu_item(view_menu, MENU_TOGGLE_POINTER, "Hide Mouse Pointer")
       append_menu_item(window_menu, MENU_WINDOW_MINIMIZE, "Minimize")
       append_menu_item(window_menu, MENU_WINDOW_MAXIMIZE, "Maximize")
       append_menu_item(window_menu, MENU_WINDOW_FULLSCREEN, "Enter Full Screen")
       append_menu_separator(window_menu)
+      append_menu_item(window_menu, MENU_PREVIOUS_TAB, "Show Previous Tab")
+      append_menu_item(window_menu, MENU_NEXT_TAB, "Show Next Tab")
+      append_menu_separator(window_menu)
+      append_menu_item(window_menu, MENU_PREVIOUS_PANE, "Select Previous Pane")
+      append_menu_item(window_menu, MENU_NEXT_PANE, "Select Next Pane")
+      append_menu_separator(window_menu)
       @window_menu_handle = window_menu
       @window_menu_dynamic_count = 0
       update_window_list
+      append_menu_item(shell_menu, MENU_CLOSE_TAB, "Close Tab")
+      append_menu_separator(shell_menu)
+      append_menu_item(shell_menu, MENU_SPLIT_RIGHT, "Split Right")
+      append_menu_item(shell_menu, MENU_SPLIT_DOWN, "Split Down")
+      append_menu_item(shell_menu, MENU_CLOSE_PANE, "Close Pane")
       append_menu_item(help_menu, MENU_ABOUT, "About Echoes")
       append_menu_popup(menu, file_menu, "File")
+      append_menu_popup(menu, edit_menu, "Edit")
       append_menu_popup(menu, view_menu, "View")
       append_menu_popup(menu, window_menu, "Window")
+      append_menu_popup(menu, shell_menu, "Shell")
       append_menu_popup(menu, help_menu, "Help")
 
       return false if Win32::SetMenu.call(@hwnd, menu) == 0
@@ -508,6 +538,29 @@ module Echoes
       when MENU_TOGGLE_POINTER
         toggle_pointer_hidden
         true
+      when MENU_COPY
+        copy_to_clipboard
+        true
+      when MENU_PASTE
+        paste_from_clipboard
+        invalidate_window
+        true
+      when MENU_CLOSE_TAB
+        close_tab(@active_tab)
+        invalidate_window
+        true
+      when MENU_SPLIT_RIGHT
+        split_active_pane(:vertical)
+        invalidate_window
+        true
+      when MENU_SPLIT_DOWN
+        split_active_pane(:horizontal)
+        invalidate_window
+        true
+      when MENU_CLOSE_PANE
+        close_active_pane
+        invalidate_window
+        true
       when MENU_WINDOW_MINIMIZE
         minimize_window
         true
@@ -516,6 +569,22 @@ module Echoes
         true
       when MENU_WINDOW_FULLSCREEN
         toggle_fullscreen
+        true
+      when MENU_PREVIOUS_TAB
+        select_previous_tab
+        invalidate_window
+        true
+      when MENU_NEXT_TAB
+        select_next_tab
+        invalidate_window
+        true
+      when MENU_PREVIOUS_PANE
+        current_tab&.prev_pane
+        invalidate_window
+        true
+      when MENU_NEXT_PANE
+        current_tab&.next_pane
+        invalidate_window
         true
       when (MENU_WINDOW_BASE...(MENU_WINDOW_BASE + 9))
         focus_window_by_menu(command_id)
@@ -530,6 +599,55 @@ module Echoes
       else
         false
       end
+    end
+
+    private def close_tab(index)
+      return false if @tabs.nil? || @tabs.empty?
+
+      index = [[index.to_i, 0].max, @tabs.size - 1].min
+      tab = @tabs.delete_at(index)
+      tab&.close
+      if @tabs.empty?
+        create_tab
+      else
+        @active_tab = [index, @tabs.size - 1].min
+      end
+      true
+    end
+
+    private def split_active_pane(direction)
+      tab = current_tab
+      return false unless tab
+
+      pane = direction == :horizontal ? tab.split_horizontal : tab.split_vertical
+      wire_screen_handlers(pane)
+      true
+    end
+
+    private def close_active_pane
+      tab = current_tab
+      return false unless tab
+
+      if tab.pane_tree.single_pane?
+        close_tab(@active_tab)
+      else
+        tab.close_active_pane
+      end
+      true
+    end
+
+    private def select_previous_tab
+      return false if @tabs.nil? || @tabs.empty?
+
+      @active_tab = (@active_tab - 1) % @tabs.size
+      true
+    end
+
+    private def select_next_tab
+      return false if @tabs.nil? || @tabs.empty?
+
+      @active_tab = (@active_tab + 1) % @tabs.size
+      true
     end
 
     private def update_window_list
@@ -554,7 +672,7 @@ module Echoes
       return unless Win32::DeleteMenu
 
       (@window_menu_dynamic_count || 0).times do
-        Win32::DeleteMenu.call(@window_menu_handle, 4, Win32::MF_BYPOSITION)
+        Win32::DeleteMenu.call(@window_menu_handle, 10, Win32::MF_BYPOSITION)
       end
       @window_menu_dynamic_count = 0
     end
