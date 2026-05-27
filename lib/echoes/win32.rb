@@ -163,6 +163,8 @@ module Echoes
     WM_MOUSEWHEEL      = 0x020A
     WM_RBUTTONDOWN     = 0x0204
     WM_RBUTTONUP       = 0x0205
+    WM_MBUTTONDOWN     = 0x0207
+    WM_MBUTTONUP       = 0x0208
     WM_DROPFILES       = 0x0233
     WM_KEYDOWN         = 0x0100
     WM_KEYUP           = 0x0101

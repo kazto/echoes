@@ -196,6 +196,14 @@ module Echoes
           handle_mouse_button_up(lparam.to_i)
           0
 
+        when Win32::WM_MBUTTONDOWN
+          handle_mouse_button_down(hwnd, lparam.to_i, 1, :middle)
+          0
+
+        when Win32::WM_MBUTTONUP
+          handle_mouse_button_up(lparam.to_i)
+          0
+
         when Win32::WM_MOUSEMOVE
           handle_mouse_move(lparam.to_i)
           0
@@ -751,9 +759,17 @@ module Echoes
       return false unless [:button_event, :any_event].include?(pane.screen.mouse_tracking)
 
       tab.pane_tree.active_pane = pane if pane != tab.active_pane
-      button = @mouse_button_down == :right ? 34 : 32
+      button = drag_button_code(@mouse_button_down)
       send_mouse_event(tab, button, col, row)
       true
+    end
+
+    private def drag_button_code(button)
+      case button
+      when :middle then 33
+      when :right then 34
+      else 32
+      end
     end
 
     private def observe_pointer_shake(lparam)

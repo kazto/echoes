@@ -344,6 +344,48 @@ if Echoes::Platform.windows?
       assert_equal :right, gui.instance_variable_get(:@mouse_button_down)
     end
 
+    test "Windows middle mouse reports button one" do
+      screen = Echoes::Screen.new(rows: 4, cols: 10)
+      screen.mouse_tracking = :normal
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      gui.instance_variable_set(:@cols, 10)
+      gui.instance_variable_set(:@rows, 4)
+
+      lparam = (0 * 16 << 16) | (1 * 8)
+      assert_true gui.send(:handle_mouse_button_down, nil, lparam, 1, :middle)
+
+      assert_equal ["\e[M!\"!"], pane.writes
+      assert_equal :middle, gui.instance_variable_get(:@mouse_button_down)
+    end
+
+    test "Windows middle mouse drag uses SGR button motion code" do
+      screen = Echoes::Screen.new(rows: 4, cols: 10)
+      screen.mouse_tracking = :button_event
+      screen.mouse_encoding = :sgr
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      gui.instance_variable_set(:@cols, 10)
+      gui.instance_variable_set(:@rows, 4)
+
+      down = (1 * 16 << 16) | (2 * 8)
+      move = (2 * 16 << 16) | (3 * 8)
+      gui.send(:handle_mouse_button_down, nil, down, 1, :middle)
+      assert_true gui.send(:handle_mouse_move, move)
+
+      assert_equal ["\e[<1;3;2M", "\e[<33;4;3M"], pane.writes
+    end
+
     test "Windows terminal cursor loads and applies the I-beam cursor" do
       gui = Echoes::GUI.allocate
       calls = []
