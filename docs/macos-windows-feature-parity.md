@@ -43,7 +43,7 @@ Inventory date: 2026-05-26.
 | Resize callback | `setFrameSize:` hook | `WM_SIZE`, `GetClientRect` | Done | `lib/echoes/gui_win32.rb` | Resize updates terminal rows/cols and ConPTY size. |
 | Timer / polling repaint | `NSTimer scheduledTimerWithTimeInterval:` | Manual polling in message loop with short sleep/repaint | Partial | `lib/echoes/gui_win32.rb` | Functional polling exists; it is not a native Win32 timer abstraction. |
 | Window focus notifications | `NSNotificationCenter` for key/resign notifications | `WM_SETFOCUS` / `WM_KILLFOCUS` equivalent | Done | `lib/echoes/gui_win32.rb` | Win32 focus changes update focused state and send focus reporting sequences when `?1004` is enabled. |
-| Menu bar | `NSMenu`, `NSMenuItem`, `setMainMenu:` | Win32 menus and accelerator table | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows has File/Edit/View/Window/Shell/Help menus and accelerators for common tab, pane, search, pointer, About, and Exit commands. Profiles and app-level macOS services are not equivalent. |
+| Menu bar | `NSMenu`, `NSMenuItem`, `setMainMenu:` | Win32 menus and accelerator table | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows has File/Edit/View/Window/Shell/Help menus and accelerators for common tab, pane, search, profile, pointer, About, and Exit commands. App-level macOS services are not equivalent. |
 | Window menu | `NSApplication#setWindowsMenu:` | Win32 menu plus shared process window registry | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb`, `lib/echoes/window_registry.rb` | Windows lists open Echoes windows across processes and can focus, minimize, maximize, or restore the current window. It is process-registry based rather than AppKit's in-process windows menu. |
 | Completion popup | `NSMenu#popUpMenuPositioningItem:atLocation:inView:` | Popup menu or custom overlay | Missing | - | Current Win32 GUI does not implement the completion popup. |
 | Keyboard input | `NSEvent#characters`, `keyCode`, `modifierFlags`, `interpretKeyEvents:` | `WM_CHAR`, `WM_KEYDOWN`, virtual-key mapping | Done | `lib/echoes/gui_win32.rb` | Special keys and Ctrl-letter mappings are implemented. |
@@ -95,7 +95,7 @@ Windows currently covers the core terminal path:
 
 The largest remaining AppKit parity gaps are:
 
-- Profile native menu parity and completion popup.
+- Completion popup and app-level macOS menu services.
 - In-process multiple native windows and full AppKit-style Window menu behavior.
 - Vector pane capture.
 - Full Cocoa-style IME/text-input parity.

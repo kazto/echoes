@@ -38,6 +38,7 @@ module Echoes
     MENU_FIND_NEXT = 10_020
     MENU_FIND_PREVIOUS = 10_021
     MENU_WINDOW_BASE = 10_100
+    MENU_PROFILE_BASE = 10_200
 
     ACCELERATORS = [
       [Win32::FCONTROL | Win32::FVIRTKEY, 0x54, MENU_NEW_TAB],   # Ctrl+T
@@ -471,6 +472,8 @@ module Echoes
       append_menu_item(view_menu, MENU_FIND_NEXT, "Find Next")
       append_menu_item(view_menu, MENU_FIND_PREVIOUS, "Find Previous")
       append_menu_separator(view_menu)
+      build_profiles_submenu(view_menu)
+      append_menu_separator(view_menu)
       append_menu_item(view_menu, MENU_TOGGLE_POINTER, "Hide Mouse Pointer")
       append_menu_item(window_menu, MENU_WINDOW_MINIMIZE, "Minimize")
       append_menu_item(window_menu, MENU_WINDOW_MAXIMIZE, "Maximize")
@@ -601,6 +604,10 @@ module Echoes
         search_prev
         invalidate_window
         true
+      when (MENU_PROFILE_BASE...(MENU_PROFILE_BASE + 100))
+        apply_profile_by_menu(command_id)
+        invalidate_window
+        true
       when MENU_WINDOW_MINIMIZE
         minimize_window
         true
@@ -639,6 +646,45 @@ module Echoes
       else
         false
       end
+    end
+
+    private def build_profiles_submenu(view_menu)
+      return false unless Win32::CreatePopupMenu
+
+      profiles = Echoes.config.all_profiles
+      return false if profiles.empty?
+
+      profile_menu = Win32::CreatePopupMenu.call
+      return false if !profile_menu || Win32.null_pointer?(profile_menu)
+
+      profiles.each_key.with_index do |name, index|
+        break if index >= 100
+
+        append_menu_item(profile_menu, MENU_PROFILE_BASE + index, name)
+      end
+      append_menu_popup(view_menu, profile_menu, "Profile")
+      true
+    end
+
+    private def apply_profile_by_menu(command_id)
+      index = command_id - MENU_PROFILE_BASE
+      name = Echoes.config.all_profiles.keys[index]
+      apply_profile(name)
+    end
+
+    private def apply_profile(name)
+      profile = Echoes.config.all_profiles[name.to_s]
+      return false unless profile
+
+      @active_profile = profile
+      @colors = build_color_table
+      @default_fg = make_color(*@active_profile.foreground)
+      @default_bg = make_color(*@active_profile.background)
+      @tabs&.each do |tab|
+        panes = tab.respond_to?(:panes) ? tab.panes : [tab.active_pane].compact
+        panes.each { |pane| pane.screen.mark_all_dirty if pane.screen.respond_to?(:mark_all_dirty) }
+      end
+      true
     end
 
     private def close_tab(index)

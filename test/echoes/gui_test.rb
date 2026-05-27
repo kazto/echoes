@@ -470,7 +470,7 @@ if Echoes::Platform.windows?
     test "Windows menu bar installs File Edit View Window Shell and Help menus" do
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@hwnd, 99)
-      popup_handles = [200, 201, 202, 203, 204, 205]
+      popup_handles = [200, 201, 202, 203, 204, 205, 206]
       calls = []
 
       with_window_registry_windows([]) do
@@ -496,6 +496,8 @@ if Echoes::Platform.windows?
       assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_FIND_NEXT]
       assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_FIND_PREVIOUS]
       assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_TOGGLE_POINTER]
+      assert_include calls, [:append, 202, Echoes::Win32::MF_POPUP, 206]
+      assert_include calls, [:append, 206, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_PROFILE_BASE]
       assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MINIMIZE]
       assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MAXIMIZE]
       assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_FULLSCREEN]
@@ -533,6 +535,7 @@ if Echoes::Platform.windows?
       finds = 0
       nexts = 0
       prevs = 0
+      profiles = 0
       gui.define_singleton_method(:create_tab) { |editor_file: nil| created << editor_file }
       gui.define_singleton_method(:prompt_for_file_to_edit) { "C:/tmp/demo.txt" }
       gui.define_singleton_method(:invalidate_window) { invalidations += 1 }
@@ -546,6 +549,7 @@ if Echoes::Platform.windows?
       gui.define_singleton_method(:toggle_search) { finds += 1 }
       gui.define_singleton_method(:search_next) { nexts += 1 }
       gui.define_singleton_method(:search_prev) { prevs += 1 }
+      gui.define_singleton_method(:apply_profile_by_menu) { |_command_id| profiles += 1 }
 
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_NEW_TAB)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_OPEN_FILE)
@@ -560,11 +564,12 @@ if Echoes::Platform.windows?
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_FIND)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_FIND_NEXT)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_FIND_PREVIOUS)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_PROFILE_BASE)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_EXIT)
       assert_false gui.send(:dispatch_menu_command, 999_999)
 
       assert_equal [nil, "C:/tmp/demo.txt"], created
-      assert_equal 10, invalidations
+      assert_equal 11, invalidations
       assert_equal 1, about
       assert_equal 1, toggles
       assert_equal 1, copies
@@ -576,7 +581,24 @@ if Echoes::Platform.windows?
       assert_equal 1, finds
       assert_equal 1, nexts
       assert_equal 1, prevs
+      assert_equal 1, profiles
       assert_false gui.instance_variable_get(:@running)
+    end
+
+    test "Windows profile menu applies profile colors and marks panes dirty" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+
+      assert_true gui.send(:apply_profile, "Solarized Dark")
+
+      profile = Echoes.config.all_profiles["Solarized Dark"]
+      assert_same profile, gui.instance_variable_get(:@active_profile)
+      assert_equal gui.send(:make_color, *profile.foreground), gui.instance_variable_get(:@default_fg)
+      assert_equal gui.send(:make_color, *profile.background), gui.instance_variable_get(:@default_bg)
+      assert_equal Set.new([0, 1]), screen.dirty_rows
     end
 
     test "Windows accelerator table encodes menu shortcuts" do
