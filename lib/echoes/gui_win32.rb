@@ -204,6 +204,14 @@ module Echoes
           handle_mouse_button_up(lparam.to_i)
           0
 
+        when Win32::WM_XBUTTONDOWN
+          handle_xbutton_down(hwnd, wparam.to_i, lparam.to_i)
+          0
+
+        when Win32::WM_XBUTTONUP
+          handle_mouse_button_up(lparam.to_i)
+          0
+
         when Win32::WM_MOUSEMOVE
           handle_mouse_move(lparam.to_i)
           0
@@ -735,6 +743,17 @@ module Echoes
       true
     end
 
+    private def handle_xbutton_down(hwnd, wparam, lparam)
+      case (wparam.to_i >> 16) & 0xFFFF
+      when Win32::XBUTTON1
+        handle_mouse_button_down(hwnd, lparam, 8, :xbutton1)
+      when Win32::XBUTTON2
+        handle_mouse_button_down(hwnd, lparam, 9, :xbutton2)
+      else
+        false
+      end
+    end
+
     private def handle_mouse_button_up(lparam)
       target = mouse_target_from_lparam(lparam)
       @mouse_button_down = nil
@@ -768,6 +787,8 @@ module Echoes
       case button
       when :middle then 33
       when :right then 34
+      when :xbutton1 then 40
+      when :xbutton2 then 41
       else 32
       end
     end

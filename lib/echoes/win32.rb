@@ -165,6 +165,8 @@ module Echoes
     WM_RBUTTONUP       = 0x0205
     WM_MBUTTONDOWN     = 0x0207
     WM_MBUTTONUP       = 0x0208
+    WM_XBUTTONDOWN     = 0x020B
+    WM_XBUTTONUP       = 0x020C
     WM_DROPFILES       = 0x0233
     WM_KEYDOWN         = 0x0100
     WM_KEYUP           = 0x0101
@@ -179,6 +181,8 @@ module Echoes
     GCS_COMPSTR             = 0x0008
     GCS_RESULTSTR           = 0x0800
     CFS_CANDIDATEPOS        = 0x0040
+    XBUTTON1                = 0x0001
+    XBUTTON2                = 0x0002
 
     # Background modes
     TRANSPARENT        = 1
