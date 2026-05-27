@@ -48,7 +48,7 @@ Inventory date: 2026-05-26.
 | Completion popup | `NSMenu#popUpMenuPositioningItem:atLocation:inView:` | Popup menu or custom overlay | Missing | - | Current Win32 GUI does not implement the completion popup. |
 | Keyboard input | `NSEvent#characters`, `keyCode`, `modifierFlags`, `interpretKeyEvents:` | `WM_CHAR`, `WM_KEYDOWN`, virtual-key mapping | Done | `lib/echoes/gui_win32.rb` | Special keys and Ctrl-letter mappings are implemented. |
 | Copy mode/search key routing | AppKit keyboard callbacks | Win32 `WM_CHAR` / `WM_KEYDOWN` routed to shared pane logic | Partial | `lib/echoes/gui_win32.rb` | Search matcher/selection helpers exist, but the Windows UI surface is smaller than AppKit. |
-| IME composition | `NSTextInputClient` | IMM32: `WM_IME_*`, `ImmGetContext`, `ImmGetCompositionStringW` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Inline composition and result commit exist. Candidate window positioning and full Cocoa text-input parity are not implemented. |
+| IME composition | `NSTextInputClient` | IMM32: `WM_IME_*`, `ImmGetContext`, `ImmGetCompositionStringW`, `ImmSetCandidateWindow` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Inline composition, result commit, and cursor-based candidate positioning exist. Full Cocoa text-input parity is not implemented. |
 | Mouse click/drag | `mouseDown:`, `mouseDragged:`, `mouseUp:` and right/other variants | `WM_LBUTTONDOWN`, `WM_LBUTTONUP`, `WM_RBUTTONDOWN`, `WM_RBUTTONUP`, `WM_MOUSEMOVE`, `WM_MOUSEWHEEL` | Partial | `lib/echoes/gui_win32.rb` | Left/right press, drag, release, and wheel are routed to terminal mouse reporting. Middle/other button parity is still incomplete. |
 | Mouse wheel | `scrollWheel:`, `deltaY` | `WM_MOUSEWHEEL` | Done | `lib/echoes/gui_win32.rb` | Scroll accumulation and pane scrolling are implemented. |
 | Pointer cursor shape/visibility | `NSCursor.IBeamCursor`, `hide`, `unhide`, cursor rects | `LoadCursorW`, `SetCursor`, `ShowCursor`, `WM_SETCURSOR` | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Terminal window uses the I-beam cursor. Hide/unhide is available from the View menu and Ctrl+Shift+P, with shake-to-show support; cursor rect parity is not implemented. |
@@ -98,7 +98,7 @@ The largest remaining AppKit parity gaps are:
 - Full native menu command parity and completion popup.
 - In-process multiple native windows and full AppKit-style Window menu behavior.
 - Vector pane capture.
-- Full IME candidate positioning/text-input parity.
+- Full Cocoa-style IME/text-input parity.
 - Full gradient alpha/multi-stop parity, ligature control, cursor rect parity, and richer font shaping.
 - Native toast notifications.
 - Embedded rubish mode and robust Ctrl-C delivery through ConPTY.

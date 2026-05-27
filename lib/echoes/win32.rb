@@ -115,6 +115,8 @@ module Echoes
     ImmGetContext            = new_func(IMM32, 'ImmGetContext', [P], P)
     ImmReleaseContext        = new_func(IMM32, 'ImmReleaseContext', [P, P], I)
     ImmGetCompositionStringW = new_func(IMM32, 'ImmGetCompositionStringW', [P, L, P, L], L)
+    ImmSetCompositionWindow  = new_func(IMM32, 'ImmSetCompositionWindow', [P, P], I)
+    ImmSetCandidateWindow    = new_func(IMM32, 'ImmSetCandidateWindow', [P, P], I)
 
     # --- GDI32 Functions ---
     CreateSolidBrush  = new_func(GDI32, 'CreateSolidBrush', [L], P)
@@ -174,6 +176,7 @@ module Echoes
     # IME Composition String Flags
     GCS_COMPSTR             = 0x0008
     GCS_RESULTSTR           = 0x0800
+    CFS_CANDIDATEPOS        = 0x0040
 
     # Background modes
     TRANSPARENT        = 1

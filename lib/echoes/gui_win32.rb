@@ -213,6 +213,7 @@ module Echoes
 
         when Win32::WM_IME_STARTCOMPOSITION
           @marked_text = ""
+          update_ime_candidate_window(hwnd)
           0
 
         when Win32::WM_IME_ENDCOMPOSITION
@@ -922,6 +923,7 @@ module Echoes
 
     private def update_ime_composition(hwnd, lparam)
       handled = false
+      update_ime_candidate_window(hwnd)
 
       if (lparam.to_i & Win32::GCS_RESULTSTR) != 0
         commit_ime_composition(hwnd)
@@ -969,6 +971,43 @@ module Echoes
       end
     rescue Encoding::UndefinedConversionError, Encoding::InvalidByteSequenceError
       nil
+    end
+
+    private def update_ime_candidate_window(hwnd)
+      return false unless Win32::ImmSetCompositionWindow && Win32::ImmSetCandidateWindow
+      return false unless (origin = ime_candidate_origin)
+
+      himc = Win32::ImmGetContext.call(hwnd)
+      return false if !himc || himc.to_i == 0
+
+      x, y = origin
+      composition_form = [Win32::CFS_CANDIDATEPOS, x, y, 0, 0, 0, 0].pack('Lllllll')
+      candidate_form = [0, Win32::CFS_CANDIDATEPOS, x, y, 0, 0, 0, 0].pack('LLllllll')
+
+      begin
+        composition_ok = Win32::ImmSetCompositionWindow.call(himc, Fiddle::Pointer[composition_form]) != 0
+        candidate_ok = Win32::ImmSetCandidateWindow.call(himc, Fiddle::Pointer[candidate_form]) != 0
+        composition_ok || candidate_ok
+      ensure
+        Win32::ImmReleaseContext.call(hwnd, himc)
+      end
+    end
+
+    private def ime_candidate_origin
+      return nil unless @cell_width && @cell_height
+
+      tab = current_tab
+      pane = tab&.active_pane
+      cursor = pane&.screen&.cursor
+      return nil unless tab && pane && cursor
+      return nil unless tab.respond_to?(:pane_tree)
+
+      rect = tab.pane_tree.layout(0, 0, @cols, @rows).find { |entry| entry[:pane] == pane }
+      return nil unless rect
+
+      x = (rect[:x] + cursor.col) * @cell_width
+      y = (rect[:y] + cursor.row + 1) * @cell_height
+      [x, y]
     end
 
     private def draw_text_run(hdc, x, y, text, font)

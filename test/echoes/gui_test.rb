@@ -650,6 +650,59 @@ if Echoes::Platform.windows?
       assert_equal [], pane.writes
     end
 
+    test "Windows IME candidate origin follows active pane cursor" do
+      screen = Echoes::Screen.new(rows: 4, cols: 10)
+      screen.cursor.row = 2
+      screen.cursor.col = 3
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      pane_tree = StubPaneTree.new(pane, [{x: 5, y: 1, w: 10, h: 4, pane: pane}])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      gui.instance_variable_set(:@cols, 20)
+      gui.instance_variable_set(:@rows, 8)
+
+      assert_equal [64, 64], gui.send(:ime_candidate_origin)
+    end
+
+    test "Windows IME candidate window is positioned through IMM" do
+      screen = Echoes::Screen.new(rows: 4, cols: 10)
+      screen.cursor.row = 1
+      screen.cursor.col = 2
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      pane_tree = StubPaneTree.new(pane, [{x: 1, y: 2, w: 10, h: 4, pane: pane}])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
+      gui.instance_variable_set(:@cell_width, 10)
+      gui.instance_variable_set(:@cell_height, 20)
+      gui.instance_variable_set(:@cols, 20)
+      gui.instance_variable_set(:@rows, 8)
+      calls = []
+
+      with_win32_const(:ImmGetContext, ->(hwnd) { calls << [:get, hwnd]; 1234 }) do
+        with_win32_const(:ImmReleaseContext, ->(hwnd, himc) { calls << [:release, hwnd, himc]; 1 }) do
+          with_win32_const(:ImmSetCompositionWindow, ->(himc, form) {
+            calls << [:composition, himc, form[0, 28].unpack('Lllllll')]
+            1
+          }) do
+            with_win32_const(:ImmSetCandidateWindow, ->(himc, form) {
+              calls << [:candidate, himc, form[0, 32].unpack('LLllllll')]
+              1
+            }) do
+              assert_true gui.send(:update_ime_candidate_window, :hwnd)
+            end
+          end
+        end
+      end
+
+      assert_include calls, [:composition, 1234, [Echoes::Win32::CFS_CANDIDATEPOS, 30, 80, 0, 0, 0, 0]]
+      assert_include calls, [:candidate, 1234, [0, Echoes::Win32::CFS_CANDIDATEPOS, 30, 80, 0, 0, 0, 0]]
+      assert_include calls, [:release, :hwnd, 1234]
+    end
+
     test "Windows I/O polling feeds active pane output to its parser" do
       parser = StubParser.new([])
       pane = StubPollingPane.new(true, ["hello"], parser)
