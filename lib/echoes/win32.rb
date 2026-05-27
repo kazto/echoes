@@ -65,6 +65,11 @@ module Echoes
     LoadCursorW       = new_func(USER32, 'LoadCursorW', [P, P], P)
     SetCursor         = new_func(USER32, 'SetCursor', [P], P)
     MessageBoxW       = new_func(USER32, 'MessageBoxW', [P, P, P, U], I)
+    CreateMenu        = new_func(USER32, 'CreateMenu', [], P)
+    CreatePopupMenu   = new_func(USER32, 'CreatePopupMenu', [], P)
+    AppendMenuW       = new_func(USER32, 'AppendMenuW', [P, U, S, P], I)
+    SetMenu           = new_func(USER32, 'SetMenu', [P, P], I)
+    DrawMenuBar       = new_func(USER32, 'DrawMenuBar', [P], I)
 
     # --- Shell32 Functions ---
     ShellExecuteW     = new_func(SHELL32, 'ShellExecuteW', [P, P, P, P, P, I], P)
@@ -104,6 +109,7 @@ module Echoes
     GetTextExtentPoint32W = new_func(GDI32, 'GetTextExtentPoint32W', [P, P, I, P], I)
     GetGlyphIndicesW  = new_func(GDI32, 'GetGlyphIndicesW', [P, P, I, P, U], U)
     StretchDIBits     = new_func(GDI32, 'StretchDIBits', [P, I, I, I, I, I, I, I, I, P, P, U, L], I)
+    GetDIBits         = new_func(GDI32, 'GetDIBits', [P, P, U, U, P, P, U], I)
 
     # Win32 Constants
     CS_VREDRAW         = 0x0001
@@ -119,6 +125,7 @@ module Echoes
     WM_CLOSE           = 0x0010
     WM_ERASEBKGND      = 0x0014
     WM_SETCURSOR       = 0x0020
+    WM_COMMAND         = 0x0111
     WM_SETFOCUS        = 0x0007
     WM_KILLFOCUS       = 0x0008
     WM_LBUTTONDOWN     = 0x0201
@@ -160,6 +167,10 @@ module Echoes
 
     MB_OK              = 0x00000000
     MB_ICONINFORMATION = 0x00000040
+
+    MF_STRING          = 0x00000000
+    MF_SEPARATOR       = 0x00000800
+    MF_POPUP           = 0x00000010
 
     OFN_FILEMUSTEXIST  = 0x00001000
     OFN_HIDEREADONLY   = 0x00000004

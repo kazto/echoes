@@ -62,7 +62,7 @@ if Echoes::Platform.windows?
       def cursor_style = 0
     end
     StubDrawPane = Struct.new(:screen, :scroll_offset)
-    StubHandlerScreen = Struct.new(:clipboard_handler, :glyph_measurer, :cell_pixel_width,
+    StubHandlerScreen = Struct.new(:clipboard_handler, :glyph_measurer, :capture_handler, :cell_pixel_width,
                                    :cell_pixel_height, :notification_handler)
     StubHandlerPane = Struct.new(:screen) do
       def refresh_pty_pixel_size
@@ -291,6 +291,58 @@ if Echoes::Platform.windows?
         [:set, 1234],
         [:set, 1234]
       ], calls
+    end
+
+    test "Windows menu bar installs File and Help menus" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hwnd, 99)
+      popup_handles = [200, 201]
+      calls = []
+
+      with_win32_const(:CreateMenu, -> { calls << [:create_menu]; 100 }) do
+        with_win32_const(:CreatePopupMenu, -> { handle = popup_handles.shift; calls << [:create_popup, handle]; handle }) do
+          with_win32_const(:AppendMenuW, ->(menu, flags, id, _label) { calls << [:append, menu, flags, id]; 1 }) do
+            with_win32_const(:SetMenu, ->(hwnd, menu) { calls << [:set_menu, hwnd, menu]; 1 }) do
+              with_win32_const(:DrawMenuBar, ->(hwnd) { calls << [:draw, hwnd]; 1 }) do
+                assert_true gui.send(:setup_menu)
+              end
+            end
+          end
+        end
+      end
+
+      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_NEW_TAB]
+      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_OPEN_FILE]
+      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_EXIT]
+      assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_ABOUT]
+      assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 200]
+      assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 201]
+      assert_include calls, [:set_menu, 99, 100]
+      assert_include calls, [:draw, 99]
+    end
+
+    test "Windows menu commands dispatch to GUI actions" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hwnd, nil)
+      gui.instance_variable_set(:@running, true)
+      created = []
+      invalidations = 0
+      about = 0
+      gui.define_singleton_method(:create_tab) { |editor_file: nil| created << editor_file }
+      gui.define_singleton_method(:prompt_for_file_to_edit) { "C:/tmp/demo.txt" }
+      gui.define_singleton_method(:invalidate_window) { invalidations += 1 }
+      gui.define_singleton_method(:show_about_panel) { about += 1 }
+
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_NEW_TAB)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_OPEN_FILE)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_ABOUT)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_EXIT)
+      assert_false gui.send(:dispatch_menu_command, 999_999)
+
+      assert_equal [nil, "C:/tmp/demo.txt"], created
+      assert_equal 2, invalidations
+      assert_equal 1, about
+      assert_false gui.instance_variable_get(:@running)
     end
 
     test "Windows prompt for file opens dialog at the pane local cwd" do
@@ -769,6 +821,21 @@ if Echoes::Platform.windows?
       assert_equal [[pane, "Build", "Done"]], delivered
     end
 
+    test "Windows screen handlers wire OSC capture" do
+      screen = StubHandlerScreen.new
+      pane = StubHandlerPane.new(screen)
+      gui = Echoes::GUI.allocate
+      captured = []
+      gui.define_singleton_method(:capture_pane_to_png) do |source_pane, path|
+        captured << [source_pane, path]
+      end
+
+      gui.send(:wire_screen_handlers, pane)
+      screen.capture_handler.call("C:/tmp/snap.png")
+
+      assert_equal [[pane, "C:/tmp/snap.png"]], captured
+    end
+
     test "Windows notification title falls back to window title" do
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@hwnd, :hwnd)
@@ -778,6 +845,52 @@ if Echoes::Platform.windows?
       gui.send(:post_notification, nil, nil, "Build complete")
 
       assert_equal ["Echoes - Build complete"], titles
+    end
+
+    test "Windows PNG encoder writes a valid RGBA PNG container" do
+      gui = Echoes::GUI.allocate
+      rgba = "\xFF\x00\x00\xFF\x00\xFF\x00\xFF".b
+
+      png = gui.send(:encode_png_rgba, 2, 1, rgba)
+
+      assert_equal "\x89PNG\r\n\x1A\n".b, png.byteslice(0, 8)
+      assert_equal "IHDR", png.byteslice(12, 4)
+      assert_equal [2, 1, 8, 6], png.byteslice(16, 10).unpack("NNCC")
+      assert_include png, "IDAT"
+      assert_equal "IEND", png.byteslice(-8, 4)
+    end
+
+    test "Windows capture writes PNG bytes for pane rect" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      pane = StubInputPane.new(screen, [], 0, 0.0)
+      pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 2, pane: pane}])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      args = nil
+      gui.define_singleton_method(:png_bytes_for_pane_capture) do |source_pane, width, height, is_active|
+        args = [source_pane, width, height, is_active]
+        "PNG".b
+      end
+
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "snap.png")
+        assert_true gui.send(:capture_pane_to_png, pane, path)
+        assert_equal [pane, 80, 32, true], args
+        assert_equal "PNG".b, File.binread(path)
+      end
+    end
+
+    test "Windows capture ignores non-PNG formats until PDF is implemented" do
+      gui = Echoes::GUI.allocate
+
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "snap.pdf")
+        assert_false gui.send(:capture_pane_to_png, nil, path)
+        assert_false File.exist?(path)
+      end
     end
 
     private

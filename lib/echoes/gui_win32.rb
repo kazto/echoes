@@ -9,9 +9,15 @@ require_relative 'configuration'
 require 'rbconfig'
 require 'socket'
 require 'uri'
+require 'zlib'
 
 module Echoes
   class GUI
+    MENU_NEW_TAB = 10_001
+    MENU_OPEN_FILE = 10_002
+    MENU_EXIT = 10_003
+    MENU_ABOUT = 10_004
+
     def self.pane_local_cwd(pane)
       uri_str = pane&.screen&.current_directory
       cwd_from_osc7_uri(uri_str)
@@ -120,6 +126,10 @@ module Echoes
 
         when Win32::WM_SETCURSOR
           set_terminal_cursor ? 1 : Win32::DefWindowProcW.call(hwnd, msg, wparam, lparam)
+
+        when Win32::WM_COMMAND
+          dispatch_menu_command(wparam.to_i & 0xFFFF)
+          0
 
         when Win32::WM_PAINT
           ps = Fiddle::Pointer.malloc(Win32::PAINTSTRUCT_SIZE, Fiddle::RUBY_FREE)
@@ -263,6 +273,7 @@ module Echoes
 
       raise "echoes win32: failed to create window" if @hwnd.null?
 
+      setup_menu
       Win32::DragAcceptFiles.call(@hwnd, 1) if Win32::DragAcceptFiles
       Win32::ShowWindow.call(@hwnd, Win32::SW_SHOWNORMAL)
       Win32::UpdateWindow.call(@hwnd)
@@ -327,6 +338,75 @@ module Echoes
       when 0x0D then "\r"    # VK_RETURN
       when 0x1B then "\e"    # VK_ESCAPE
       end
+    end
+
+    private def setup_menu
+      return false unless Win32::CreateMenu && Win32::CreatePopupMenu && Win32::AppendMenuW && Win32::SetMenu
+      return false unless @hwnd && !Win32.null_pointer?(@hwnd)
+
+      menu = Win32::CreateMenu.call
+      file_menu = Win32::CreatePopupMenu.call
+      help_menu = Win32::CreatePopupMenu.call
+      return false if [menu, file_menu, help_menu].any? { |handle| !handle || Win32.null_pointer?(handle) }
+
+      append_menu_item(file_menu, MENU_NEW_TAB, "New Tab")
+      append_menu_item(file_menu, MENU_OPEN_FILE, "Open File...")
+      append_menu_separator(file_menu)
+      append_menu_item(file_menu, MENU_EXIT, "Exit")
+      append_menu_item(help_menu, MENU_ABOUT, "About Echoes")
+      append_menu_popup(menu, file_menu, "File")
+      append_menu_popup(menu, help_menu, "Help")
+
+      return false if Win32::SetMenu.call(@hwnd, menu) == 0
+
+      Win32::DrawMenuBar.call(@hwnd) if Win32::DrawMenuBar
+      true
+    end
+
+    private def append_menu_item(menu, id, label)
+      Win32::AppendMenuW.call(menu, Win32::MF_STRING, id, Fiddle::Pointer[Win32.to_wstring(label)])
+    end
+
+    private def append_menu_separator(menu)
+      Win32::AppendMenuW.call(menu, Win32::MF_SEPARATOR, 0, nil)
+    end
+
+    private def append_menu_popup(menu, popup, label)
+      Win32::AppendMenuW.call(menu, Win32::MF_POPUP, popup.to_i, Fiddle::Pointer[Win32.to_wstring(label)])
+    end
+
+    private def dispatch_menu_command(command_id)
+      case command_id
+      when MENU_NEW_TAB
+        create_tab
+        invalidate_window
+        true
+      when MENU_OPEN_FILE
+        if (path = prompt_for_file_to_edit)
+          create_tab(editor_file: path)
+          invalidate_window
+        end
+        true
+      when MENU_ABOUT
+        show_about_panel
+        true
+      when MENU_EXIT
+        if @hwnd && !Win32.null_pointer?(@hwnd)
+          Win32::DestroyWindow.call(@hwnd)
+        else
+          @running = false
+        end
+        true
+      else
+        false
+      end
+    end
+
+    private def invalidate_window
+      return false unless @hwnd && !Win32.null_pointer?(@hwnd)
+
+      Win32::InvalidateRect.call(@hwnd, nil, 1)
+      true
     end
 
     private def signed_word(value)
@@ -953,6 +1033,7 @@ module Echoes
     private def wire_screen_handlers(pane)
       pane.screen.clipboard_handler = method(:handle_clipboard)
       pane.screen.glyph_measurer = method(:measure_glyph)
+      pane.screen.capture_handler = ->(path) { capture_pane_to_png(pane, path) }
       pane.screen.notification_handler = ->(title, message) { post_notification(pane, title, message) }
       pane.screen.cell_pixel_width = @cell_width if @cell_width
       pane.screen.cell_pixel_height = @cell_height if @cell_height
@@ -1378,6 +1459,125 @@ module Echoes
 
     def self.capture_format_for(path)
       File.extname(path).downcase == '.png' ? :png : :pdf
+    end
+
+    private def capture_pane_to_png(pane, path)
+      return false unless self.class.capture_format_for(path) == :png
+      return false unless @cell_width && @cell_height
+
+      rect = pane_rect_for(pane)
+      return false unless rect
+
+      width = rect[:w] * @cell_width
+      height = rect[:h] * @cell_height
+      return false if width <= 0 || height <= 0
+
+      bytes = png_bytes_for_pane_capture(pane, width, height, pane == current_tab&.active_pane)
+      return false unless bytes
+
+      File.binwrite(path, bytes)
+      true
+    rescue StandardError => e
+      warn "echoes capture: #{e.class}: #{e.message}"
+      false
+    end
+
+    private def pane_rect_for(pane)
+      tab = current_tab
+      return nil unless tab
+
+      tab.pane_tree.layout(0, 0, @cols, @rows).find { |rect| rect[:pane] == pane }
+    end
+
+    private def png_bytes_for_pane_capture(pane, width, height, is_active)
+      bgra = capture_pane_bgra(pane, width, height, is_active)
+      return nil unless bgra
+
+      rgba = bgra_to_rgba_opaque(bgra, width, height)
+      encode_png_rgba(width, height, rgba)
+    end
+
+    private def capture_pane_bgra(pane, width, height, is_active)
+      return nil unless Win32::GetDIBits
+
+      screen_dc = nil
+      mem_dc = nil
+      bitmap = nil
+      old_bitmap = nil
+
+      screen_dc = Win32::GetDC.call(@hwnd || 0)
+      return nil if !screen_dc || Win32.null_pointer?(screen_dc)
+
+      mem_dc = create_compatible_dc(screen_dc)
+      return nil if !mem_dc || Win32.null_pointer?(mem_dc)
+
+      bitmap = create_compatible_bitmap(screen_dc, width, height)
+      return nil if !bitmap || Win32.null_pointer?(bitmap)
+
+      old_bitmap = select_gdi_object(mem_dc, bitmap)
+      draw_pane_content(mem_dc, pane, 0, 0, width, height, is_active)
+      select_gdi_object(mem_dc, old_bitmap) if old_bitmap
+      old_bitmap = nil
+
+      bitmap_bgra(screen_dc, bitmap, width, height)
+    ensure
+      select_gdi_object(mem_dc, old_bitmap) if mem_dc && old_bitmap
+      delete_gdi_object(bitmap) if bitmap && !Win32.null_pointer?(bitmap)
+      delete_dc(mem_dc) if mem_dc && !Win32.null_pointer?(mem_dc)
+      Win32::ReleaseDC.call(@hwnd || 0, screen_dc) if screen_dc && !Win32.null_pointer?(screen_dc)
+    end
+
+    private def bitmap_bgra(hdc, bitmap, width, height)
+      bytes = width * height * 4
+      pixels = Fiddle::Pointer.malloc(bytes, Fiddle::RUBY_FREE)
+      pixels[0, bytes] = "\x00" * bytes
+      info = bitmap_info_header(width, height, bytes)
+      copied = Win32::GetDIBits.call(
+        hdc,
+        bitmap,
+        0,
+        height,
+        pixels,
+        Fiddle::Pointer[info],
+        Win32::DIB_RGB_COLORS
+      )
+      return nil if copied == 0
+
+      pixels[0, bytes]
+    end
+
+    private def bgra_to_rgba_opaque(bgra, width, height)
+      return nil unless bgra && bgra.bytesize == width * height * 4
+
+      rgba = String.new(capacity: bgra.bytesize, encoding: Encoding::BINARY)
+      bgra.scan(/.{4}/m) do |px|
+        alpha = px.getbyte(3)
+        alpha = 255 if alpha == 0
+        rgba << px.getbyte(2) << px.getbyte(1) << px.getbyte(0) << alpha
+      end
+      rgba
+    end
+
+    private def encode_png_rgba(width, height, rgba)
+      return nil unless width.positive? && height.positive?
+      return nil unless rgba && rgba.bytesize == width * height * 4
+
+      raw = String.new(capacity: height * (1 + width * 4), encoding: Encoding::BINARY)
+      row_bytes = width * 4
+      height.times do |row|
+        raw << 0
+        raw << rgba.byteslice(row * row_bytes, row_bytes)
+      end
+
+      "\x89PNG\r\n\x1A\n".b +
+        png_chunk("IHDR", [width, height, 8, 6, 0, 0, 0].pack("NNCCCCC")) +
+        png_chunk("IDAT", Zlib::Deflate.deflate(raw)) +
+        png_chunk("IEND", "")
+    end
+
+    private def png_chunk(type, data)
+      body = type + data
+      [data.bytesize].pack("N") + body + [Zlib.crc32(body)].pack("N")
     end
 
     private def cell_selected?(src_row, col)
