@@ -1878,6 +1878,9 @@ module Echoes
           "work_y" => monitor[:work_y],
           "work_w" => monitor[:work_w],
           "work_h" => monitor[:work_h],
+          "dpi_x" => monitor[:dpi_x] || Win32::DEFAULT_DPI.to_i,
+          "dpi_y" => monitor[:dpi_y] || Win32::DEFAULT_DPI.to_i,
+          "backing_scale_factor" => monitor[:scale] || 1.0,
           "primary" => !!monitor[:primary],
           "current" => current_handle && monitor[:handle] == current_handle
         }

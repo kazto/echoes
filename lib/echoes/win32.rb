@@ -12,6 +12,7 @@ module Echoes
     IMM32    = Fiddle.dlopen('imm32.dll') rescue nil
     SHELL32  = Fiddle.dlopen('shell32.dll') rescue nil
     COMDLG32 = Fiddle.dlopen('comdlg32.dll') rescue nil
+    SHCORE   = Fiddle.dlopen('shcore.dll') rescue nil
 
     # Type aliases matching Win32 / Fiddle
     P  = Fiddle::TYPE_VOIDP
@@ -85,6 +86,9 @@ module Echoes
     EnumDisplayMonitors = new_func(USER32, 'EnumDisplayMonitors', [P, P, P, P], I)
     GetMonitorInfoW   = new_func(USER32, 'GetMonitorInfoW', [P, P], I)
     MonitorFromWindow = new_func(USER32, 'MonitorFromWindow', [P, U], P)
+
+    # --- Shcore Functions ---
+    GetDpiForMonitor = new_func(SHCORE, 'GetDpiForMonitor', [P, I, P, P], L)
 
     # --- Shell32 Functions ---
     ShellExecuteW     = new_func(SHELL32, 'ShellExecuteW', [P, P, P, P, P, I], P)
@@ -233,6 +237,8 @@ module Echoes
     MONITORINFO_SIZE   = 40
     MONITORINFOF_PRIMARY = 0x00000001
     MONITOR_DEFAULTTONEAREST = 0x00000002
+    MDT_EFFECTIVE_DPI  = 0
+    DEFAULT_DPI        = 96.0
 
     # Shared memory constants
     PAGE_READWRITE     = 0x04
@@ -458,6 +464,7 @@ module Echoes
           left, top, right, bottom = info[4, 16].unpack('l4')
           work_left, work_top, work_right, work_bottom = info[20, 16].unpack('l4')
           flags = info[36, 4].unpack1('L')
+          dpi_x, dpi_y = monitor_dpi(hmonitor)
           monitors << {
             handle: hmonitor.to_i,
             x: left,
@@ -468,7 +475,10 @@ module Echoes
             work_y: work_top,
             work_w: work_right - work_left,
             work_h: work_bottom - work_top,
-            primary: (flags & MONITORINFOF_PRIMARY) != 0
+            primary: (flags & MONITORINFOF_PRIMARY) != 0,
+            dpi_x: dpi_x,
+            dpi_y: dpi_y,
+            scale: scale_factor_for_dpi(dpi_x)
           }
         end
         1
@@ -486,6 +496,34 @@ module Echoes
       return nil if null_pointer?(monitor)
 
       monitor.to_i
+    end
+
+    def self.monitor_dpi(hmonitor)
+      return [DEFAULT_DPI.to_i, DEFAULT_DPI.to_i] unless GetDpiForMonitor
+
+      x_ptr = Fiddle::Pointer.malloc(4, Fiddle::RUBY_FREE)
+      y_ptr = Fiddle::Pointer.malloc(4, Fiddle::RUBY_FREE)
+      x_ptr[0, 4] = "\x00" * 4
+      y_ptr[0, 4] = "\x00" * 4
+      result = GetDpiForMonitor.call(hmonitor, MDT_EFFECTIVE_DPI, x_ptr, y_ptr)
+      return [DEFAULT_DPI.to_i, DEFAULT_DPI.to_i] unless result == 0
+
+      x = x_ptr[0, 4].unpack1('L')
+      y = y_ptr[0, 4].unpack1('L')
+      return [DEFAULT_DPI.to_i, DEFAULT_DPI.to_i] if x <= 0 || y <= 0
+
+      [x, y]
+    rescue StandardError
+      [DEFAULT_DPI.to_i, DEFAULT_DPI.to_i]
+    end
+
+    def self.monitor_scale_factor(hmonitor)
+      dpi_x, _dpi_y = monitor_dpi(hmonitor)
+      scale_factor_for_dpi(dpi_x)
+    end
+
+    def self.scale_factor_for_dpi(dpi)
+      (dpi.to_f / DEFAULT_DPI).round(4)
     end
 
     def self.null_pointer?(ptr)

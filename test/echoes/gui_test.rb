@@ -1476,8 +1476,8 @@ if Echoes::Platform.windows?
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@hwnd, 99)
       monitors = [
-        {handle: 10, x: 0, y: 0, w: 1920, h: 1080, work_x: 0, work_y: 0, work_w: 1920, work_h: 1040, primary: true},
-        {handle: 20, x: 1920, y: 0, w: 1280, h: 720, work_x: 1920, work_y: 0, work_w: 1280, work_h: 680, primary: false}
+        {handle: 10, x: 0, y: 0, w: 1920, h: 1080, work_x: 0, work_y: 0, work_w: 1920, work_h: 1040, primary: true, dpi_x: 96, dpi_y: 96, scale: 1.0},
+        {handle: 20, x: 1920, y: 0, w: 1280, h: 720, work_x: 1920, work_y: 0, work_w: 1280, work_h: 680, primary: false, dpi_x: 144, dpi_y: 144, scale: 1.5}
       ]
       seen_hwnd = nil
 
@@ -1491,11 +1491,32 @@ if Echoes::Platform.windows?
           assert_equal 2, entries.size
           assert_equal({"index" => 0, "x" => 0, "y" => 0, "w" => 1920, "h" => 1080,
                         "work_x" => 0, "work_y" => 0, "work_w" => 1920, "work_h" => 1040,
+                        "dpi_x" => 96, "dpi_y" => 96, "backing_scale_factor" => 1.0,
                         "primary" => true, "current" => false}, entries[0])
+          assert_equal 1.5, entries[1]["backing_scale_factor"]
           assert_equal true, entries[1]["current"]
         end
       end
       assert_equal 99, seen_hwnd
+    end
+
+    test "Windows monitor DPI converts to backing scale factor" do
+      with_win32_const(:GetDpiForMonitor, ->(_monitor, mode, x_ptr, y_ptr) {
+        assert_equal Echoes::Win32::MDT_EFFECTIVE_DPI, mode
+        x_ptr[0, 4] = [144].pack("L")
+        y_ptr[0, 4] = [144].pack("L")
+        0
+      }) do
+        assert_equal [144, 144], Echoes::Win32.monitor_dpi(55)
+        assert_equal 1.5, Echoes::Win32.monitor_scale_factor(55)
+      end
+    end
+
+    test "Windows monitor DPI falls back to 96 DPI when unavailable" do
+      with_win32_const(:GetDpiForMonitor, nil) do
+        assert_equal [96, 96], Echoes::Win32.monitor_dpi(55)
+        assert_equal 1.0, Echoes::Win32.monitor_scale_factor(55)
+      end
     end
 
     test "Windows open-window decodes argv and launches child Echoes on requested monitor" do
