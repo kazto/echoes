@@ -575,6 +575,7 @@ if Echoes::Platform.windows?
       nexts = 0
       prevs = 0
       profiles = 0
+      copy_modes = 0
       gui.define_singleton_method(:create_tab) { |editor_file: nil| created << editor_file }
       gui.define_singleton_method(:prompt_for_file_to_edit) { "C:/tmp/demo.txt" }
       gui.define_singleton_method(:invalidate_window) { invalidations += 1 }
@@ -589,6 +590,7 @@ if Echoes::Platform.windows?
       gui.define_singleton_method(:search_next) { nexts += 1 }
       gui.define_singleton_method(:search_prev) { prevs += 1 }
       gui.define_singleton_method(:apply_profile_by_menu) { |_command_id| profiles += 1 }
+      gui.define_singleton_method(:toggle_copy_mode) { copy_modes += 1 }
 
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_NEW_TAB)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_OPEN_FILE)
@@ -603,12 +605,13 @@ if Echoes::Platform.windows?
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_FIND)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_FIND_NEXT)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_FIND_PREVIOUS)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_TOGGLE_COPY_MODE)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_PROFILE_BASE)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_EXIT)
       assert_false gui.send(:dispatch_menu_command, 999_999)
 
       assert_equal [nil, "C:/tmp/demo.txt"], created
-      assert_equal 11, invalidations
+      assert_equal 12, invalidations
       assert_equal 1, about
       assert_equal 1, toggles
       assert_equal 1, copies
@@ -621,6 +624,7 @@ if Echoes::Platform.windows?
       assert_equal 1, nexts
       assert_equal 1, prevs
       assert_equal 1, profiles
+      assert_equal 1, copy_modes
       assert_false gui.instance_variable_get(:@running)
     end
 
@@ -1214,6 +1218,55 @@ if Echoes::Platform.windows?
       end
 
       assert_equal "ell", captured
+    end
+
+    test "Windows copy converts copy-mode grid rows after scrollback to absolute rows" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      old_row = Array.new(10) { Echoes::Cell.new }
+      "old".chars.each_with_index { |char, index| old_row[index].char = char }
+      screen.scrollback << old_row
+      "new".chars.each_with_index do |char, index|
+        screen.grid[0][index].char = char
+      end
+      copy_mode = StubCopyMode.new([0, 0], [0, 2])
+      pane = StubPane.new(screen, [], copy_mode)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.instance_variable_set(:@cols, 10)
+      gui.instance_variable_set(:@hwnd, nil)
+
+      captured = nil
+      with_win32_clipboard_setter(->(_hwnd, text) { captured = text }) do
+        gui.send(:copy_to_clipboard)
+      end
+
+      assert_equal "new", captured
+    end
+
+    test "Windows copy mode yanks selection and exits" do
+      screen = Echoes::Screen.new(rows: 2, cols: 10)
+      "hello".chars.each_with_index do |char, index|
+        screen.grid[0][index].char = char
+      end
+      pane = StubPane.new(screen, [], nil)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.instance_variable_set(:@cols, 10)
+      gui.instance_variable_set(:@hwnd, nil)
+
+      assert_true gui.send(:toggle_copy_mode)
+      captured = nil
+      with_win32_clipboard_setter(->(_hwnd, text) { captured = text }) do
+        gui.send(:handle_copy_mode_key, pane, "v")
+        gui.send(:handle_copy_mode_key, pane, "l")
+        gui.send(:handle_copy_mode_key, pane, "l")
+        gui.send(:handle_copy_mode_key, pane, "y")
+      end
+
+      assert_equal "hel", captured
+      assert_nil pane.copy_mode
     end
 
     test "Windows image blit converts RGBA bytes to BGRA for GDI" do

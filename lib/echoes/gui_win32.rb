@@ -37,6 +37,7 @@ module Echoes
     MENU_FIND = 10_019
     MENU_FIND_NEXT = 10_020
     MENU_FIND_PREVIOUS = 10_021
+    MENU_TOGGLE_COPY_MODE = 10_022
     MENU_WINDOW_BASE = 10_100
     MENU_PROFILE_BASE = 10_200
     MENU_COMPLETION_BASE = 10_400
@@ -289,6 +290,11 @@ module Echoes
           char_code = wparam.to_i
           unless [0x08, 0x09, 0x0D, 0x1B].include?(char_code)
             utf8_char = [char_code].pack('S').force_encoding('UTF-16LE').encode('UTF-8') rescue nil
+            if utf8_char && (pane = current_tab&.active_pane)&.copy_mode&.active
+              handle_copy_mode_key(pane, utf8_char)
+              Win32::InvalidateRect.call(hwnd, nil, 1)
+              return 0
+            end
             if utf8_char && @search_mode
               handle_search_char(utf8_char)
               Win32::InvalidateRect.call(hwnd, nil, 1)
@@ -304,6 +310,14 @@ module Echoes
           vk = wparam.to_i
           ctrl_pressed = (Win32::GetKeyState.call(0x11) & 0x8000) != 0
           shift_pressed = (Win32::GetKeyState.call(0x10) & 0x8000) != 0
+
+          if (pane = current_tab&.active_pane)&.copy_mode&.active
+            if (key = copy_mode_key_for_keydown(vk, ctrl_pressed: ctrl_pressed))
+              handle_copy_mode_key(pane, key)
+              Win32::InvalidateRect.call(hwnd, nil, 1)
+            end
+            return 0
+          end
 
           if @search_mode && handle_search_keydown(vk, ctrl_pressed: ctrl_pressed, shift_pressed: shift_pressed)
             Win32::InvalidateRect.call(hwnd, nil, 1)
@@ -484,6 +498,7 @@ module Echoes
       append_menu_item(view_menu, MENU_FIND, "Find")
       append_menu_item(view_menu, MENU_FIND_NEXT, "Find Next")
       append_menu_item(view_menu, MENU_FIND_PREVIOUS, "Find Previous")
+      append_menu_item(view_menu, MENU_TOGGLE_COPY_MODE, "Toggle Copy Mode")
       append_menu_separator(view_menu)
       build_profiles_submenu(view_menu)
       append_menu_separator(view_menu)
@@ -615,6 +630,10 @@ module Echoes
         true
       when MENU_FIND_PREVIOUS
         search_prev
+        invalidate_window
+        true
+      when MENU_TOGGLE_COPY_MODE
+        toggle_copy_mode
         invalidate_window
         true
       when (MENU_PROFILE_BASE...(MENU_PROFILE_BASE + 100))
@@ -1031,7 +1050,7 @@ module Echoes
           cell_x >= rect[:x] && cell_x < (rect[:x] + rect[:w]) &&
             cell_y >= rect[:y] && cell_y < (rect[:y] + rect[:h])
         end
-      rescue => e
+      rescue
         return nil
       end
 
@@ -1057,6 +1076,50 @@ module Echoes
 
     private def toggle_pointer_hidden
       @pointer_hidden ? show_pointer : hide_pointer
+    end
+
+    private def toggle_copy_mode
+      pane = current_tab&.active_pane
+      return false unless pane
+
+      require 'echoes/copy_mode'
+      if pane.copy_mode&.active
+        pane.copy_mode.exit
+        pane.copy_mode = nil
+      else
+        pane.copy_mode = CopyMode.new(pane.screen)
+        pane.copy_mode.enter
+      end
+      true
+    end
+
+    private def copy_mode_key_for_keydown(vk, ctrl_pressed:)
+      return "\e" if vk == 0x1B
+      return "\x08" if vk == 0x08
+      return "\r" if vk == 0x0D
+      return "\t" if vk == 0x09
+
+      if ctrl_pressed && vk >= 0x41 && vk <= 0x5A
+        return (vk - 0x40).chr
+      end
+
+      nil
+    end
+
+    private def handle_copy_mode_key(pane, key)
+      result = pane.copy_mode.handle_key(key)
+      case result
+      when :exit
+        pane.copy_mode = nil
+      when :yank
+        copy_to_clipboard
+        pane.copy_mode.exit
+        pane.copy_mode = nil
+      else
+        pane.scroll_offset = pane.copy_mode.scroll_offset_for_cursor if pane.respond_to?(:scroll_offset=)
+        pane.scroll_accum = 0.0 if pane.respond_to?(:scroll_accum=)
+      end
+      true
     end
 
     private def hide_pointer
@@ -1799,6 +1862,8 @@ module Echoes
       end
       (@fallback_font_cache || {}).each_value { |handle| Win32::DeleteObject.call(handle) if handle }
       @fallback_font_cache = {}
+      (@gradient_brush_cache || {}).each_value { |handle| Win32::DeleteObject.call(handle) if handle }
+      @gradient_brush_cache = {}
     end
 
     private def font_for_cell(cell)
@@ -2259,6 +2324,9 @@ module Echoes
       return nil unless copy_mode && copy_mode.active && copy_mode.selecting?
 
       (sr, sc), (er, ec) = [copy_mode.selection_start, copy_mode.selection_end].sort_by { |p| [p[0], p[1]] }
+      scrollback_size = pane.screen.scrollback.size
+      sr += scrollback_size
+      er += scrollback_size
       [sr, sc, er, ec]
     end
 
