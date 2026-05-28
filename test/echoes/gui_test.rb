@@ -145,6 +145,19 @@ if Echoes::Platform.windows?
       assert_nil gui.send(:windows_key_sequence, 0x41)
     end
 
+    test "Windows copy mode keydown maps navigation and paging keys" do
+      gui = Echoes::GUI.allocate
+
+      assert_equal "h", gui.send(:copy_mode_key_for_keydown, 0x25, ctrl_pressed: false)
+      assert_equal "j", gui.send(:copy_mode_key_for_keydown, 0x28, ctrl_pressed: false)
+      assert_equal "k", gui.send(:copy_mode_key_for_keydown, 0x26, ctrl_pressed: false)
+      assert_equal "l", gui.send(:copy_mode_key_for_keydown, 0x27, ctrl_pressed: false)
+      assert_equal "0", gui.send(:copy_mode_key_for_keydown, 0x24, ctrl_pressed: false)
+      assert_equal "$", gui.send(:copy_mode_key_for_keydown, 0x23, ctrl_pressed: false)
+      assert_equal "\x02", gui.send(:copy_mode_key_for_keydown, 0x21, ctrl_pressed: false)
+      assert_equal "\x06", gui.send(:copy_mode_key_for_keydown, 0x22, ctrl_pressed: false)
+    end
+
     test "Windows mouse wheel scrolls active pane through scrollback" do
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       10.times { screen.scrollback << [] }
@@ -550,6 +563,7 @@ if Echoes::Platform.windows?
       assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_SPLIT_RIGHT]
       assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_SPLIT_DOWN]
       assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_CLOSE_PANE]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_BRING_ALL_TO_FRONT]
       assert_include calls, [:append, 206, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_ABOUT]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 200]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 201]
@@ -619,6 +633,7 @@ if Echoes::Platform.windows?
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_FIND_NEXT)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_FIND_PREVIOUS)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_TOGGLE_COPY_MODE)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_BRING_ALL_TO_FRONT)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_PROFILE_BASE)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_EXIT)
       assert_false gui.send(:dispatch_menu_command, 999_999)
@@ -628,7 +643,7 @@ if Echoes::Platform.windows?
       assert_equal 1, about
       assert_equal 1, hides
       assert_equal 1, hide_others
-      assert_equal 1, show_all
+      assert_equal 2, show_all
       assert_equal 1, toggles
       assert_equal 1, copies
       assert_equal 1, pastes
@@ -1128,6 +1143,22 @@ if Echoes::Platform.windows?
       assert_equal "", gui.instance_variable_get(:@search_query)
       assert_true gui.send(:handle_search_keydown, 0x1B, ctrl_pressed: false, shift_pressed: false)
       assert_false gui.instance_variable_get(:@search_mode)
+    end
+
+    test "Windows search keydown routes next and previous navigation keys" do
+      gui = Echoes::GUI.allocate
+      nexts = 0
+      prevs = 0
+      gui.define_singleton_method(:search_next) { nexts += 1 }
+      gui.define_singleton_method(:search_prev) { prevs += 1 }
+
+      assert_true gui.send(:handle_search_keydown, 0x22, ctrl_pressed: false, shift_pressed: false)
+      assert_true gui.send(:handle_search_keydown, 0x21, ctrl_pressed: false, shift_pressed: false)
+      assert_true gui.send(:handle_search_keydown, 0x4E, ctrl_pressed: true, shift_pressed: false)
+      assert_true gui.send(:handle_search_keydown, 0x50, ctrl_pressed: true, shift_pressed: false)
+
+      assert_equal 2, nexts
+      assert_equal 2, prevs
     end
 
     test "Windows resize updates rows and cols from pixel dimensions" do

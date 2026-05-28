@@ -41,6 +41,7 @@ module Echoes
     MENU_HIDE = 10_023
     MENU_HIDE_OTHERS = 10_024
     MENU_SHOW_ALL = 10_025
+    MENU_BRING_ALL_TO_FRONT = 10_026
     MENU_WINDOW_BASE = 10_100
     MENU_PROFILE_BASE = 10_200
     MENU_COMPLETION_BASE = 10_400
@@ -526,6 +527,8 @@ module Echoes
       append_menu_item(window_menu, MENU_PREVIOUS_PANE, "Select Previous Pane")
       append_menu_item(window_menu, MENU_NEXT_PANE, "Select Next Pane")
       append_menu_separator(window_menu)
+      append_menu_item(window_menu, MENU_BRING_ALL_TO_FRONT, "Bring All to Front")
+      append_menu_separator(window_menu)
       @window_menu_handle = window_menu
       @window_menu_dynamic_count = 0
       update_window_list
@@ -687,6 +690,9 @@ module Echoes
       when MENU_NEXT_PANE
         current_tab&.next_pane
         invalidate_window
+        true
+      when MENU_BRING_ALL_TO_FRONT
+        show_all_windows
         true
       when (MENU_WINDOW_BASE...(MENU_WINDOW_BASE + 9))
         focus_window_by_menu(command_id)
@@ -1143,6 +1149,14 @@ module Echoes
       return "\x08" if vk == 0x08
       return "\r" if vk == 0x0D
       return "\t" if vk == 0x09
+      return "h" if vk == 0x25
+      return "j" if vk == 0x28
+      return "k" if vk == 0x26
+      return "l" if vk == 0x27
+      return "0" if vk == 0x24
+      return "$" if vk == 0x23
+      return "\x02" if vk == 0x21
+      return "\x06" if vk == 0x22
 
       if ctrl_pressed && vk >= 0x41 && vk <= 0x5A
         return (vk - 0x40).chr
@@ -3096,6 +3110,22 @@ module Echoes
       when 0x08
         @search_query.chop!
         perform_search
+        true
+      when 0x21
+        search_prev
+        true
+      when 0x22
+        search_next
+        true
+      when 0x4E
+        return false unless ctrl_pressed
+
+        search_next
+        true
+      when 0x50
+        return false unless ctrl_pressed
+
+        search_prev
         true
       when 0x49
         return false unless ctrl_pressed
