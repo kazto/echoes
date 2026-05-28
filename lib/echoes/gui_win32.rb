@@ -42,6 +42,10 @@ module Echoes
     MENU_HIDE_OTHERS = 10_024
     MENU_SHOW_ALL = 10_025
     MENU_BRING_ALL_TO_FRONT = 10_026
+    MENU_SELECT_ALL = 10_027
+    MENU_INCREASE_FONT = 10_028
+    MENU_DECREASE_FONT = 10_029
+    MENU_RESET_FONT = 10_030
     MENU_WINDOW_BASE = 10_100
     MENU_PROFILE_BASE = 10_200
     MENU_COMPLETION_BASE = 10_400
@@ -59,7 +63,11 @@ module Echoes
       [Win32::FCONTROL | Win32::FSHIFT | Win32::FVIRTKEY, 0x57, MENU_CLOSE_PANE], # Ctrl+Shift+W
       [Win32::FCONTROL | Win32::FSHIFT | Win32::FVIRTKEY, 0x50, MENU_TOGGLE_POINTER], # Ctrl+Shift+P
       [Win32::FALT | Win32::FVIRTKEY, 0x73, MENU_EXIT],          # Alt+F4
-      [Win32::FVIRTKEY, 0x70, MENU_ABOUT]                        # F1
+      [Win32::FVIRTKEY, 0x70, MENU_ABOUT],                       # F1
+      [Win32::FCONTROL | Win32::FVIRTKEY, 0x41, MENU_SELECT_ALL], # Ctrl+A
+      [Win32::FCONTROL | Win32::FVIRTKEY, 0xBB, MENU_INCREASE_FONT], # Ctrl++ (VK_OEM_PLUS)
+      [Win32::FCONTROL | Win32::FVIRTKEY, 0xBD, MENU_DECREASE_FONT], # Ctrl+- (VK_OEM_MINUS)
+      [Win32::FCONTROL | Win32::FVIRTKEY, 0x30, MENU_RESET_FONT]  # Ctrl+0
     ].freeze
 
     def self.pane_local_cwd(pane)
@@ -144,9 +152,16 @@ module Echoes
       @search_match_bg = make_color(0.45, 0.38, 0.0)
       @search_current_bg = make_color(0.1, 0.45, 0.55)
 
+      # タブ表示用カラー
+      @tab_bg = make_color(0.15, 0.15, 0.15)
+      @tab_active_bg = make_color(0.25, 0.25, 0.25)
+      @tab_fg = make_color(0.8, 0.8, 0.8)
+
       # 境界線・デバイダー用ブラシの作成
       @active_border_brush = Win32::CreateSolidBrush.call(make_color(0.2, 0.4, 0.8))
       @inactive_border_brush = Win32::CreateSolidBrush.call(make_color(0.3, 0.3, 0.3))
+      @tab_bg_brush = Win32::CreateSolidBrush.call(@tab_bg)
+      @tab_active_bg_brush = Win32::CreateSolidBrush.call(@tab_active_bg)
 
       # 初期タブの起動
       create_tab
@@ -154,6 +169,15 @@ module Echoes
 
     def current_tab
       @tabs[@active_tab]
+    end
+
+    def tab_bar_height
+      return 0.0 if @tabs.size <= 1
+      (@cell_height || 16.0) + 4.0
+    end
+
+    def tab_bar_y
+      0.0
     end
 
     def create_tab(editor_file: nil)
@@ -189,6 +213,12 @@ module Echoes
           end
           if @inactive_border_brush
             Win32::DeleteObject.call(@inactive_border_brush)
+          end
+          if @tab_bg_brush
+            Win32::DeleteObject.call(@tab_bg_brush)
+          end
+          if @tab_active_bg_brush
+            Win32::DeleteObject.call(@tab_active_bg_brush)
           end
           WindowRegistry.cleanup
           Win32::PostQuitMessage.call(0)
@@ -509,6 +539,11 @@ module Echoes
       append_menu_item(file_menu, MENU_OPEN_FILE, "Open File...")
       append_menu_item(edit_menu, MENU_COPY, "Copy")
       append_menu_item(edit_menu, MENU_PASTE, "Paste")
+      append_menu_item(edit_menu, MENU_SELECT_ALL, "Select All")
+      append_menu_item(view_menu, MENU_INCREASE_FONT, "Bigger")
+      append_menu_item(view_menu, MENU_DECREASE_FONT, "Smaller")
+      append_menu_item(view_menu, MENU_RESET_FONT, "Reset Font Size")
+      append_menu_separator(view_menu)
       append_menu_item(view_menu, MENU_FIND, "Find")
       append_menu_item(view_menu, MENU_FIND_NEXT, "Find Next")
       append_menu_item(view_menu, MENU_FIND_PREVIOUS, "Find Previous")
@@ -629,6 +664,20 @@ module Echoes
       when MENU_PASTE
         paste_from_clipboard
         invalidate_window
+        true
+      when MENU_SELECT_ALL
+        select_all
+        invalidate_window
+        true
+      when MENU_INCREASE_FONT
+        update_font(@font_size + 1.0)
+        true
+      when MENU_DECREASE_FONT
+        update_font(@font_size - 1.0) if @font_size > 4.0
+        true
+      when MENU_RESET_FONT
+        Preferences.delete(:font_size)
+        update_font(Echoes.config.font_size, persist: false)
         true
       when MENU_CLOSE_TAB
         close_tab(@active_tab)
@@ -1144,6 +1193,85 @@ module Echoes
       true
     end
 
+    private def select_all
+      pane = current_tab&.active_pane
+      return false unless pane
+
+      require 'echoes/copy_mode'
+      pane.copy_mode ||= CopyMode.new(pane.screen)
+      pane.copy_mode.enter unless pane.copy_mode.active
+
+      screen = pane.screen
+      scrollback_size = screen.scrollback.size
+
+      # Select from the very beginning of scrollback to the end of the visible grid
+      pane.copy_mode.selection_start = [-scrollback_size, 0]
+      pane.copy_mode.selection_end = [screen.rows - 1, screen.cols - 1]
+      true
+    end
+
+    private def update_font(new_size, persist: true)
+      @font_size = new_size
+      Preferences.set_double(:font_size, new_size) if persist
+
+      # Delete old fonts
+      delete_font_handles
+
+      # Create new fonts
+      @hfont = create_font
+      @bold_hfont = create_font(weight: 700)
+      @italic_hfont = create_font(italic: true)
+      @bold_italic_hfont = create_font(weight: 700, italic: true)
+
+      # Clear font caches
+      @font_cache = {}
+      @fallback_font_cache = {}
+
+      # Force remeasurement in next paint
+      @cell_width = nil
+      @cell_height = nil
+
+      # Resize window to fit new font while keeping same cols/rows
+      if @hwnd && !Win32.null_pointer?(@hwnd)
+        # We need an HDC to measure the new font
+        hdc = Win32::GetDC.call(@hwnd)
+        begin
+          old_f = Win32::SelectObject.call(hdc, @hfont)
+          size_ptr = Fiddle::Pointer.malloc(8, Fiddle::RUBY_FREE)
+          test_str = Win32.to_wstring("A")
+          Win32::GetTextExtentPoint32W.call(hdc, Fiddle::Pointer[test_str], 1, size_ptr)
+          new_cw = size_ptr[0, 4].unpack1('L')
+          new_ch = size_ptr[4, 4].unpack1('L')
+          new_cw = 8 if new_cw == 0
+          new_ch = 16 if new_ch == 0
+          Win32::SelectObject.call(hdc, old_f)
+
+          client_w = new_cw * @cols
+          client_h = new_ch * @rows
+
+          # Adjust window rect to include borders/titlebar/menu
+          rect = Fiddle::Pointer.malloc(Win32::RECT_SIZE, Fiddle::RUBY_FREE)
+          rect[0, Win32::RECT_SIZE] = [0, 0, client_w, client_h].pack('l4')
+          style = Win32::GetWindowLongW.call(@hwnd, Win32::GWL_STYLE)
+          ex_style = Win32::GetWindowLongW.call(@hwnd, Win32::GWL_EXSTYLE)
+          has_menu = Win32::GetMenu.call(@hwnd).to_i != 0
+
+          Win32::AdjustWindowRectEx.call(rect, style, has_menu ? 1 : 0, ex_style)
+          l, t, r, b = rect[0, Win32::RECT_SIZE].unpack('l4')
+          win_w = r - l
+          win_h = b - t
+
+          # Resize window maintaining top-left position
+          Win32::SetWindowPos.call(@hwnd, 0, 0, 0, win_w, win_h, Win32::SWP_NOMOVE | Win32::SWP_NOZORDER)
+        ensure
+          Win32::ReleaseDC.call(@hwnd, hdc)
+        end
+      end
+
+      invalidate_window
+      true
+    end
+
     private def copy_mode_key_for_keydown(vk, ctrl_pressed:)
       return "\e" if vk == 0x1B
       return "\x08" if vk == 0x08
@@ -1207,13 +1335,31 @@ module Echoes
       Win32::SetFocus.call(hwnd) if hwnd && !Win32.null_pointer?(hwnd)
       return false unless @cell_width && @cell_width > 0 && @cell_height && @cell_height > 0
 
+      x_pos = lparam.to_i & 0xFFFF
+      y_pos = (lparam.to_i >> 16) & 0xFFFF
+
+      # タブバーのクリック判定
+      tbh = tab_bar_height
+      tby = tab_bar_y
+      if tbh > 0 && y_pos >= tby && y_pos < (tby + tbh)
+        tab_count = @tabs.size
+        width, = client_size
+        if width && width > 0 && tab_count > 0
+          tab_w = width / tab_count
+          index = x_pos / tab_w
+          if index >= 0 && index < tab_count
+            @active_tab = index
+            invalidate_window
+            return true
+          end
+        end
+      end
+
       tab = current_tab
       return false unless tab
 
-      x_pos = lparam.to_i & 0xFFFF
-      y_pos = (lparam.to_i >> 16) & 0xFFFF
       cell_x = x_pos / @cell_width
-      cell_y = y_pos / @cell_height
+      cell_y = (y_pos - tbh).to_i / @cell_height
 
       target_rect = tab.pane_tree.layout(0, 0, @cols, @rows).find do |rect|
         cell_x >= rect[:x] && cell_x < (rect[:x] + rect[:w]) &&
@@ -1240,7 +1386,7 @@ module Echoes
 
       if pane != tab.active_pane
         tab.pane_tree.active_pane = pane
-        Win32::InvalidateRect.call(hwnd, nil, 1)
+        invalidate_window
         return true
       end
 
@@ -1332,8 +1478,10 @@ module Echoes
 
       x_pos = lparam.to_i & 0xFFFF
       y_pos = (lparam.to_i >> 16) & 0xFFFF
+      tbh = tab_bar_height.to_i
+
       cell_x = x_pos / @cell_width
-      cell_y = y_pos / @cell_height
+      cell_y = (y_pos - tbh) / @cell_height
       target_rect = tab.pane_tree.layout(0, 0, @cols, @rows).find do |rect|
         cell_x >= rect[:x] && cell_x < (rect[:x] + rect[:w]) &&
           cell_y >= rect[:y] && cell_y < (rect[:y] + rect[:h])
@@ -1784,6 +1932,10 @@ module Echoes
       old_font = Win32::SelectObject.call(hdc, @hfont)
       Win32::SetBkMode.call(hdc, Win32::OPAQUE)
 
+      tbh = tab_bar_height
+      tby = tab_bar_y
+      draw_tab_bar(hdc, tbh, tby) if tbh > 0
+
       if (tab = current_tab)
         # セルサイズを動的に測定
         if !@cell_width || @cell_width == 0
@@ -1808,7 +1960,7 @@ module Echoes
           gh = rect[:h]
 
           px = gx * @cell_width
-          py = gy * @cell_height
+          py = gy * @cell_height + tbh
           pw = gw * @cell_width
           ph = gh * @cell_height
 
@@ -2705,6 +2857,51 @@ module Echoes
     private def colorref_to_rgb(color)
       value = color.to_i
       [value & 0xFF, (value >> 8) & 0xFF, (value >> 16) & 0xFF]
+    end
+
+    private def draw_tab_bar(hdc, tbh, ty)
+      width, = paint_target_size
+      return if width <= 0
+
+      # Draw background
+      rect_ptr = Fiddle::Pointer.malloc(Win32::RECT_SIZE, Fiddle::RUBY_FREE)
+      rect_ptr[0, Win32::RECT_SIZE] = [0, ty.to_i, width, (ty + tbh).to_i].pack('l4')
+      Win32::FillRect.call(hdc, rect_ptr, @tab_bg_brush)
+
+      tab_count = @tabs.size
+      return if tab_count == 0
+
+      tab_w = (width.to_f / tab_count).to_i
+      @tabs.each_with_index do |tab, i|
+        x = i * tab_w
+        is_active = (i == @active_tab)
+
+        if is_active
+          rect_ptr[0, Win32::RECT_SIZE] = [x, ty.to_i, x + tab_w, (ty + tbh).to_i].pack('l4')
+          Win32::FillRect.call(hdc, rect_ptr, @tab_active_bg_brush)
+        end
+
+        # Tab title
+        label = tab.respond_to?(:title) ? tab.title : "Tab #{i + 1}"
+        label = "#{label} " if label.length < 12
+
+        Win32::SetTextColor.call(hdc, @tab_fg)
+        old_bk_mode = Win32::SetBkMode.call(hdc, Win32::TRANSPARENT)
+        begin
+          tw, th = text_extent(hdc, label)
+          tx = x + (tab_w - tw) / 2
+          ty_text = ty + (tbh - th) / 2
+
+          draw_text_run(hdc, tx.to_i, ty_text.to_i, label, @hfont)
+        ensure
+          Win32::SetBkMode.call(hdc, old_bk_mode)
+        end
+
+        # Draw separator
+        if i < tab_count - 1
+          fill_rect_color(hdc, x + tab_w - 1, ty.to_i + 4, x + tab_w, (ty + tbh).to_i - 4, @tab_active_bg)
+        end
+      end
     end
 
     private def draw_multicell_text(hdc, cell, x, y, fg_color, bg_color)

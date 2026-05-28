@@ -797,7 +797,9 @@ if Echoes::Platform.windows?
       assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x46, Echoes::GUI::MENU_FIND], entries[2]
       assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x57, Echoes::GUI::MENU_CLOSE_TAB], entries[5]
       assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x50, Echoes::GUI::MENU_TOGGLE_POINTER], entries[8]
-      assert_equal [Echoes::Win32::FVIRTKEY | 0x80, 0x70, Echoes::GUI::MENU_ABOUT], entries[-1]
+      assert_equal [Echoes::Win32::FVIRTKEY, 0x70, Echoes::GUI::MENU_ABOUT], entries[10]
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x41, Echoes::GUI::MENU_SELECT_ALL], entries[11]
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY | 0x80, 0x30, Echoes::GUI::MENU_RESET_FONT], entries[-1]
     end
 
     test "Windows pointer visibility toggles through ShowCursor and clears cursor while hidden" do
