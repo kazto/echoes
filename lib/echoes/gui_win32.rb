@@ -95,6 +95,9 @@ module Echoes
       @font_cache = {}
       @hwnd = nil
       @cursor_handle = nil
+      @arrow_cursor = nil
+      @hand_cursor = nil
+      @crosshair_cursor = nil
       @accelerators = nil
       @hfont = nil
       @bold_hfont = nil
@@ -116,6 +119,7 @@ module Echoes
       @pointer_hidden = false
       @shake_detector = nil
       @marked_text = nil # IME inline composition string
+      @marked_reading = nil # IME reading string (furigana)
       @fullscreen_state = false
       @window_menu_handle = nil
       @window_menu_update_counter = 0
@@ -271,6 +275,7 @@ module Echoes
 
         when Win32::WM_IME_ENDCOMPOSITION
           @marked_text = nil
+          @marked_reading = nil
           Win32::InvalidateRect.call(hwnd, nil, 1)
           0
 
@@ -938,6 +943,24 @@ module Echoes
       @cursor_handle ||= Win32::LoadCursorW.call(0, Win32::IDC_IBEAM)
     end
 
+    private def load_arrow_cursor
+      return 0 unless Win32::LoadCursorW
+
+      @arrow_cursor ||= Win32::LoadCursorW.call(0, Win32::IDC_ARROW)
+    end
+
+    private def load_hand_cursor
+      return 0 unless Win32::LoadCursorW
+
+      @hand_cursor ||= Win32::LoadCursorW.call(0, Win32::IDC_HAND)
+    end
+
+    private def load_crosshair_cursor
+      return 0 unless Win32::LoadCursorW
+
+      @crosshair_cursor ||= Win32::LoadCursorW.call(0, Win32::IDC_CROSS)
+    end
+
     private def set_terminal_cursor
       if @pointer_hidden
         return false unless Win32::SetCursor
@@ -956,9 +979,80 @@ module Echoes
 
     private def handle_set_cursor(hwnd, msg, wparam, lparam)
       hit_test = lparam.to_i & 0xFFFF
-      return Win32::DefWindowProcW.call(hwnd, msg, wparam, lparam) if hit_test != Win32::HTCLIENT
+      if hit_test != Win32::HTCLIENT
+        return Win32::DefWindowProcW.call(hwnd, msg, wparam, lparam)
+      end
 
-      set_terminal_cursor ? 1 : Win32::DefWindowProcW.call(hwnd, msg, wparam, lparam)
+      cursor = cursor_for_mouse_position(hwnd)
+      if cursor && Win32::SetCursor
+        Win32::SetCursor.call(cursor)
+        1
+      else
+        # Fall back to the old behavior for backward compatibility
+        set_terminal_cursor ? 1 : Win32::DefWindowProcW.call(hwnd, msg, wparam, lparam)
+      end
+    end
+
+    private def cursor_for_mouse_position(hwnd)
+      if @pointer_hidden
+        return 0
+      end
+
+      # Return nil if Win32 functions are not available or we're in a test environment
+      return nil unless Win32::GetCursorPos && Win32::ScreenToClient
+
+      # Try to get the mouse position
+      begin
+        point = Fiddle::Pointer.malloc(Win32::POINT_SIZE, Fiddle::RUBY_FREE)
+        result = Win32::GetCursorPos.call(point)
+        return nil if !result || result == 0
+
+        # Convert screen to client coordinates
+        result = Win32::ScreenToClient.call(hwnd, point)
+        return nil if !result || result == 0
+
+        x_pos, y_pos = point[0, Win32::POINT_SIZE].unpack('l2')
+      rescue TypeError, ArgumentError, RangeError, NoMethodError
+        return nil
+      end
+
+      # Check if we're in the terminal area
+      return nil unless @cell_width && @cell_width > 0 && @cell_height && @cell_height > 0
+
+      cell_x = x_pos / @cell_width
+      cell_y = y_pos / @cell_height
+
+      tab = current_tab
+      return nil unless tab
+
+      # Find which pane we're over
+      begin
+        target_rect = tab.pane_tree.layout(0, 0, @cols, @rows).find do |rect|
+          cell_x >= rect[:x] && cell_x < (rect[:x] + rect[:w]) &&
+            cell_y >= rect[:y] && cell_y < (rect[:y] + rect[:h])
+        end
+      rescue => e
+        return nil
+      end
+
+      return nil unless target_rect
+
+      pane = target_rect[:pane]
+      local_row = cell_y - target_rect[:y]
+      col = cell_x - target_rect[:x]
+
+      # Check for hyperlink cursor
+      if hyperlink_at?(pane, local_row, col)
+        return load_hand_cursor
+      end
+
+      # Check for copy mode cursor
+      if pane.copy_mode&.active
+        return load_crosshair_cursor
+      end
+
+      # Default text cursor for terminal area
+      load_terminal_cursor
     end
 
     private def toggle_pointer_hidden
@@ -1150,6 +1244,12 @@ module Echoes
       (Win32::GetKeyState.call(Win32::VK_CONTROL) & 0x8000) != 0
     end
 
+    private def hyperlink_at?(pane, local_row, col)
+      scrollback = pane.screen.scrollback
+      abs_row = scrollback.size - pane.scroll_offset + local_row
+      !!hyperlink_at(pane, abs_row, col)
+    end
+
     private def hyperlink_at(pane, abs_row, col)
       row = row_at(pane, abs_row)
       return nil unless row
@@ -1267,6 +1367,7 @@ module Echoes
       if (lparam.to_i & Win32::GCS_RESULTSTR) != 0
         commit_ime_composition(hwnd)
         @marked_text = nil
+        @marked_reading = nil
         handled = true
       end
 
@@ -1274,6 +1375,13 @@ module Echoes
 
       text = read_ime_composition_string(hwnd, Win32::GCS_COMPSTR)
       @marked_text = text && !text.empty? ? text : nil
+
+      # Also read reading string (furigana) if available
+      if (lparam.to_i & Win32::GCS_RESULTREADSTR) != 0
+        reading = read_ime_composition_string(hwnd, Win32::GCS_RESULTREADSTR)
+        @marked_reading = reading && !reading.empty? ? reading : nil
+      end
+
       true
     end
 
@@ -1310,6 +1418,24 @@ module Echoes
       end
     rescue Encoding::UndefinedConversionError, Encoding::InvalidByteSequenceError
       nil
+    end
+
+    private def read_ime_composition_attributes(hwnd)
+      himc = Win32::ImmGetContext.call(hwnd)
+      return [] if !himc || himc.to_i == 0
+
+      begin
+        len = Win32::ImmGetCompositionStringW.call(himc, Win32::GCS_COMPATTR, nil, 0)
+        return [] if len <= 0
+
+        buf = Fiddle::Pointer.malloc(len, Fiddle::RUBY_FREE)
+        Win32::ImmGetCompositionStringW.call(himc, Win32::GCS_COMPATTR, buf, len)
+        buf.to_str(len).bytes.to_a
+      ensure
+        Win32::ImmReleaseContext.call(hwnd, himc)
+      end
+    rescue
+      []
     end
 
     private def update_ime_candidate_window(hwnd)
@@ -1369,13 +1495,94 @@ module Echoes
 
       marked_cells_width = text.each_char.sum { |char| char.ord > 0x7F ? 2 : 1 }
       marked_px_width = marked_cells_width * @cell_width
+
+      # Draw underline across the entire marked text
       draw_ime_underline(hdc, x, y, marked_px_width, height)
+
+      # Highlight target clause if we have attribute information
+      if @hwnd && !Win32.null_pointer?(@hwnd)
+        attrs = read_ime_composition_attributes(@hwnd)
+        draw_ime_attribute_highlights(hdc, x, y, text, height, attrs) if attrs.any?
+      end
+    end
+
+    private def draw_ime_attribute_highlights(hdc, x, y, text, height, attrs)
+      return if attrs.empty?
+
+      # Find target clause ranges (ATTR_TARGET_CONVERTED or ATTR_TARGET_NOTCONVERTED)
+      target_ranges = []
+      current_start = nil
+
+      attrs.each_with_index do |attr, idx|
+        is_target = attr == Win32::ATTR_TARGET_CONVERTED || attr == Win32::ATTR_TARGET_NOTCONVERTED
+
+        if is_target && current_start.nil?
+          current_start = idx
+        elsif !is_target && current_start
+          target_ranges << (current_start...idx)
+          current_start = nil
+        end
+      end
+
+      # Add the last range if we were in a target clause
+      target_ranges << (current_start...attrs.length) if current_start
+
+      # Highlight each target clause
+      chars = text.chars.to_a
+      offset = 0
+      target_ranges.each do |range|
+        next if range.begin >= chars.length
+
+        end_idx = [range.end, chars.length].min
+        target_text = chars[range.begin...end_idx].join
+
+        target_px_offset = offset * @cell_width
+        target_px_width = target_text.each_char.sum { |char| char.ord > 0x7F ? 2 : 1 } * @cell_width
+
+        # Draw a subtle background highlight for the target clause
+        draw_ime_target_highlight(hdc, x + target_px_offset, y, target_px_width, height)
+
+        offset += target_text.each_char.sum { |char| char.ord > 0x7F ? 2 : 1 }
+      end
+    end
+
+    private def draw_ime_target_highlight(hdc, x, y, width, height)
+      rect_ptr = Fiddle::Pointer.malloc(Win32::RECT_SIZE, Fiddle::RUBY_FREE)
+      # Subtle background highlight for target clause
+      highlight_color = (0x66 << 16) | (0x66 << 8) | 0xCC
+
+      brush = Win32::CreateSolidBrush.call(highlight_color)
+      return unless brush
+
+      begin
+        old_bk_mode = Win32::SetBkMode.call(hdc, Win32::TRANSPARENT)
+        rect_ptr[0, Win32::RECT_SIZE] = [x, y, x + width, y + height].pack('l4')
+        Win32::FillRect.call(hdc, rect_ptr, brush)
+        Win32::SetBkMode.call(hdc, old_bk_mode) if old_bk_mode
+      ensure
+        Win32::DeleteObject.call(brush)
+      end
     end
 
     private def draw_ime_underline(hdc, x, y, width, height)
+      # Draw a dotted underline in a distinctive color (similar to macOS IME style)
       rect_ptr = Fiddle::Pointer.malloc(Win32::RECT_SIZE, Fiddle::RUBY_FREE)
-      rect_ptr[0, Win32::RECT_SIZE] = [x, y + height - 2, x + width, y + height - 1].pack('l4')
-      Win32::InvertRect.call(hdc, rect_ptr)
+      # IME composition underline - typically a thin line at the bottom
+      underline_y = y + height - 2
+      underline_height = 2
+
+      # Use a distinctive color for IME composition (blue/cyan tint)
+      ime_underline_color = (0x33 << 16) | (0x99 << 8) | 0xFF
+
+      brush = Win32::CreateSolidBrush.call(ime_underline_color)
+      return unless brush
+
+      begin
+        rect_ptr[0, Win32::RECT_SIZE] = [x, underline_y, x + width, underline_y + underline_height].pack('l4')
+        Win32::FillRect.call(hdc, rect_ptr, brush)
+      ensure
+        Win32::DeleteObject.call(brush)
+      end
     end
 
     private def poll_active_pane_output

@@ -69,6 +69,8 @@ module Echoes
     LoadCursorW       = new_func(USER32, 'LoadCursorW', [P, P], P)
     SetCursor         = new_func(USER32, 'SetCursor', [P], P)
     ShowCursor        = new_func(USER32, 'ShowCursor', [I], I)
+    GetCursorPos      = new_func(USER32, 'GetCursorPos', [P], I)
+    ScreenToClient    = new_func(USER32, 'ScreenToClient', [P, P], I)
     MessageBoxW       = new_func(USER32, 'MessageBoxW', [P, P, P, U], I)
     CreateMenu        = new_func(USER32, 'CreateMenu', [], P)
     CreatePopupMenu   = new_func(USER32, 'CreatePopupMenu', [], P)
@@ -191,7 +193,29 @@ module Echoes
     # IME Composition String Flags
     GCS_COMPSTR             = 0x0008
     GCS_RESULTSTR           = 0x0800
+    GCS_RESULTREADSTR       = 0x2000
+    GCS_RESULTCLAUSE        = 0x1000
+    GCS_COMPATTR            = 0x0010
+    GCS_COMPREADSTR         = 0x0400
+    GCS_CURSORPOS           = 0x0080
+    GCS_DELTASTART          = 0x0100
+    GCS_DELTALENGTH         = 0x0200
+
+    # IME Composition Forms
+    CFS_DEFAULT             = 0x0000
+    CFS_RECT                = 0x0001
+    CFS_POINT               = 0x0002
+    CFS_FORCE_POSITION      = 0x0020
     CFS_CANDIDATEPOS        = 0x0040
+
+    # IME Composition Attributes
+    ATTR_INPUT              = 0x00
+    ATTR_TARGET_CONVERTED   = 0x01
+    ATTR_CONVERTED          = 0x02
+    ATTR_TARGET_NOTCONVERTED = 0x03
+    ATTR_INPUT_ERROR        = 0x04
+    ATTR_FIXED_CONVERTED    = 0x05
+
     XBUTTON1                = 0x0001
     XBUTTON2                = 0x0002
 
@@ -211,7 +235,10 @@ module Echoes
     GMEM_ZEROINIT      = 0x0040
 
     VK_CONTROL         = 0x11
+    IDC_ARROW          = 32512
     IDC_IBEAM          = 32513
+    IDC_HAND           = 32649
+    IDC_CROSS          = 32515
     HTCLIENT           = 1
 
     MB_OK              = 0x00000000

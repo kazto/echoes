@@ -476,6 +476,36 @@ if Echoes::Platform.windows?
       assert_equal [[:hwnd, Echoes::Win32::WM_SETCURSOR, :wparam, 2]], defaults
     end
 
+    test "Windows per-cell cursor rects fall back to I-beam when Win32 functions unavailable" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@pointer_hidden, false)
+
+      # When Win32 functions are not available, cursor_for_mouse_position returns nil
+      result = gui.send(:cursor_for_mouse_position, :hwnd)
+      assert_nil result
+    end
+
+    test "Windows per-cell cursor rects return 0 when pointer hidden" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@pointer_hidden, true)
+
+      result = gui.send(:cursor_for_mouse_position, :hwnd)
+      assert_equal 0, result
+    end
+
+    test "Windows set cursor uses cursor_for_mouse_position when available" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@pointer_hidden, false)
+
+      # Mock the cursor_for_mouse_position to return a specific cursor
+      gui.define_singleton_method(:cursor_for_mouse_position) { |_hwnd| 5555 }
+
+      with_win32_const(:SetCursor, ->(cursor) { cursor }) do
+        result = gui.send(:handle_set_cursor, :hwnd, Echoes::Win32::WM_SETCURSOR, :wparam, Echoes::Win32::HTCLIENT)
+        assert_equal 1, result
+      end
+    end
+
     test "Windows menu bar installs File Edit View Window Shell and Help menus" do
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@hwnd, 99)
