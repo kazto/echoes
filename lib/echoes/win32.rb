@@ -154,9 +154,11 @@ module Echoes
     CS_HREDRAW         = 0x0002
     WS_OVERLAPPEDWINDOW = 0x00CF0000
     WS_VISIBLE         = 0x10000000
+    SW_HIDE            = 0
     SW_SHOWNORMAL      = 1
     SW_MINIMIZE        = 2
     SW_MAXIMIZE        = 3
+    SW_SHOW            = 5
     SW_RESTORE         = 9
 
     # Windows Messages

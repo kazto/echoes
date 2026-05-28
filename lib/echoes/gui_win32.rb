@@ -38,6 +38,9 @@ module Echoes
     MENU_FIND_NEXT = 10_020
     MENU_FIND_PREVIOUS = 10_021
     MENU_TOGGLE_COPY_MODE = 10_022
+    MENU_HIDE = 10_023
+    MENU_HIDE_OTHERS = 10_024
+    MENU_SHOW_ALL = 10_025
     MENU_WINDOW_BASE = 10_100
     MENU_PROFILE_BASE = 10_200
     MENU_COMPLETION_BASE = 10_400
@@ -170,6 +173,10 @@ module Echoes
       # WndProc の定義
       wnd_proc = Fiddle::Closure::BlockCaller.new(Fiddle::TYPE_LONG_LONG, [Fiddle::TYPE_VOIDP, Fiddle::TYPE_INT, Fiddle::TYPE_LONG_LONG, Fiddle::TYPE_LONG_LONG]) do |hwnd, msg, wparam, lparam|
         case msg
+        when Win32::WM_CLOSE
+          request_window_close
+          0
+
         when Win32::WM_DESTROY
           @running = false
           save_window_rect
@@ -481,18 +488,24 @@ module Echoes
       return false unless @hwnd && !Win32.null_pointer?(@hwnd)
 
       menu = Win32::CreateMenu.call
+      app_menu = Win32::CreatePopupMenu.call
       file_menu = Win32::CreatePopupMenu.call
       edit_menu = Win32::CreatePopupMenu.call
       view_menu = Win32::CreatePopupMenu.call
       window_menu = Win32::CreatePopupMenu.call
       shell_menu = Win32::CreatePopupMenu.call
       help_menu = Win32::CreatePopupMenu.call
-      return false if [menu, file_menu, edit_menu, view_menu, window_menu, shell_menu, help_menu].any? { |handle| !handle || Win32.null_pointer?(handle) }
+      return false if [menu, app_menu, file_menu, edit_menu, view_menu, window_menu, shell_menu, help_menu].any? { |handle| !handle || Win32.null_pointer?(handle) }
 
+      append_menu_item(app_menu, MENU_ABOUT, "About Echoes")
+      append_menu_separator(app_menu)
+      append_menu_item(app_menu, MENU_HIDE, "Hide Echoes")
+      append_menu_item(app_menu, MENU_HIDE_OTHERS, "Hide Others")
+      append_menu_item(app_menu, MENU_SHOW_ALL, "Show All")
+      append_menu_separator(app_menu)
+      append_menu_item(app_menu, MENU_EXIT, "Quit Echoes")
       append_menu_item(file_menu, MENU_NEW_TAB, "New Tab")
       append_menu_item(file_menu, MENU_OPEN_FILE, "Open File...")
-      append_menu_separator(file_menu)
-      append_menu_item(file_menu, MENU_EXIT, "Exit")
       append_menu_item(edit_menu, MENU_COPY, "Copy")
       append_menu_item(edit_menu, MENU_PASTE, "Paste")
       append_menu_item(view_menu, MENU_FIND, "Find")
@@ -522,6 +535,7 @@ module Echoes
       append_menu_item(shell_menu, MENU_SPLIT_DOWN, "Split Down")
       append_menu_item(shell_menu, MENU_CLOSE_PANE, "Close Pane")
       append_menu_item(help_menu, MENU_ABOUT, "About Echoes")
+      append_menu_popup(menu, app_menu, "Echoes")
       append_menu_popup(menu, file_menu, "File")
       append_menu_popup(menu, edit_menu, "Edit")
       append_menu_popup(menu, view_menu, "View")
@@ -593,6 +607,15 @@ module Echoes
         true
       when MENU_ABOUT
         show_about_panel
+        true
+      when MENU_HIDE
+        hide_current_window
+        true
+      when MENU_HIDE_OTHERS
+        hide_other_windows
+        true
+      when MENU_SHOW_ALL
+        show_all_windows
         true
       when MENU_TOGGLE_POINTER
         toggle_pointer_hidden
@@ -669,11 +692,7 @@ module Echoes
         focus_window_by_menu(command_id)
         true
       when MENU_EXIT
-        if @hwnd && !Win32.null_pointer?(@hwnd)
-          Win32::DestroyWindow.call(@hwnd)
-        else
-          @running = false
-        end
+        request_window_close
         true
       else
         false
@@ -902,6 +921,32 @@ module Echoes
     private def minimize_window
       return false unless @hwnd && Win32::ShowWindow
       Win32::ShowWindow.call(@hwnd, Win32::SW_MINIMIZE)
+      true
+    end
+
+    private def hide_current_window
+      return false unless @hwnd && Win32::ShowWindow
+      Win32::ShowWindow.call(@hwnd, Win32::SW_HIDE)
+      true
+    end
+
+    private def hide_other_windows
+      return false unless Win32::ShowWindow
+      windows = WindowRegistry.list_windows
+      windows.each do |win|
+        next if @hwnd && win[:hwnd] == @hwnd.to_i
+        Win32::ShowWindow.call(win[:hwnd], Win32::SW_HIDE) if win[:hwnd] && win[:hwnd] != 0
+      end
+      true
+    end
+
+    private def show_all_windows
+      return false unless Win32::ShowWindow
+      windows = WindowRegistry.list_windows
+      windows.each do |win|
+        next unless win[:hwnd] && win[:hwnd] != 0
+        Win32::ShowWindow.call(win[:hwnd], Win32::SW_SHOW)
+      end
       true
     end
 
@@ -1669,6 +1714,16 @@ module Echoes
       @tabs = []
       tabs.each { |tab| tab.close rescue nil }
       @active_tab = 0
+    end
+
+    private def request_window_close
+      if @hwnd && !Win32.null_pointer?(@hwnd)
+        Win32::DestroyWindow.call(@hwnd)
+        true
+      else
+        @running = false
+        false
+      end
     end
 
     private def start_native_timer

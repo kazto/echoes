@@ -509,7 +509,7 @@ if Echoes::Platform.windows?
     test "Windows menu bar installs File Edit View Window Shell and Help menus" do
       gui = Echoes::GUI.allocate
       gui.instance_variable_set(:@hwnd, 99)
-      popup_handles = [200, 201, 202, 203, 204, 205, 206]
+      popup_handles = [200, 201, 202, 203, 204, 205, 206, 207]
       calls = []
 
       with_window_registry_windows([]) do
@@ -526,44 +526,51 @@ if Echoes::Platform.windows?
         end
       end
 
-      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_NEW_TAB]
-      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_OPEN_FILE]
+      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_ABOUT]
+      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_HIDE]
+      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_HIDE_OTHERS]
+      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_SHOW_ALL]
       assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_EXIT]
-      assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_COPY]
-      assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_PASTE]
-      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_FIND]
-      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_FIND_NEXT]
-      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_FIND_PREVIOUS]
-      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_TOGGLE_POINTER]
-      assert_include calls, [:append, 202, Echoes::Win32::MF_POPUP, 206]
-      assert_include calls, [:append, 206, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_PROFILE_BASE]
-      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MINIMIZE]
-      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MAXIMIZE]
-      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_FULLSCREEN]
-      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_PREVIOUS_TAB]
-      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_NEXT_TAB]
-      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_CLOSE_TAB]
-      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_SPLIT_RIGHT]
-      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_SPLIT_DOWN]
-      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_CLOSE_PANE]
-      assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_ABOUT]
+      assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_NEW_TAB]
+      assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_OPEN_FILE]
+      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_COPY]
+      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_PASTE]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_FIND]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_FIND_NEXT]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_FIND_PREVIOUS]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_TOGGLE_POINTER]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_POPUP, 207]
+      assert_include calls, [:append, 207, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_PROFILE_BASE]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MINIMIZE]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MAXIMIZE]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_FULLSCREEN]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_PREVIOUS_TAB]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_NEXT_TAB]
+      assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_CLOSE_TAB]
+      assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_SPLIT_RIGHT]
+      assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_SPLIT_DOWN]
+      assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_CLOSE_PANE]
+      assert_include calls, [:append, 206, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_ABOUT]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 200]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 201]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 202]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 203]
-      assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 204]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 205]
+      assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 206]
       assert_include calls, [:set_menu, 99, 100]
       assert_include calls, [:draw, 99]
     end
 
     test "Windows menu commands dispatch to GUI actions" do
       gui = Echoes::GUI.allocate
-      gui.instance_variable_set(:@hwnd, nil)
+      gui.instance_variable_set(:@hwnd, 101)
       gui.instance_variable_set(:@running, true)
       created = []
       invalidations = 0
       about = 0
+      hides = 0
+      hide_others = 0
+      show_all = 0
       toggles = 0
       copies = 0
       pastes = 0
@@ -580,6 +587,9 @@ if Echoes::Platform.windows?
       gui.define_singleton_method(:prompt_for_file_to_edit) { "C:/tmp/demo.txt" }
       gui.define_singleton_method(:invalidate_window) { invalidations += 1 }
       gui.define_singleton_method(:show_about_panel) { about += 1 }
+      gui.define_singleton_method(:hide_current_window) { hides += 1 }
+      gui.define_singleton_method(:hide_other_windows) { hide_others += 1 }
+      gui.define_singleton_method(:show_all_windows) { show_all += 1 }
       gui.define_singleton_method(:toggle_pointer_hidden) { toggles += 1 }
       gui.define_singleton_method(:copy_to_clipboard) { copies += 1 }
       gui.define_singleton_method(:paste_from_clipboard) { pastes += 1 }
@@ -595,6 +605,9 @@ if Echoes::Platform.windows?
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_NEW_TAB)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_OPEN_FILE)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_ABOUT)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_HIDE)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_HIDE_OTHERS)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_SHOW_ALL)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_TOGGLE_POINTER)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_COPY)
       assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_PASTE)
@@ -613,6 +626,9 @@ if Echoes::Platform.windows?
       assert_equal [nil, "C:/tmp/demo.txt"], created
       assert_equal 12, invalidations
       assert_equal 1, about
+      assert_equal 1, hides
+      assert_equal 1, hide_others
+      assert_equal 1, show_all
       assert_equal 1, toggles
       assert_equal 1, copies
       assert_equal 1, pastes
@@ -625,7 +641,60 @@ if Echoes::Platform.windows?
       assert_equal 1, prevs
       assert_equal 1, profiles
       assert_equal 1, copy_modes
+      gui.instance_variable_set(:@hwnd, nil)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_EXIT)
       assert_false gui.instance_variable_get(:@running)
+    end
+
+    test "Windows app menu hide and show actions target registry windows" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hwnd, 101)
+      calls = []
+
+      with_window_registry_windows([
+        {hwnd: 101, title: "Self"},
+        {hwnd: 202, title: "Other"}
+      ]) do
+        with_win32_const(:ShowWindow, ->(hwnd, cmd) {
+          calls << [hwnd, cmd]
+          1
+        }) do
+          assert_true gui.send(:hide_current_window)
+          assert_true gui.send(:hide_other_windows)
+          assert_true gui.send(:show_all_windows)
+        end
+      end
+
+      assert_include calls, [101, Echoes::Win32::SW_HIDE]
+      assert_include calls, [202, Echoes::Win32::SW_HIDE]
+      assert_include calls, [101, Echoes::Win32::SW_SHOW]
+      assert_include calls, [202, Echoes::Win32::SW_SHOW]
+    end
+
+    test "Windows close requests destroy the window when present and stop the loop otherwise" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@running, true)
+      gui.instance_variable_set(:@hwnd, Fiddle::Pointer.malloc(1))
+
+      destroy_calls = []
+      original_destroy = Echoes::Win32::DestroyWindow
+      Echoes::Win32.send(:remove_const, :DestroyWindow)
+      Echoes::Win32.const_set(:DestroyWindow, Struct.new(:calls) do
+        def call(hwnd)
+          calls << hwnd
+          1
+        end
+      end.new(destroy_calls))
+
+      assert_true gui.send(:request_window_close)
+      assert_equal [gui.instance_variable_get(:@hwnd)], destroy_calls
+
+      gui.instance_variable_set(:@hwnd, nil)
+      assert_false gui.send(:request_window_close)
+      assert_false gui.instance_variable_get(:@running)
+    ensure
+      Echoes::Win32.send(:remove_const, :DestroyWindow) if Echoes::Win32.const_defined?(:DestroyWindow, false)
+      Echoes::Win32.const_set(:DestroyWindow, original_destroy) if defined?(original_destroy)
     end
 
     test "Windows profile menu applies profile colors and marks panes dirty" do
