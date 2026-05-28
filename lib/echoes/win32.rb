@@ -13,6 +13,7 @@ module Echoes
     SHELL32  = Fiddle.dlopen('shell32.dll') rescue nil
     COMDLG32 = Fiddle.dlopen('comdlg32.dll') rescue nil
     SHCORE   = Fiddle.dlopen('shcore.dll') rescue nil
+    GDIPLUS  = Fiddle.dlopen('gdiplus.dll') rescue nil
 
     # Type aliases matching Win32 / Fiddle
     P  = Fiddle::TYPE_VOIDP
@@ -20,6 +21,7 @@ module Echoes
     I  = Fiddle::TYPE_INT
     V  = Fiddle::TYPE_VOID
     D  = Fiddle::TYPE_DOUBLE
+    F  = Fiddle::TYPE_FLOAT
     U  = Fiddle::TYPE_INT # UINT
     S  = Fiddle::TYPE_SIZE_T
 
@@ -131,6 +133,17 @@ module Echoes
     ImmGetCompositionStringW = new_func(IMM32, 'ImmGetCompositionStringW', [P, L, P, L], L)
     ImmSetCompositionWindow  = new_func(IMM32, 'ImmSetCompositionWindow', [P, P], I)
     ImmSetCandidateWindow    = new_func(IMM32, 'ImmSetCandidateWindow', [P, P], I)
+
+    # --- GdiPlus Functions ---
+    GdiplusStartup = new_func(GDIPLUS, 'GdiplusStartup', [P, P, P], I)
+    GdiplusShutdown = new_func(GDIPLUS, 'GdiplusShutdown', [P], V)
+    GdipCreateFromHDC = new_func(GDIPLUS, 'GdipCreateFromHDC', [P, P], I)
+    GdipDeleteGraphics = new_func(GDIPLUS, 'GdipDeleteGraphics', [P], I)
+    GdipCreateLineBrushFromRectWithAngleI = new_func(GDIPLUS, 'GdipCreateLineBrushFromRectWithAngleI', [P, U, U, F, I, I, P], I)
+    GdipSetLinePresetBlend = new_func(GDIPLUS, 'GdipSetLinePresetBlend', [P, P, P, I], I)
+    GdipFillRectangleI = new_func(GDIPLUS, 'GdipFillRectangleI', [P, P, I, I, I, I], I)
+    GdipDeleteBrush = new_func(GDIPLUS, 'GdipDeleteBrush', [P], I)
+    GdipCreateSolidFill = new_func(GDIPLUS, 'GdipCreateSolidFill', [U, P], I)
 
     # --- GDI32 Functions ---
     CreateSolidBrush  = new_func(GDI32, 'CreateSolidBrush', [L], P)
@@ -291,6 +304,10 @@ module Echoes
     RECT_SIZE          = 16
     POINT_SIZE         = 8
 
+    # GDI+ Constants
+    UnitPixel = 2
+    WrapModeTile = 0
+
     # Convert Ruby UTF-8 string to Win32 wide character string (UTF-16LE, null terminated)
     def self.to_wstring(str)
       return nil unless str
@@ -301,6 +318,31 @@ module Echoes
     def self.from_wstring(ptr)
       return nil if ptr.null?
       ptr.to_str.force_encoding('UTF-16LE').encode('UTF-8').split("\x00", 2).first
+    end
+
+    def self.pointer_value(ptr)
+      if Fiddle::SIZEOF_VOIDP == 8
+        ptr[0, 8].unpack1('Q')
+      else
+        ptr[0, 4].unpack1('L')
+      end
+    end
+
+    def self.gdiplus_startup
+      return @gdiplus_token if @gdiplus_token
+      return nil unless GdiplusStartup
+      input = Fiddle::Pointer.malloc(24, Fiddle::RUBY_FREE)
+      input[0, 4] = [1].pack('L') # GdiplusVersion
+      token_ptr = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+      if GdiplusStartup.call(token_ptr, input, nil) == 0
+        @gdiplus_token = pointer_value(token_ptr)
+      end
+    end
+
+    def self.gdiplus_shutdown
+      return unless @gdiplus_token
+      GdiplusShutdown.call(@gdiplus_token) if GdiplusShutdown
+      @gdiplus_token = nil
     end
 
     def self.clipboard_available?

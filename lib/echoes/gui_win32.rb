@@ -163,6 +163,9 @@ module Echoes
       @tab_bg_brush = Win32::CreateSolidBrush.call(@tab_bg)
       @tab_active_bg_brush = Win32::CreateSolidBrush.call(@tab_active_bg)
 
+      # GDI+ の起動
+      Win32.gdiplus_startup
+
       # 初期タブの起動
       create_tab
     end
@@ -221,6 +224,7 @@ module Echoes
             Win32::DeleteObject.call(@tab_active_bg_brush)
           end
           WindowRegistry.cleanup
+          Win32.gdiplus_shutdown
           Win32::PostQuitMessage.call(0)
           0
 
@@ -2801,19 +2805,69 @@ module Echoes
       return if width <= 0 || height <= 0
       return if !colors || colors.empty?
 
-      horizontal = Math.cos(angle * Math::PI / 180.0).abs >= Math.sin(angle * Math::PI / 180.0).abs
-      steps = horizontal ? width : height
-      steps = [steps, 1].max
+      # GDI+ Fallback to scanline if GDIPLUS not available, initialization failed,
+      # or if we're in a test environment using a Symbol as mock HDC.
+      if hdc.is_a?(Symbol) || !Win32::GdipCreateFromHDC || !Win32.gdiplus_startup
+        horizontal = Math.cos(angle * Math::PI / 180.0).abs >= Math.sin(angle * Math::PI / 180.0).abs
+        steps = horizontal ? width : height
+        steps = [steps, 1].max
 
-      steps.times do |i|
-        t = steps == 1 ? 0.0 : i.to_f / (steps - 1)
-        color = gradient_color_at(colors, t)
-        if horizontal
-          fill_rect_color(hdc, x + i, y, x + i + 1, y + height, color)
-        else
-          fill_rect_color(hdc, x, y + i, x + width, y + i + 1, color)
+        steps.times do |i|
+          t = steps == 1 ? 0.0 : i.to_f / (steps - 1)
+          color = gradient_color_at(colors, t)
+          if horizontal
+            fill_rect_color(hdc, x + i, y, x + i + 1, y + height, color)
+          else
+            fill_rect_color(hdc, x, y + i, x + width, y + i + 1, color)
+          end
         end
+        return
       end
+
+      # GDI+ implementation
+      graphics_ptr = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+      return if Win32::GdipCreateFromHDC.call(hdc, graphics_ptr) != 0
+      graphics = Win32.pointer_value(graphics_ptr)
+
+      begin
+        rect = [x, y, width, height].pack('l4')
+        brush_ptr = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+
+        # GDI+ CreateLineBrushFromRectWithAngleI:
+        # rect, startColor, endColor, angle, isAngleScalable, wrapMode, lineGradient
+        c1 = rgba_to_gdiplus_color(colors.first)
+        c2 = rgba_to_gdiplus_color(colors.last)
+        
+        status = Win32::GdipCreateLineBrushFromRectWithAngleI.call(
+          Fiddle::Pointer[rect], c1, c2, angle.to_f, 1, Win32::WrapModeTile, brush_ptr
+        )
+        return if status != 0
+        brush = Win32.pointer_value(brush_ptr)
+
+        begin
+          # Multi-stop support
+          if colors.size > 2
+            color_array = colors.map { |c| rgba_to_gdiplus_color(c) }.pack('L*')
+            pos_array = colors.each_with_index.map { |_, i| i.to_f / (colors.size - 1) }.pack('f*')
+            Win32::GdipSetLinePresetBlend.call(brush, Fiddle::Pointer[color_array], Fiddle::Pointer[pos_array], colors.size)
+          end
+
+          Win32::GdipFillRectangleI.call(graphics, brush, x, y, width, height)
+        ensure
+          Win32::GdipDeleteBrush.call(brush)
+        end
+      ensure
+        Win32::GdipDeleteGraphics.call(graphics)
+      end
+    end
+
+    private def rgba_to_gdiplus_color(rgba)
+      r, g, b, a = rgba
+      r = (r <= 1.0 ? r * 255 : r).round.clamp(0, 255)
+      g = (g <= 1.0 ? g * 255 : g).round.clamp(0, 255)
+      b = (b <= 1.0 ? b * 255 : b).round.clamp(0, 255)
+      a = (a.nil? ? 255 : (a <= 1.0 ? a * 255 : a)).round.clamp(0, 255)
+      (a << 24) | (r << 16) | (g << 8) | b
     end
 
     private def gradient_color_at(colors, t)
