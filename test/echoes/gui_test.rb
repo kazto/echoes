@@ -1126,6 +1126,45 @@ if Echoes::Platform.windows?
       assert_equal 0, gui.instance_variable_get(:@active_tab)
     end
 
+    test "Windows native timer starts and stops on the window handle" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hwnd, 99)
+      calls = []
+
+      with_win32_const(:SetTimer, ->(hwnd, id, interval, callback) {
+        calls << [:set, hwnd, id, interval, callback]
+        123
+      }) do
+        assert_true gui.send(:start_native_timer)
+      end
+      gui.instance_variable_set(:@native_timer_enabled, true)
+      with_win32_const(:KillTimer, ->(hwnd, id) {
+        calls << [:kill, hwnd, id]
+        1
+      }) do
+        assert_true gui.send(:stop_native_timer)
+      end
+
+      assert_equal [
+        [:set, 99, Echoes::GUI::TIMER_ID, Echoes::GUI::TIMER_INTERVAL_MS, nil],
+        [:kill, 99, Echoes::GUI::TIMER_ID]
+      ], calls
+      assert_false gui.instance_variable_get(:@native_timer_enabled)
+    end
+
+    test "Windows timer tick polls output and refreshes window menu periodically" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@window_menu_update_counter, 0)
+      calls = []
+      gui.define_singleton_method(:poll_active_pane_output) { calls << :poll }
+      gui.define_singleton_method(:update_window_menu_periodic) { calls << :window_menu }
+
+      assert_true gui.send(:handle_timer_tick)
+
+      assert_equal [:poll, :window_menu], calls
+      assert_equal 1, gui.instance_variable_get(:@window_menu_update_counter)
+    end
+
     test "Windows copy writes selected text to the clipboard" do
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       "hello".chars.each_with_index do |char, index|

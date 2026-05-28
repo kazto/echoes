@@ -41,7 +41,7 @@ Inventory date: 2026-05-26.
 | Custom view subclass | Runtime-created `EchoesTerminalView < NSView` | `WndProc` callback closure | Done | `lib/echoes/gui_win32.rb` | Windows uses a window procedure instead of dynamic class methods. |
 | Repaint callback | `drawRect:` | `WM_PAINT`, double-buffered GDI paint | Done | `lib/echoes/gui_win32.rb` | Win32 has double buffering with compatible DC/bitmap. |
 | Resize callback | `setFrameSize:` hook | `WM_SIZE`, `GetClientRect` | Done | `lib/echoes/gui_win32.rb` | Resize updates terminal rows/cols and ConPTY size. |
-| Timer / polling repaint | `NSTimer scheduledTimerWithTimeInterval:` | Manual polling in message loop with short sleep/repaint | Partial | `lib/echoes/gui_win32.rb` | Functional polling exists; it is not a native Win32 timer abstraction. |
+| Timer / polling repaint | `NSTimer scheduledTimerWithTimeInterval:` | `SetTimer`, `WM_TIMER`, fallback loop tick | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows uses a native `WM_TIMER` tick to poll ConPTY output and refresh dynamic Window menu state, with the existing loop tick retained as a fallback if timer setup fails. |
 | Window focus notifications | `NSNotificationCenter` for key/resign notifications | `WM_SETFOCUS` / `WM_KILLFOCUS` equivalent | Done | `lib/echoes/gui_win32.rb` | Win32 focus changes update focused state and send focus reporting sequences when `?1004` is enabled. |
 | Menu bar | `NSMenu`, `NSMenuItem`, `setMainMenu:` | Win32 menus and accelerator table | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows has File/Edit/View/Window/Shell/Help menus and accelerators for common tab, pane, search, profile, pointer, About, and Exit commands. App-level macOS services are not equivalent. |
 | Window menu | `NSApplication#setWindowsMenu:` | Win32 menu plus shared process window registry | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb`, `lib/echoes/window_registry.rb` | Windows lists open Echoes windows across processes and can focus, minimize, maximize, or restore the current window. It is process-registry based rather than AppKit's in-process windows menu. |
@@ -84,6 +84,7 @@ Inventory date: 2026-05-26.
 Windows currently covers the core terminal path:
 
 - Win32 window creation and message loop.
+- Native Win32 timer-driven polling and repaint invalidation.
 - Window frame autosave through JSON preferences.
 - ConPTY-backed shell process I/O and resize.
 - GDI text rendering, font selection, basic font fallback, decorations, selections, and image blitting.

@@ -40,6 +40,8 @@ module Echoes
     ShowWindow        = new_func(USER32, 'ShowWindow', [P, I], I)
     UpdateWindow      = new_func(USER32, 'UpdateWindow', [P], I)
     SetFocus          = new_func(USER32, 'SetFocus', [P], P)
+    SetTimer          = new_func(USER32, 'SetTimer', [P, U, U, P], U)
+    KillTimer         = new_func(USER32, 'KillTimer', [P, U], I)
     GetMessageW       = new_func(USER32, 'GetMessageW', [P, P, U, U], I)
     PeekMessageW      = new_func(USER32, 'PeekMessageW', [P, P, U, U, U], I)
     TranslateMessage  = new_func(USER32, 'TranslateMessage', [P], I)
@@ -158,6 +160,7 @@ module Echoes
     WM_CLOSE           = 0x0010
     WM_ERASEBKGND      = 0x0014
     WM_SETCURSOR       = 0x0020
+    WM_TIMER           = 0x0113
     WM_COMMAND         = 0x0111
     WM_SETFOCUS        = 0x0007
     WM_KILLFOCUS       = 0x0008

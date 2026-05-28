@@ -40,6 +40,8 @@ module Echoes
     MENU_WINDOW_BASE = 10_100
     MENU_PROFILE_BASE = 10_200
     MENU_COMPLETION_BASE = 10_400
+    TIMER_ID = 1
+    TIMER_INTERVAL_MS = 15
 
     ACCELERATORS = [
       [Win32::FCONTROL | Win32::FVIRTKEY, 0x54, MENU_NEW_TAB],   # Ctrl+T
@@ -187,6 +189,10 @@ module Echoes
 
         when Win32::WM_COMMAND
           dispatch_menu_command(wparam.to_i & 0xFFFF)
+          0
+
+        when Win32::WM_TIMER
+          handle_timer_tick if wparam.to_i == TIMER_ID
           0
 
         when Win32::WM_PAINT
@@ -388,6 +394,7 @@ module Echoes
       # Register window in the registry after it's created
       WindowRegistry.register_window(@hwnd, Echoes.config.window_title)
       @window_menu_update_counter = 0
+      @native_timer_enabled = start_native_timer
 
       # 3. Message Loop & I/O 同期ポーリング
       @running = true
@@ -411,22 +418,14 @@ module Echoes
 
         break unless @running
 
-        # B. 同期的にシェルプロセスの出力をポーリング
-        begin
-          poll_active_pane_output
-        rescue => e
-          warn "echoes win32: I/O polling error: #{e.message}"
-        end
+        handle_timer_tick unless @native_timer_enabled
 
-        # C. Periodic window menu update (every ~2 seconds)
-        @window_menu_update_counter += 1
-        update_window_menu_periodic
-
-        # D. CPU負荷低減と Ruby の GVL 解放のため、適度にスリープ
+        # CPU負荷低減と Ruby の GVL 解放のため、適度にスリープ
         sleep 0.015
       end
 
       # Cleanup
+      stop_native_timer
       save_window_rect
       close_tabs
       delete_font_handles
@@ -1400,6 +1399,32 @@ module Echoes
       @tabs = []
       tabs.each { |tab| tab.close rescue nil }
       @active_tab = 0
+    end
+
+    private def start_native_timer
+      return false unless Win32::SetTimer && @hwnd && !Win32.null_pointer?(@hwnd)
+
+      Win32::SetTimer.call(@hwnd, TIMER_ID, TIMER_INTERVAL_MS, nil) != 0
+    end
+
+    private def stop_native_timer
+      return false unless @native_timer_enabled
+      return false unless Win32::KillTimer && @hwnd && !Win32.null_pointer?(@hwnd)
+
+      @native_timer_enabled = false
+      Win32::KillTimer.call(@hwnd, TIMER_ID) != 0
+    end
+
+    private def handle_timer_tick
+      begin
+        poll_active_pane_output
+      rescue => e
+        warn "echoes win32: I/O polling error: #{e.message}"
+      end
+
+      @window_menu_update_counter = @window_menu_update_counter.to_i + 1
+      update_window_menu_periodic
+      true
     end
 
     private def handle_window_resize_pixels(width, height)
