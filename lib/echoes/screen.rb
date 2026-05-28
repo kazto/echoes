@@ -486,7 +486,12 @@ module Echoes
 
     def backspace
       @pending_wrap = false
-      @cursor.col = [0, @cursor.col - 1].max
+      if @cursor.col > 0
+        @cursor.col -= 1
+      elsif @cursor.row > 0 && @line_wrapped[@cursor.row - 1]
+        @cursor.row -= 1
+        @cursor.col = @cols - 1
+      end
     end
 
     def erase_in_display(mode = 0)

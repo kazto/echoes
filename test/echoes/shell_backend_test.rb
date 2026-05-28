@@ -247,6 +247,21 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     backend&.close
   end
 
+  test "ConPTY backend translates cmd carriage-return erase repaint to backspace echo" do
+    conpty = FakeConPTY.new(["\r \r"])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    assert_equal("\b \b", backend.read_available_output(16_384))
+  ensure
+    backend&.close
+  end
+
   test "ConPTY backend drops cmd resize repaint" do
     repaint = "\e[?25l\e[8;40;120t\e[Hdir\e[K\r\n" \
               "\e[K\r\n\e[K\r\n\e[K\e[2;1H\e[?25h"

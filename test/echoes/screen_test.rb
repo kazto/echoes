@@ -150,6 +150,22 @@ class Echoes::ScreenTest < Test::Unit::TestCase
     assert_equal(0, @screen.cursor.col)
   end
 
+  test "backspace crosses a wrapped line back to the previous row" do
+    screen = Echoes::Screen.new(rows: 5, cols: 3)
+    "abcd".chars.each { |c| screen.put_char(c) }
+
+    assert_equal(1, screen.cursor.row)
+    assert_equal(1, screen.cursor.col)
+
+    screen.backspace
+    assert_equal(1, screen.cursor.row)
+    assert_equal(0, screen.cursor.col)
+
+    screen.backspace
+    assert_equal(0, screen.cursor.row)
+    assert_equal(2, screen.cursor.col)
+  end
+
   test "erase_in_display 0 (below)" do
     5.times { |r| @screen.grid[r].each { |c| c.char = "X" } }
     @screen.cursor.row = 2
