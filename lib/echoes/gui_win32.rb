@@ -85,6 +85,7 @@ module Echoes
       @rows = positive_env_integer('ECHOES_ROWS') || rows
       @cols = positive_env_integer('ECHOES_COLS') || cols
       @font_size = font_size || Preferences.fetch_double(:font_size, default: Echoes.config.font_size)
+      @window_rect_autosave = !window_rect_env?(ENV)
       @command = command_from_env || command
       @initial_window_rect = initial_window_rect_from_env
       @tabs = []
@@ -164,6 +165,7 @@ module Echoes
         case msg
         when Win32::WM_DESTROY
           @running = false
+          save_window_rect
           WindowRegistry.unregister_window(Process.pid)
           close_tabs
           delete_font_handles
@@ -425,6 +427,7 @@ module Echoes
       end
 
       # Cleanup
+      save_window_rect
       close_tabs
       delete_font_handles
       destroy_accelerators
@@ -1762,12 +1765,71 @@ module Echoes
     end
 
     private def initial_window_rect_from_env(env = ENV)
+      return explicit_window_rect_from_env(env) if window_rect_env?(env)
+
+      saved_window_rect || default_window_rect
+    end
+
+    private def window_rect_env?(env = ENV)
+      %w[ECHOES_WINDOW_X ECHOES_WINDOW_Y ECHOES_WINDOW_W ECHOES_WINDOW_H].any? { |key| env.key?(key) }
+    end
+
+    private def explicit_window_rect_from_env(env = ENV)
       {
         x: Integer(env.fetch('ECHOES_WINDOW_X', 100), exception: false) || 100,
         y: Integer(env.fetch('ECHOES_WINDOW_Y', 100), exception: false) || 100,
         w: positive_env_integer('ECHOES_WINDOW_W', env) || 800,
         h: positive_env_integer('ECHOES_WINDOW_H', env) || 600
       }
+    end
+
+    private def default_window_rect
+      {x: 100, y: 100, w: 800, h: 600}
+    end
+
+    WINDOW_RECT_PREFERENCE_KEYS = {
+      x: :window_x,
+      y: :window_y,
+      w: :window_w,
+      h: :window_h
+    }.freeze
+
+    private def saved_window_rect
+      defaults = default_window_rect
+      rect = WINDOW_RECT_PREFERENCE_KEYS.transform_values do |key|
+        Preferences.fetch_double(key, default: nil)
+      end
+      return nil unless rect.values.all?
+
+      normalized = rect.transform_values(&:to_i)
+      return nil unless normalized[:w].positive? && normalized[:h].positive?
+
+      defaults.merge(normalized)
+    end
+
+    private def save_window_rect
+      return false unless @window_rect_autosave
+      return false unless (rect = current_window_rect)
+
+      WINDOW_RECT_PREFERENCE_KEYS.each do |field, key|
+        Preferences.set_double(key, rect[field])
+      end
+      true
+    end
+
+    private def current_window_rect
+      return nil unless Win32::GetWindowRect && @hwnd && !Win32.null_pointer?(@hwnd)
+
+      rect = Fiddle::Pointer.malloc(Win32::RECT_SIZE, Fiddle::RUBY_FREE)
+      rect[0, Win32::RECT_SIZE] = "\x00" * Win32::RECT_SIZE
+      return nil if Win32::GetWindowRect.call(@hwnd, rect) == 0
+
+      left, top, right, bottom = rect[0, Win32::RECT_SIZE].unpack('l4')
+      width = right - left
+      height = bottom - top
+      return nil if width <= 0 || height <= 0
+
+      {x: left, y: top, w: width, h: height}
     end
 
     private def post_notification(pane, title, message)

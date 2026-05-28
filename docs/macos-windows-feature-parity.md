@@ -36,7 +36,7 @@ Inventory date: 2026-05-26.
 | GUI app lifecycle | `NSApplication.sharedApplication`, `run`, `terminate:` | Win32 message loop with `PeekMessageW`, `TranslateMessage`, `DispatchMessageW`, `WM_QUIT` | Partial | `lib/echoes/gui_win32.rb` | Basic loop and native menu command dispatch exist. App-level services are still not equivalent to AppKit. |
 | Window creation | `NSWindow initWithContentRect:styleMask:backing:defer:` | `RegisterClassExW`, `CreateWindowExW`, `ShowWindow`, `UpdateWindow` | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Single main Win32 window exists. AppKit-style multiple windows are not implemented. |
 | Window title | `NSWindow#setTitle:` | `SetWindowTextW` | Done | `lib/echoes/gui_win32.rb` | Used for tab/window title and notification fallback. |
-| Window autosave | `setFrameAutosaveName:`, `NSUserDefaults` | JSON preferences backend | Partial | `lib/echoes/preferences.rb`, `lib/echoes/gui_win32.rb` | JSON persistence exists. Equivalent window frame autosave behavior is not clearly implemented in Win32 GUI. |
+| Window autosave | `setFrameAutosaveName:`, `NSUserDefaults` | JSON preferences backend plus `GetWindowRect` | Done | `lib/echoes/preferences.rb`, `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Normal Windows launches restore the last saved window frame from JSON preferences and save the frame on exit. Explicit `ECHOES_WINDOW_*` launches still use their requested geometry without overwriting the saved default. |
 | Content view / first responder | `setContentView:`, `makeFirstResponder:` | `HWND` receives `WndProc` messages, `SetFocus` | Done | `lib/echoes/gui_win32.rb` | Different model, but keyboard input is routed to the terminal window. |
 | Custom view subclass | Runtime-created `EchoesTerminalView < NSView` | `WndProc` callback closure | Done | `lib/echoes/gui_win32.rb` | Windows uses a window procedure instead of dynamic class methods. |
 | Repaint callback | `drawRect:` | `WM_PAINT`, double-buffered GDI paint | Done | `lib/echoes/gui_win32.rb` | Win32 has double buffering with compatible DC/bitmap. |
@@ -84,6 +84,7 @@ Inventory date: 2026-05-26.
 Windows currently covers the core terminal path:
 
 - Win32 window creation and message loop.
+- Window frame autosave through JSON preferences.
 - ConPTY-backed shell process I/O and resize.
 - GDI text rendering, font selection, basic font fallback, decorations, selections, and image blitting.
 - GDI+ PNG decode and raw RGB/RGBA conversion.

@@ -52,6 +52,7 @@ module Echoes
     BeginPaint        = new_func(USER32, 'BeginPaint', [P, P], P)
     EndPaint          = new_func(USER32, 'EndPaint', [P, P], I)
     GetClientRect     = new_func(USER32, 'GetClientRect', [P, P], I)
+    GetWindowRect     = new_func(USER32, 'GetWindowRect', [P, P], I)
     FrameRect         = new_func(USER32, 'FrameRect', [P, P, P], I)
     FillRect          = new_func(USER32, 'FillRect', [P, P, P], I)
     SetWindowTextW    = new_func(USER32, 'SetWindowTextW', [P, P], I)

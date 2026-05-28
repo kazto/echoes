@@ -1534,6 +1534,69 @@ if Echoes::Platform.windows?
       assert_equal({x: 10, y: 20, w: 640, h: 480}, gui.send(:initial_window_rect_from_env, env))
     end
 
+    test "Windows initial window rect restores saved preferences when env is absent" do
+      gui = Echoes::GUI.allocate
+      prefs = {
+        "window_x" => 12.0,
+        "window_y" => 34.0,
+        "window_w" => 900.0,
+        "window_h" => 700.0
+      }
+
+      with_preferences_store(prefs) do
+        assert_equal({x: 12, y: 34, w: 900, h: 700}, gui.send(:initial_window_rect_from_env, {}))
+      end
+    end
+
+    test "Windows explicit window env overrides saved preferences" do
+      gui = Echoes::GUI.allocate
+      prefs = {
+        "window_x" => 12.0,
+        "window_y" => 34.0,
+        "window_w" => 900.0,
+        "window_h" => 700.0
+      }
+      env = {"ECHOES_WINDOW_X" => "1", "ECHOES_WINDOW_Y" => "2", "ECHOES_WINDOW_W" => "300", "ECHOES_WINDOW_H" => "400"}
+
+      with_preferences_store(prefs) do
+        assert_equal({x: 1, y: 2, w: 300, h: 400}, gui.send(:initial_window_rect_from_env, env))
+      end
+    end
+
+    test "Windows save window rect stores current frame preferences" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hwnd, 99)
+      gui.instance_variable_set(:@window_rect_autosave, true)
+      prefs = {}
+
+      with_preferences_store(prefs) do
+        with_win32_const(:GetWindowRect, ->(_hwnd, rect) {
+          rect[0, Echoes::Win32::RECT_SIZE] = [10, 20, 810, 620].pack("l4")
+          1
+        }) do
+          assert_true gui.send(:save_window_rect)
+        end
+      end
+
+      assert_equal 10.0, prefs["window_x"]
+      assert_equal 20.0, prefs["window_y"]
+      assert_equal 800.0, prefs["window_w"]
+      assert_equal 600.0, prefs["window_h"]
+    end
+
+    test "Windows save window rect skips explicit env windows" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@hwnd, 99)
+      gui.instance_variable_set(:@window_rect_autosave, false)
+      prefs = {}
+
+      with_preferences_store(prefs) do
+        assert_false gui.send(:save_window_rect)
+      end
+
+      assert_empty prefs
+    end
+
     test "Windows PNG encoder writes a valid RGBA PNG container" do
       gui = Echoes::GUI.allocate
       rgba = "\xFF\x00\x00\xFF\x00\xFF\x00\xFF".b
@@ -1662,6 +1725,22 @@ if Echoes::Platform.windows?
     ensure
       singleton.send(:remove_method, name)
       singleton.define_method(name) { |*args, **kwargs| original.call(*args, **kwargs) }
+    end
+
+    def with_preferences_store(store)
+      singleton = class << Echoes::Preferences; self; end
+      original_fetch = Echoes::Preferences.method(:fetch_double)
+      original_set = Echoes::Preferences.method(:set_double)
+      singleton.send(:remove_method, :fetch_double)
+      singleton.send(:remove_method, :set_double)
+      singleton.define_method(:fetch_double) { |key, default:| store.fetch(key.to_s, default) }
+      singleton.define_method(:set_double) { |key, value| store[key.to_s] = value.to_f }
+      yield
+    ensure
+      singleton.send(:remove_method, :fetch_double)
+      singleton.send(:remove_method, :set_double)
+      singleton.define_method(:fetch_double) { |key, default:| original_fetch.call(key, default: default) }
+      singleton.define_method(:set_double) { |key, value| original_set.call(key, value) }
     end
 
     def with_process_detach(replacement)
