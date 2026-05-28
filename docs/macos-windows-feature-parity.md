@@ -73,7 +73,7 @@ Inventory date: 2026-05-26.
 | External/presentation windows | New `NSWindow` on selected `NSScreen` | Child Echoes process with monitor geometry env | Partial | `lib/echoes/gui_win32.rb` | OSC open-window launches a separate Windows Echoes process on the requested monitor with decoded argv and initial geometry. It is process-based rather than an in-process multi-window model. |
 | Pane capture to PDF/PNG | `dataWithPDFInsideRect:`, `NSBitmapImageRep` capture | GDI bitmap capture / pure-Ruby PNG and raster PDF encoders | Partial | `lib/echoes/gui_win32.rb`, `lib/echoes/win32.rb` | OSC capture writes PNG files or one-page raster PDFs on Windows. AppKit-style vector PDF capture is not implemented. |
 | Preferences storage | `NSUserDefaults` suite | JSON file under `%APPDATA%/Echoes` or `ECHOES_CONFIG_HOME` | Alternate | `lib/echoes/preferences.rb` | Feature exists through a platform-specific backend, not the Windows registry. |
-| Shell process backend | macOS PTY backend | ConPTY backend | Done | `lib/echoes/conpty.rb`, `lib/echoes/shell_backend.rb`, `lib/echoes/pane.rb` | Normal panes use ConPTY on Windows. Ctrl-C delivery remains a known gap. |
+| Shell process backend | macOS PTY backend | ConPTY backend | Done | `lib/echoes/conpty.rb`, `lib/echoes/shell_backend.rb`, `lib/echoes/pane.rb` | Normal panes use ConPTY on Windows. Child shells are launched in a new process group and Ctrl-C first sends `GenerateConsoleCtrlEvent`, then falls back to ETX input if needed. |
 | Shell resize | PTY window size/ioctl | `ResizePseudoConsole` | Done | `lib/echoes/conpty.rb`, `lib/echoes/gui_win32.rb` | Resize propagation is implemented. |
 | Shell encoding | UTF-8 PTY stream | Console code page conversion | Done | `lib/echoes/shell_backend.rb` | ConPTY output is decoded from locale encoding; input is encoded back. |
 | Embedded rubish mode | Unix PTY/process group/job control | Windows process/helper model needed | Missing | `lib/echoes/embedded_shell.rb` | Explicitly blocked on Windows. |
@@ -106,7 +106,6 @@ The largest remaining AppKit parity gaps are:
 - Ligature control, per-cell cursor rect parity, and richer font shaping.
 - Native toast notifications.
 - Embedded rubish mode, which also blocks user-visible completion popup parity on Windows.
-- Robust Ctrl-C delivery through ConPTY.
 
 ## Maintenance Notes
 

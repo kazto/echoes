@@ -36,7 +36,8 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
   end
 
   class FakeConPTY
-    attr_reader :spawn_args, :resizes, :writes, :killed
+    attr_reader :spawn_args, :resizes, :writes, :killed, :interrupts
+    attr_accessor :interrupt_result
 
     def initialize(outputs = [])
       @pipe_out_r = 111
@@ -45,6 +46,8 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
       @h_process_id = 444
       @resizes = []
       @writes = []
+      @interrupts = []
+      @interrupt_result = true
       @killed = false
       @outputs = outputs
     end
@@ -73,6 +76,11 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
 
     def kill
       @killed = true
+    end
+
+    def interrupt
+      @interrupts << @h_process_id
+      @interrupt_result
     end
   end
 
@@ -149,6 +157,43 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
 
     assert_equal(["cmd.exe", 80, 24, nil], conpty.spawn_args)
     assert_equal(["日本語".b], conpty.writes.map(&:b))
+  ensure
+    backend&.close
+  end
+
+  test "ConPTY backend sends console Ctrl-C before ETX fallback" do
+    conpty = FakeConPTY.new
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    backend.interrupt
+
+    assert_equal [444], conpty.interrupts
+    assert_equal [], conpty.writes
+  ensure
+    backend&.close
+  end
+
+  test "ConPTY backend falls back to ETX when console Ctrl-C fails" do
+    conpty = FakeConPTY.new
+    conpty.interrupt_result = false
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    backend.interrupt
+
+    assert_equal [444], conpty.interrupts
+    assert_equal ["\x03"], conpty.writes
   ensure
     backend&.close
   end

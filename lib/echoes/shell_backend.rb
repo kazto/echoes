@@ -130,6 +130,8 @@ module Echoes
     end
 
     def interrupt
+      return if @conpty.respond_to?(:interrupt) && @conpty.interrupt
+
       write("\x03")
     rescue IOError, SystemCallError
     end

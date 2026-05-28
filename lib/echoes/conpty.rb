@@ -42,6 +42,7 @@ module Echoes
     SetHandleInformation = new_func('SetHandleInformation', [P, U, U], I)
     GetExitCodeProcess   = new_func('GetExitCodeProcess', [P, P], I)
     TerminateProcess     = new_func('TerminateProcess', [P, U], I)
+    GenerateConsoleCtrlEvent = new_func('GenerateConsoleCtrlEvent', [U, U], I)
     OpenProcess          = new_func('OpenProcess', [U, I, U], P)
     CreateToolhelp32Snapshot = new_func('CreateToolhelp32Snapshot', [U, U], P)
     Process32FirstW      = new_func('Process32FirstW', [P, P], I)
@@ -56,7 +57,9 @@ module Echoes
     PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
     EXTENDED_STARTUPINFO_PRESENT       = 0x00080000
     CREATE_UNICODE_ENVIRONMENT         = 0x00000400
+    CREATE_NEW_PROCESS_GROUP           = 0x00000200
     DETACHED_PROCESS                   = 0x00000008
+    CTRL_C_EVENT                       = 0
     STARTF_USESTDHANDLES               = 0x00000100
     HANDLE_FLAG_INHERIT                = 0x00000001
     STILL_ACTIVE                        = 259
@@ -174,6 +177,7 @@ module Echoes
 
           # Spawn
           creation_flags = EXTENDED_STARTUPINFO_PRESENT
+          creation_flags |= CREATE_NEW_PROCESS_GROUP
           creation_flags |= CREATE_UNICODE_ENVIRONMENT if env
 
           success = CreateProcessW.call(
@@ -258,6 +262,15 @@ module Echoes
 
     def close
       close_handles
+    end
+
+    def interrupt
+      return false unless GenerateConsoleCtrlEvent
+      return false unless @h_process_id && @h_process_id != 0
+
+      GenerateConsoleCtrlEvent.call(CTRL_C_EVENT, @h_process_id) != 0
+    rescue StandardError
+      false
     end
 
     def kill
