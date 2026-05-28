@@ -43,11 +43,12 @@ Inventory date: 2026-05-26.
 | Resize callback | `setFrameSize:` hook | `WM_SIZE`, `GetClientRect` | Done | `lib/echoes/gui_win32.rb` | Resize updates terminal rows/cols and ConPTY size. |
 | Timer / polling repaint | `NSTimer scheduledTimerWithTimeInterval:` | `SetTimer`, `WM_TIMER`, fallback loop tick | Done | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows uses a native `WM_TIMER` tick to poll ConPTY output and refresh dynamic Window menu state, with the existing loop tick retained as a fallback if timer setup fails. |
 | Window focus notifications | `NSNotificationCenter` for key/resign notifications | `WM_SETFOCUS` / `WM_KILLFOCUS` equivalent | Done | `lib/echoes/gui_win32.rb` | Win32 focus changes update focused state and send focus reporting sequences when `?1004` is enabled. |
-| Menu bar | `NSMenu`, `NSMenuItem`, `setMainMenu:` | Win32 menus and accelerator table | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows now has an app menu plus File/Edit/View/Window/Shell/Help menus and accelerators for common tab, pane, search, profile, pointer, About, Hide, Show All, and Exit commands. App-level macOS services are still not fully equivalent. |
+| Menu bar | `NSMenu`, `NSMenuItem`, `setMainMenu:` | Win32 menus and accelerator table | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows has a comprehensive app menu (File/Edit/View/Window/Shell/Help) and accelerators for common commands, including tab management, search, profile selection, pointer hiding, 'Select All', and font scaling. Some complex AppKit-level macOS services remain unsupported. |
 | Window menu | `NSApplication#setWindowsMenu:` | Win32 menu plus shared process window registry | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb`, `lib/echoes/window_registry.rb` | Windows lists open Echoes windows across processes and can focus, minimize, maximize, restore, or bring all windows to front. It is process-registry based rather than AppKit's in-process windows menu. |
+| Tab bar | `NSTabView` / custom drawing | Custom GDI drawing and click handling | Done | `lib/echoes/gui_win32.rb` | Windows implements a native-looking interactive tab bar using GDI, supporting active tab highlighting and mouse click selection. |
 | Completion popup | `NSMenu#popUpMenuPositioningItem:atLocation:inView:` | `TrackPopupMenu` anchored at the terminal cursor | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Windows has a native popup substrate for embedded-pane completion requests. Embedded rubish mode is still unsupported on Windows, so the normal Windows GUI cannot exercise this path yet. |
 | Keyboard input | `NSEvent#characters`, `keyCode`, `modifierFlags`, `interpretKeyEvents:` | `WM_CHAR`, `WM_KEYDOWN`, virtual-key mapping | Done | `lib/echoes/gui_win32.rb` | Special keys and Ctrl-letter mappings are implemented. |
-| Copy mode/search key routing | AppKit keyboard callbacks | Win32 `WM_CHAR` / `WM_KEYDOWN` routed to shared pane logic | Partial | `lib/echoes/gui_win32.rb` | Search mode, live query updates, next/previous navigation, copy-mode h/j/k/l plus arrow and paging keys, and selection helpers exist, but the Windows UI surface is smaller than AppKit. |
+| Copy mode/search key routing | AppKit keyboard callbacks | Win32 `WM_CHAR` / `WM_KEYDOWN` routed to shared pane logic | Done | `lib/echoes/gui_win32.rb` | Search mode, live query updates, next/previous navigation, copy-mode h/j/k/l plus arrow and paging keys, selection helpers, and full 'Select All' support exist. |
 | IME composition | `NSTextInputClient` | IMM32: `WM_IME_*`, `ImmGetContext`, `ImmGetCompositionStringW`, `ImmSetCandidateWindow`, `ImmGetCompositionStringW` (attributes), `ImmGetCompositionStringW` (reading) | Partial | `lib/echoes/win32.rb`, `lib/echoes/gui_win32.rb` | Inline composition, result commit, cursor-based candidate positioning, colored underline feedback, target clause highlighting, reading string (furigana) support, and composition attribute reading exist. Some advanced Cocoa features still missing. |
 | Mouse click/drag | `mouseDown:`, `mouseDragged:`, `mouseUp:` and right/other variants | `WM_LBUTTONDOWN`, `WM_LBUTTONUP`, `WM_MBUTTONDOWN`, `WM_MBUTTONUP`, `WM_RBUTTONDOWN`, `WM_RBUTTONUP`, `WM_XBUTTONDOWN`, `WM_XBUTTONUP`, `WM_MOUSEMOVE`, `WM_MOUSEWHEEL` | Done | `lib/echoes/gui_win32.rb` | Left/middle/right/X-button press, drag, release, and wheel are routed to terminal mouse reporting. |
 | Mouse wheel | `scrollWheel:`, `deltaY` | `WM_MOUSEWHEEL` | Done | `lib/echoes/gui_win32.rb` | Scroll accumulation and pane scrolling are implemented. |
@@ -59,7 +60,7 @@ Inventory date: 2026-05-26.
 | Font fallback | `CTFontCreateForString` | `GetGlyphIndicesW` plus fallback families | Partial | `lib/echoes/gui_win32.rb` | Fallback runs exist for common Japanese/emoji/symbol fonts. Complex shaping/color emoji are still GDI-limited. |
 | Underline/strikethrough | AppKit text attributes | Explicit GDI rectangle decorations | Done | `lib/echoes/gui_win32.rb` | Decorations are drawn manually. |
 | Ligature suppression | `NSLigatureAttributeName` | GDI text rendering | Missing | - | GDI path does not expose equivalent ligature control. |
-| Gradients | `NSGradient#drawInRect:angle:` | Manual GDI scanline fill | Partial | `lib/echoes/gui_win32.rb` | Windows paints OSC flat pane backgrounds, bg-fill overlays, alpha-blended colors, and multi-stop linear gradients. It is still a GDI scanline implementation rather than AppKit's `NSGradient`. |
+| Gradients | `NSGradient#drawInRect:angle:` | GDI+ `LinearGradientBrush` | Done | `lib/echoes/gui_win32.rb` | Windows paints OSC flat pane backgrounds, bg-fill overlays, alpha-blended colors, and multi-stop linear gradients using GDI+ `LinearGradientBrush`. |
 | CoreGraphics image drawing | `CGContextDrawImage`, `CGImage` | GDI `StretchDIBits` with BGRA DIB | Done | `lib/echoes/gui_win32.rb` | Kitty/iTerm image placements are drawn from RGBA buffers. |
 | PNG decode | `NSData`, `NSBitmapImageRep`, `CGImage` | GDI+ `GdipCreateBitmapFromStream` path | Done | `lib/echoes/kitty_graphics_win32.rb` | PNG decode returns the same RGBA shape expected by renderers. |
 | Raw RGB/RGBA conversion | `CGDataProviderCreateWithData`, `CGImageCreate` | Ruby buffer conversion / GDI+ path | Done | `lib/echoes/kitty_graphics_win32.rb` | `from_rgb` and `from_rgba` exist. |
@@ -88,18 +89,19 @@ Windows currently covers the core terminal path:
 - Window frame autosave through JSON preferences.
 - ConPTY-backed shell process I/O and resize.
 - GDI text rendering, font selection, basic font fallback, decorations, selections, and image blitting.
-- GDI+ PNG decode and raw RGB/RGBA conversion.
+- GDI+ PNG decode, raw RGB/RGBA conversion, and linear gradient rendering.
 - Keyboard input, special keys, mouse wheel, basic mouse selection, clipboard text, OSC 52, and minimal OSC notification fallback.
 - OSC display-info and process-based OSC open-window launch on a selected monitor.
 - Monitor DPI/backing scale reporting for OSC display-info.
 - Basic Window menu integration backed by a shared Win32 window registry.
+- Comprehensive app menu with 'Select All', font scaling, and tab management.
+- Native interactive tab bar using GDI.
 - Native completion popup substrate for embedded-pane completion requests.
 - OSC capture to PNG and raster PDF.
 - JSON preferences and `.bat` installer.
 
 The largest remaining AppKit parity gaps are:
 
-- App-level macOS menu services.
 - In-process multiple native windows and full AppKit-style Window menu behavior.
 - Vector pane capture.
 - Full Cocoa-style IME/text-input parity.

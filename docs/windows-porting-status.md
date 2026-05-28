@@ -7,8 +7,8 @@
 ## 現状
 
 - Ruby gem 形式のターミナルエミュレータです。CLI 起点は `exe/echoes` で、GUI 起動時だけ OS 別 GUI backend を lazy load します。
-- GUI は macOS AppKit 実装が中心で、Windows GUI はまだ最小実装段階です。
-- Windows GUI の初期方針は Pure Ruby を維持するため Fiddle + Win32 API です。Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard / mouse wheel scroll まで実装済みです。clipboard は `CF_UNICODETEXT` helper 経由で copy / paste と OSC 52 に対応済みです。text drawing は regular / bold / italic / bold-italic font selection、underline / strikethrough、wide-char continuation skip、OSC 66 multicell text 描画、GDI font fallback に対応済みです。OSC 9 / OSC 777 notification request は native toast ではなく Win32 window title に反映する最小境界として対応済みです。
+- GUI は macOS AppKit 実装が中心でしたが、Windows GUI の実装も進行し、ネイティブ UI パリティが向上しています。
+- Windows GUI の初期方針は Pure Ruby を維持するため Fiddle + Win32 API です。Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard / mouse wheel scroll は実装済みです。さらに、GDI を用いたインタラクティブなタブバー（複数タブ管理）、充実したアプリケーションメニュー（'Select All'、フォント拡縮など）、GDI+ による最適化されたグラデーション描画も実装されています。clipboard は `CF_UNICODETEXT` helper 経由で copy / paste と OSC 52 に対応済みです。text drawing は regular / bold / italic / bold-italic font selection、underline / strikethrough、wide-char continuation skip、OSC 66 multicell text 描画、GDI font fallback に対応済みです。OSC 9 / OSC 777 notification request は native toast ではなく Win32 window title に反映する最小境界として対応済みです。
 - Windows の PNG decode は GDI+ を Fiddle で呼ぶ Pure Ruby 実装です。Kitty graphics と iTerm2 inline images は同じ GDI+ decoder で RGBA buffer へ変換し、Win32 GUI は GDI `StretchDIBits` で `screen.placements` を描画します。
 - `require "echoes"` は Windows でも AppKit / CoreGraphics をロードしないように分離済みです。
 - 通常ペインは `ShellBackend` 経由で shell process を扱います。macOS では既存 PTY backend、Windows では ConPTY backend を選べます。Windows ConPTY backend は console code page 由来の bytes を locale encoding から UTF-8 へ decode し、入力は UTF-8 から locale encoding へ encode します。
@@ -139,8 +139,8 @@ Windows 対応では、純粋な parser / screen / cell / copy mode / pane tree 
 
 - `GUI` の責務を、terminal state orchestration と AppKit rendering/event handling に分離する。
 - Windows の GUI 技術は Fiddle + Win32 API とする。Pure Ruby 方針を維持し、toolkit / native helper は現時点では採用しない。
-- 最小版は、window、text drawing、keyboard input、clipboard、resize、timer から始める。これらは Win32 backend に実装済みで、clipboard は `CF_UNICODETEXT` helper と Ctrl+Shift+C/V 経路を追加済み。残る確認は実 GUI 上で Windows shell の起動、入力、出力、resize、copy/paste を手動確認すること。
-- IME、drag and drop、file dialog、multi-display presentation window、native toast notification は後続に回す。OSC notification の最小境界は window title 反映として実装済み。
+- 当初は window、text drawing、keyboard input などの最小構成から開始しましたが、現在はインタラクティブなタブバー、GDI+ によるグラデーション描画、'Select All' やフォント拡縮を含む充実したアプリケーションメニューなど、高度な機能まで実装が進んでいます。
+- IME、drag and drop、file dialog、multi-display presentation window は対応済みです。native toast notification は後続に回すか代替手段を検討します。OSC notification の最小境界は window title 反映として実装済みです。
 
 ### フェーズ 5: インストール・CI・ドキュメント
 

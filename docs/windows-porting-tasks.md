@@ -250,7 +250,10 @@
   - timer
   - clipboard
   - 初期最小機能は Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard とする。
-- [ ] IME、drag and drop、file dialog、multi-display、native toast notification の対応順を決める。
+- [x] IME、drag and drop、file dialog、multi-display、native toast notification の対応順を決める。
+  - IME は composition 表示の最小実装と composition string 更新 helper を実装済み。
+  - drag and drop / file dialog / multi-display は実装済み。
+  - native toast notification は後続対応とするか代替手段を検討。
 
 ## Phase 8: Windows GUI 最小実装
 
