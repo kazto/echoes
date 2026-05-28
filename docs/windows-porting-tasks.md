@@ -253,7 +253,7 @@
 - [x] IME、drag and drop、file dialog、multi-display、native toast notification の対応順を決める。
   - IME は composition 表示の最小実装と composition string 更新 helper を実装済み。
   - drag and drop / file dialog / multi-display は実装済み。
-  - native toast notification は後続対応とするか代替手段を検討。
+  - native toast notification は実装済み（`Shell_NotifyIconW`）。
 
 ## Phase 8: Windows GUI 最小実装
 

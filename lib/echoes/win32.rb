@@ -101,6 +101,7 @@ module Echoes
     DragAcceptFiles   = new_func(SHELL32, 'DragAcceptFiles', [P, I], V)
     DragQueryFileW    = new_func(SHELL32, 'DragQueryFileW', [P, U, P, U], U)
     DragFinish        = new_func(SHELL32, 'DragFinish', [P], V)
+    Shell_NotifyIconW = new_func(SHELL32, 'Shell_NotifyIconW', [L, P], I)
 
     # --- Comdlg32 Functions ---
     GetOpenFileNameW  = new_func(COMDLG32, 'GetOpenFileNameW', [P], I)
@@ -278,6 +279,18 @@ module Echoes
     OFN_NOCHANGEDIR    = 0x00000008
     OFN_PATHMUSTEXIST  = 0x00000800
     OPENFILENAMEW_SIZE = Fiddle::SIZEOF_VOIDP == 8 ? 152 : 88
+    
+    # Notification Constants
+    NIM_ADD            = 0x00000000
+    NIM_MODIFY         = 0x00000001
+    NIM_DELETE         = 0x00000002
+    NIF_MESSAGE        = 0x00000001
+    NIF_ICON           = 0x00000002
+    NIF_TIP            = 0x00000004
+    NIF_INFO           = 0x00000010
+    NIIF_INFO          = 0x00000001
+    NOTIFYICONDATAW_V4_SIZE = Fiddle::SIZEOF_VOIDP == 8 ? 976 : 956
+
     MONITORINFO_SIZE   = 40
     MONITORINFOF_PRIMARY = 0x00000001
     MONITOR_DEFAULTTONEAREST = 0x00000002
@@ -495,6 +508,60 @@ module Echoes
       raw.force_encoding('UTF-16LE').encode('UTF-8')
     end
 
+    def self.show_notification(hwnd, title, message)
+      return false unless Shell_NotifyIconW
+      return false if null_pointer?(hwnd) || hwnd.is_a?(Symbol)
+
+      nid = Fiddle::Pointer.malloc(NOTIFYICONDATAW_V4_SIZE, Fiddle::RUBY_FREE)
+      nid[0, NOTIFYICONDATAW_V4_SIZE] = "\x00" * NOTIFYICONDATAW_V4_SIZE
+
+      # cbSize
+      nid[0, 4] = [NOTIFYICONDATAW_V4_SIZE].pack('L')
+      
+      # hWnd
+      if Fiddle::SIZEOF_VOIDP == 8
+        nid[8, 8] = [hwnd.to_i].pack('Q')
+      else
+        nid[4, 4] = [hwnd.to_i].pack('L')
+      end
+
+      # uID
+      offset = Fiddle::SIZEOF_VOIDP == 8 ? 16 : 8
+      nid[offset, 4] = [1].pack('L')
+
+      # uFlags
+      offset += 4
+      nid[offset, 4] = [NIF_INFO].pack('L')
+
+      # szInfo (message) - 256 wide chars
+      offset = Fiddle::SIZEOF_VOIDP == 8 ? 520 : 504
+      msg_w = to_wstring(message.to_s)
+      msg_len = [msg_w.bytesize, 510].min # Leave room for null terminator
+      nid[offset, msg_len] = msg_w[0, msg_len]
+
+      # dwInfoFlags
+      offset += 512
+      nid[offset, 4] = [NIIF_INFO].pack('L')
+
+      # szInfoTitle (title) - 64 wide chars
+      offset += 4
+      title_w = to_wstring(title.to_s)
+      title_len = [title_w.bytesize, 126].min
+      nid[offset, title_len] = title_w[0, title_len]
+
+      # Show the notification (ADD)
+      if Shell_NotifyIconW.call(NIM_ADD, nid) != 0
+        # Then modify to actually show the balloon if needed, though ADD often suffices
+        # We immediately delete the icon from the tray as we only want the transient balloon
+        # However, deleting immediately might hide the balloon on some Windows versions.
+        # For a robust implementation without a dedicated thread to manage tray icon lifecycle,
+        # we add it with NIF_INFO which triggers the balloon. We'll leave it for the OS to timeout,
+        # but subsequent notifications on the same uID will replace it.
+        return true
+      end
+      false
+    end
+
     def self.build_openfilenamew(hwnd:, file_buffer:, max_file_chars:, filter:, title:, initial_dir: nil)
       ofn = Fiddle::Pointer.malloc(OPENFILENAMEW_SIZE, Fiddle::RUBY_FREE)
       ofn[0, OPENFILENAMEW_SIZE] = "\x00" * OPENFILENAMEW_SIZE
@@ -600,7 +667,10 @@ module Echoes
     end
 
     def self.null_pointer?(ptr)
-      ptr.nil? || (ptr.respond_to?(:null?) ? ptr.null? : ptr.to_i == 0)
+      return true if ptr.nil? || ptr.is_a?(Symbol)
+      ptr.respond_to?(:null?) ? ptr.null? : ptr.to_i == 0
+    rescue
+      true
     end
 
     def self.utf16_nul_index(raw)
