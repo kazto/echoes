@@ -59,7 +59,7 @@ Inventory date: 2026-05-26.
 | Font fallback | `CTFontCreateForString` | `GetGlyphIndicesW` plus fallback families | Partial | `lib/echoes/gui_win32.rb` | Fallback runs exist for common Japanese/emoji/symbol fonts. Complex shaping/color emoji are still GDI-limited. |
 | Underline/strikethrough | AppKit text attributes | Explicit GDI rectangle decorations | Done | `lib/echoes/gui_win32.rb` | Decorations are drawn manually. |
 | Ligature suppression | `NSLigatureAttributeName` | GDI text rendering | Missing | - | GDI path does not expose equivalent ligature control. |
-| Gradients | `NSGradient#drawInRect:angle:` | Manual GDI scanline fill | Partial | `lib/echoes/gui_win32.rb` | Windows paints OSC flat pane backgrounds, bg-fill overlays, and two-endpoint linear gradients. Alpha blending and multi-stop gradients are not equivalent to AppKit. |
+| Gradients | `NSGradient#drawInRect:angle:` | Manual GDI scanline fill | Partial | `lib/echoes/gui_win32.rb` | Windows paints OSC flat pane backgrounds, bg-fill overlays, alpha-blended colors, and multi-stop linear gradients. It is still a GDI scanline implementation rather than AppKit's `NSGradient`. |
 | CoreGraphics image drawing | `CGContextDrawImage`, `CGImage` | GDI `StretchDIBits` with BGRA DIB | Done | `lib/echoes/gui_win32.rb` | Kitty/iTerm image placements are drawn from RGBA buffers. |
 | PNG decode | `NSData`, `NSBitmapImageRep`, `CGImage` | GDI+ `GdipCreateBitmapFromStream` path | Done | `lib/echoes/kitty_graphics_win32.rb` | PNG decode returns the same RGBA shape expected by renderers. |
 | Raw RGB/RGBA conversion | `CGDataProviderCreateWithData`, `CGImageCreate` | Ruby buffer conversion / GDI+ path | Done | `lib/echoes/kitty_graphics_win32.rb` | `from_rgb` and `from_rgba` exist. |
@@ -103,7 +103,7 @@ The largest remaining AppKit parity gaps are:
 - In-process multiple native windows and full AppKit-style Window menu behavior.
 - Vector pane capture.
 - Full Cocoa-style IME/text-input parity.
-- Full gradient alpha/multi-stop parity, ligature control, per-cell cursor rect parity, and richer font shaping.
+- Ligature control, per-cell cursor rect parity, and richer font shaping.
 - Native toast notifications.
 - Embedded rubish mode, which also blocks user-visible completion popup parity on Windows.
 - Robust Ctrl-C delivery through ConPTY.

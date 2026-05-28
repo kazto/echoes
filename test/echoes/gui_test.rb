@@ -1339,12 +1339,38 @@ if Echoes::Platform.windows?
         fills << [left, top, right, bottom, color]
       end
 
-      gui.send(:draw_linear_gradient, :hdc, 1, 2, 3, 2, [0, 0, 0], [255, 255, 255], 90)
+      gui.send(:draw_linear_gradient, :hdc, 1, 2, 3, 2, [[0, 0, 0, 1.0], [255, 255, 255, 1.0]], 90)
 
       assert_equal [
         [1, 2, 4, 3, 0x000000],
         [1, 3, 4, 4, 0xffffff]
       ], fills
+    end
+
+    test "Windows linear gradient supports multiple color stops" do
+      gui = Echoes::GUI.allocate
+      fills = []
+      gui.define_singleton_method(:fill_rect_color) do |_hdc, left, top, right, bottom, color|
+        fills << [left, top, right, bottom, color]
+      end
+
+      gui.send(:draw_linear_gradient, :hdc, 1, 2, 5, 1, [[0, 0, 0, 1.0], [255, 0, 0, 1.0], [255, 255, 255, 1.0]], 0)
+
+      assert_equal [
+        [1, 2, 2, 3, 0x000000],
+        [2, 2, 3, 3, 0x000080],
+        [3, 2, 4, 3, 0x0000ff],
+        [4, 2, 5, 3, 0x8080ff],
+        [5, 2, 6, 3, 0xffffff]
+      ], fills
+    end
+
+    test "Windows RGBA colors are blended against the default background" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@default_bg, 0x000000)
+
+      assert_equal [128, 0, 0], gui.send(:rgba_to_rgb, [255, 0, 0, 0.5])
+      assert_equal 0x000080, gui.send(:rgba_to_color, [255, 0, 0, 0.5])
     end
 
     test "Windows pane drawing skips wide-char continuation cells" do

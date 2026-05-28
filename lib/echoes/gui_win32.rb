@@ -2274,8 +2274,7 @@ module Echoes
           py,
           width,
           height,
-          rgba_to_rgb(colors.first),
-          rgba_to_rgb(colors.last),
+          colors,
           spec[:angle].to_f
         )
       end
@@ -2302,8 +2301,9 @@ module Echoes
       end
     end
 
-    private def draw_linear_gradient(hdc, x, y, width, height, start_rgb, end_rgb, angle)
+    private def draw_linear_gradient(hdc, x, y, width, height, colors, angle)
       return if width <= 0 || height <= 0
+      return if !colors || colors.empty?
 
       horizontal = Math.cos(angle * Math::PI / 180.0).abs >= Math.sin(angle * Math::PI / 180.0).abs
       steps = horizontal ? width : height
@@ -2311,13 +2311,25 @@ module Echoes
 
       steps.times do |i|
         t = steps == 1 ? 0.0 : i.to_f / (steps - 1)
-        color = interpolate_color(start_rgb, end_rgb, t)
+        color = gradient_color_at(colors, t)
         if horizontal
           fill_rect_color(hdc, x + i, y, x + i + 1, y + height, color)
         else
           fill_rect_color(hdc, x, y + i, x + width, y + i + 1, color)
         end
       end
+    end
+
+    private def gradient_color_at(colors, t)
+      return rgba_to_color(colors.first) if colors.size == 1
+
+      position = t.clamp(0.0, 1.0) * (colors.size - 1)
+      index = position.floor
+      index = colors.size - 2 if index >= colors.size - 1
+      local_t = position - index
+      start_rgb = rgba_to_rgb(colors[index])
+      end_rgb = rgba_to_rgb(colors[index + 1])
+      interpolate_color(start_rgb, end_rgb, local_t)
     end
 
     private def interpolate_color(start_rgb, end_rgb, t)
@@ -2333,10 +2345,22 @@ module Echoes
     end
 
     private def rgba_to_rgb(rgba)
-      rgba[0, 3].map do |component|
+      rgb = rgba[0, 3].map do |component|
         value = component.to_f
         value <= 1.0 ? (value * 255).round : value.round
       end
+      alpha = rgba[3].nil? ? 1.0 : rgba[3].to_f
+      alpha /= 255.0 if alpha > 1.0
+      alpha = alpha.clamp(0.0, 1.0)
+      return rgb if alpha >= 1.0
+
+      base = colorref_to_rgb(@default_bg || 0)
+      rgb.zip(base).map { |component, base_component| (component * alpha + base_component * (1.0 - alpha)).round }
+    end
+
+    private def colorref_to_rgb(color)
+      value = color.to_i
+      [value & 0xFF, (value >> 8) & 0xFF, (value >> 16) & 0xFF]
     end
 
     private def draw_multicell_text(hdc, cell, x, y, fg_color, bg_color)
