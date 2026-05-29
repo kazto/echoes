@@ -167,8 +167,8 @@ module Echoes
     end
 
     def tab_bar_height
-      return 0.0 if @tabs.size <= 1
-      (@cell_height || 16.0) + 4.0
+      return 0.0 unless @cell_height
+      @cell_height + 4.0
     end
 
     def tab_bar_y

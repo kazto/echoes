@@ -127,6 +127,8 @@ module Echoes
     # Window management functions
     SetForegroundWindow = new_func(USER32, 'SetForegroundWindow', [P], I)
     GetWindowTextW      = new_func(USER32, 'GetWindowTextW', [P, P, I], I)
+    GetWindowLongW      = new_func(USER32, 'GetWindowLongW', [P, I], L)
+    GetMenu             = new_func(USER32, 'GetMenu', [P], P)
 
     # --- Imm32 (IME) Functions ---
     ImmGetContext            = new_func(IMM32, 'ImmGetContext', [P], P)
@@ -176,6 +178,11 @@ module Echoes
     SW_MAXIMIZE        = 3
     SW_SHOW            = 5
     SW_RESTORE         = 9
+    GWL_STYLE          = -16
+    GWL_EXSTYLE        = -20
+    SWP_NOMOVE         = 0x0002
+    SWP_NOZORDER       = 0x0004
+    SWP_NOSIZE         = 0x0001
 
     # Windows Messages
     WM_DESTROY         = 0x0002
@@ -517,7 +524,7 @@ module Echoes
 
       # cbSize
       nid[0, 4] = [NOTIFYICONDATAW_V4_SIZE].pack('L')
-      
+
       # hWnd
       if Fiddle::SIZEOF_VOIDP == 8
         nid[8, 8] = [hwnd.to_i].pack('Q')
@@ -525,13 +532,31 @@ module Echoes
         nid[4, 4] = [hwnd.to_i].pack('L')
       end
 
-      # uID
+      # uID - use same ID for all notifications so they replace each other
       offset = Fiddle::SIZEOF_VOIDP == 8 ? 16 : 8
       nid[offset, 4] = [1].pack('L')
 
-      # uFlags
+      # uFlags - show icon and balloon
       offset += 4
-      nid[offset, 4] = [NIF_INFO].pack('L')
+      nid[offset, 4] = [NIF_INFO | NIF_ICON].pack('L')
+
+      # hIcon - use application icon if available
+      offset += 4
+      if Fiddle::SIZEOF_VOIDP == 8
+        icon_offset = 24
+      else
+        icon_offset = 12
+      end
+
+      # Try to get the window's icon
+      icon_handle = GetClassLongW ? GetClassLongW.call(hwnd, GCL_HICON) : 0
+      icon_handle = 0 if icon_handle == 0 || null_pointer?(icon_handle)
+
+      if Fiddle::SIZEOF_VOIDP == 8
+        nid[icon_offset, 8] = [icon_handle].pack('Q')
+      else
+        nid[icon_offset, 4] = [icon_handle].pack('L')
+      end
 
       # szInfo (message) - 256 wide chars
       offset = Fiddle::SIZEOF_VOIDP == 8 ? 520 : 504
@@ -549,17 +574,28 @@ module Echoes
       title_len = [title_w.bytesize, 126].min
       nid[offset, title_len] = title_w[0, title_len]
 
-      # Show the notification (ADD)
-      if Shell_NotifyIconW.call(NIM_ADD, nid) != 0
-        # Then modify to actually show the balloon if needed, though ADD often suffices
-        # We immediately delete the icon from the tray as we only want the transient balloon
-        # However, deleting immediately might hide the balloon on some Windows versions.
-        # For a robust implementation without a dedicated thread to manage tray icon lifecycle,
-        # we add it with NIF_INFO which triggers the balloon. We'll leave it for the OS to timeout,
-        # but subsequent notifications on the same uID will replace it.
-        return true
+      # First, try to delete any existing icon with the same ID to avoid duplicates
+      # and ensure the same ID doesn't accumulate in the tray
+      cleanup_nid = Fiddle::Pointer.malloc(NOTIFYICONDATAW_V4_SIZE, Fiddle::RUBY_FREE)
+      cleanup_nid[0, NOTIFYICONDATAW_V4_SIZE] = "\x00" * NOTIFYICONDATAW_V4_SIZE
+      cleanup_nid[0, 4] = [NOTIFYICONDATAW_V4_SIZE].pack('L')
+
+      if Fiddle::SIZEOF_VOIDP == 8
+        cleanup_nid[8, 8] = [hwnd.to_i].pack('Q')
+        cleanup_nid[16, 4] = [1].pack('L')
+      else
+        cleanup_nid[4, 4] = [hwnd.to_i].pack('L')
+        cleanup_nid[8, 4] = [1].pack('L')
       end
-      false
+
+      # Silently ignore cleanup errors
+      Shell_NotifyIconW.call(NIM_DELETE, cleanup_nid)
+
+      # Show the notification (ADD)
+      # The icon will remain in the tray after the balloon times out, but will be
+      # replaced by subsequent notifications using the same uID. This is a known
+      # limitation of balloon notifications without a dedicated cleanup mechanism.
+      Shell_NotifyIconW.call(NIM_ADD, nid) != 0
     end
 
     def self.build_openfilenamew(hwnd:, file_buffer:, max_file_chars:, filter:, title:, initial_dir: nil)

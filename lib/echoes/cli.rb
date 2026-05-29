@@ -18,6 +18,8 @@ module Echoes
         (installer || Echoes::Installer).public_send(args.shift)
       else
         load_core.call
+        # Load user configuration before starting the interface
+        Echoes.load_config
         if args.delete("--tty") || args.delete("-t")
           terminal_runner.call
         else

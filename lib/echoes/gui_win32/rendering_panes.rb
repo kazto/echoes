@@ -55,7 +55,20 @@ module Echoes
     end
 
     private def default_window_rect
-      {x: 100, y: 100, w: 800, h: 600}
+      # Calculate window size based on desired rows/cols plus tab bar height
+      # Estimate cell size before fonts are loaded
+      estimated_cell_w = 8
+      estimated_cell_h = 16
+      tab_bar_h = estimated_cell_h + 4  # Always include tab bar
+
+      client_w = (@cols || 80) * estimated_cell_w
+      client_h = (@rows || 24) * estimated_cell_h + tab_bar_h
+
+      # Add room for title bar, borders, and menu (approximate)
+      window_w = client_w + 16
+      window_h = client_h + 40
+
+      {x: 100, y: 100, w: window_w, h: window_h}
     end
 
     WINDOW_RECT_PREFERENCE_KEYS = {

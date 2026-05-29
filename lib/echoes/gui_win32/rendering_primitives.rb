@@ -177,7 +177,14 @@ module Echoes
       return false unless @cell_width && @cell_width > 0 && @cell_height && @cell_height > 0
 
       cols = (width / @cell_width).to_i
-      rows = (height / @cell_height).to_i
+
+      # Account for tab bar height when calculating rows
+      tbh = tab_bar_height.to_i
+      available_height = tbh > 0 ? height - tbh : height
+      rows = (available_height / @cell_height).to_i
+
+      warn "[DEBUG] Resize: w=#{width}, h=#{height}, tbh=#{tbh}, avail_h=#{available_height}, cell_h=#{@cell_height}, rows=#{rows}, @rows=#{@rows}, @cols=#{@cols}"
+
       return false if cols <= 0 || rows <= 0
       return false if cols == @cols && rows == @rows
 
@@ -219,7 +226,7 @@ module Echoes
           gh = rect[:h]
 
           px = gx * @cell_width
-          py = gy * @cell_height + tbh
+          py = gy * @cell_height + tbh  # Offset by tab bar height
           pw = gw * @cell_width
           ph = gh * @cell_height
 
