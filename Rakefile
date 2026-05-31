@@ -49,6 +49,19 @@ namespace :test do
     t.libs << "lib"
     t.test_files = CORE_TEST_FILES
   end
+
+  desc "Run the Windows GUI smoke verification"
+  task :windows_gui_smoke do
+    abort "test:windows_gui_smoke is only available on Windows" unless Echoes::Platform.windows?
+
+    script = File.expand_path("script/windows_gui_smoke.ps1", __dir__)
+    abort "missing Windows GUI smoke script: #{script}" unless File.exist?(script)
+
+    powershell = ENV.fetch("POWERSHELL", "powershell.exe")
+    command = [powershell, "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script]
+    puts command.map { |part| part.include?(" ") ? %("#{part}") : part }.join(" ")
+    raise "Windows GUI smoke failed" unless system(*command)
+  end
 end
 
 task default: :test

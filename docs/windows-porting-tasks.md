@@ -10,6 +10,10 @@
 
 更新日: 2026-05-25
 
+- E2E テスト充実の TODO:
+  - Windows GUI smoke は `bundle exec rake test:windows_gui_smoke` として切り出した。次は CI 反映と失敗条件の調整を進める。
+  - `rake test:core` は Windows GUI の単一タブ時タブバーオフセット修正で通過済み。今後は GUI E2E と並行して回帰監視を続ける。
+  - ConPTY の実機寄りテストは `shell_backend_test.rb` で通過しているため、次は GUI 起動 smoke の自動化と CI 反映を進める。
 - `feature/windows` ブランチで Phase 1 と Phase 2 の最小対応を進行中。
 - `Echoes::Platform` を追加し、OS 判定と default shell 判定を集約済み。
 - `ShakeDetector` を AppKit GUI から切り出し、Windows でも OS 非依存テストに含められる状態に更新済み。
@@ -53,7 +57,7 @@
   - Enter でコマンド出力が表示される。
   - resize 後も表示が崩れず、終了後に `cmd.exe` / ConPTY process が残らない。
 - [x] Windows GUI 手動確認の結果を `Phase 8` と `Phase 12` に反映する。
-  - 確認コマンドは `ruby -Ilib exe\echoes`。自動化補助で Win32 window にキー入力し、`tmp/gui-smoke/*.png` のスクリーンショットで表示を確認。
+  - 確認コマンドは `bundle exec rake test:windows_gui_smoke`。タスクが `ruby -Ilib exe\echoes` を起動し、自動化補助で Win32 window にキー入力して `tmp/gui-smoke/*.png` を生成する。
   - 初回 resize 確認で ConPTY resize repaint により画面が `dir` のみになる崩れを再現。`WindowsConPTYBackend` で `cmd.exe` resize repaint を破棄する補正を追加し、修正後に `dir` listing が維持されることを確認。
 
 リリース前に必要な確認:
@@ -372,7 +376,7 @@
   - ConPTY process tree cleanup テスト追加後: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 14 tests, 23 assertions, 0 failures。
   - Windows ConPTY locale encoding テスト追加後: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 17 tests, 28 assertions, 0 failures。
   - `pane_test.rb`, `tab_test.rb` も ConPTY backend 統合後に通過済み。
-- [ ] Windows GUI 手動確認を実施する。
+- [ ] `bundle exec rake test:windows_gui_smoke` を実行して Windows GUI smoke を確認する。
 - [x] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。
 - [ ] 未対応機能を明示したリリースノート草案を作る。
 

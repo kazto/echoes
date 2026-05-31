@@ -123,6 +123,7 @@ Echoes::Client.bg_clear
 bin/setup
 bundle exec rake test       # run all tests
 ruby -S rake test:core      # Windows-friendly core test subset
+bundle exec rake test:windows_gui_smoke  # Windows GUI smoke on Windows
 bundle exec exe/echoes      # launch from the working tree
 bin/console                 # irb with the gem loaded
 ```
