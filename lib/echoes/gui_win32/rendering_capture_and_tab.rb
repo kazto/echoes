@@ -411,6 +411,22 @@ module Echoes
           end
         end
       end
+
+      if @selection_anchor && @selection_end
+        (sr, sc), (er, ec) = [@selection_anchor, @selection_end].sort_by { |p| [p[0], p[1]] }
+        if src_row >= sr && src_row <= er
+          if src_row == sr && src_row == er
+            return col >= sc && col <= ec
+          elsif src_row == sr
+            return col >= sc
+          elsif src_row == er
+            return col <= ec
+          else
+            return true
+          end
+        end
+      end
+
       false
     end
 

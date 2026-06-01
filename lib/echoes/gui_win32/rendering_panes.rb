@@ -315,12 +315,17 @@ module Echoes
     private def selection_range
       pane = current_tab&.active_pane
       copy_mode = pane&.copy_mode
-      return nil unless copy_mode && copy_mode.active && copy_mode.selecting?
+      if copy_mode && copy_mode.active && copy_mode.selecting?
+        (sr, sc), (er, ec) = [copy_mode.selection_start, copy_mode.selection_end].sort_by { |p| [p[0], p[1]] }
+        scrollback_size = pane.screen.scrollback.size
+        sr += scrollback_size
+        er += scrollback_size
+        return [sr, sc, er, ec]
+      end
 
-      (sr, sc), (er, ec) = [copy_mode.selection_start, copy_mode.selection_end].sort_by { |p| [p[0], p[1]] }
-      scrollback_size = pane.screen.scrollback.size
-      sr += scrollback_size
-      er += scrollback_size
+      return nil unless @selection_anchor && @selection_end
+
+      (sr, sc), (er, ec) = [@selection_anchor, @selection_end].sort_by { |p| [p[0], p[1]] }
       [sr, sc, er, ec]
     end
 

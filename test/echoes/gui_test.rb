@@ -19,6 +19,11 @@ if Echoes::Platform.windows?
         writes << str
       end
     end
+    StubSelectablePane = Struct.new(:screen, :writes, :scroll_offset, :scroll_accum, :copy_mode) do
+      def write_input(str)
+        writes << str
+      end
+    end
     StubEmbeddedPane = Struct.new(:screen, :request, :applied) do
       def embedded? = true
       def embedded_shell = self
@@ -344,6 +349,176 @@ if Echoes::Platform.windows?
 
       assert_equal ["\e[<0;3;2M", "\e[<32;4;3M", "\e[<3;4;3m"], pane.writes
       assert_nil gui.instance_variable_get(:@mouse_button_down)
+    end
+
+    test "Windows left drag updates normal text selection when mouse tracking is off" do
+      screen = Echoes::Screen.new(rows: 4, cols: 10)
+      screen.scrollback << Array.new(10) { Echoes::Cell.new }
+      pane = StubSelectablePane.new(screen, [], 1, 0.0, nil)
+      pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      gui.instance_variable_set(:@cols, 10)
+      gui.instance_variable_set(:@rows, 4)
+      gui.define_singleton_method(:control_pressed?) { false }
+      gui.define_singleton_method(:invalidate_window) { true }
+
+      down = (1 * 16 << 16) | (2 * 8)
+      move = (2 * 16 << 16) | (4 * 8)
+      assert_true gui.send(:handle_left_button_down, nil, down)
+      assert_true gui.send(:handle_mouse_move, move)
+      assert_true gui.send(:handle_mouse_button_up, move)
+
+      assert_equal [1, 2], gui.instance_variable_get(:@selection_anchor)
+      assert_equal [2, 4], gui.instance_variable_get(:@selection_end)
+      assert_equal [1, 2, 2, 4], gui.send(:selection_range)
+      assert_equal [], pane.writes
+      assert_nil gui.instance_variable_get(:@mouse_button_down)
+    end
+
+    test "Windows Ctrl+C copies normal text selection without writing interrupt" do
+      screen = Echoes::Screen.new(rows: 1, cols: 10)
+      "hello".chars.each_with_index { |char, index| screen.grid[0][index].char = char }
+      pane = StubSelectablePane.new(screen, [], 0, 0.0, nil)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.instance_variable_set(:@cols, 10)
+      gui.instance_variable_set(:@hwnd, nil)
+      gui.instance_variable_set(:@selection_anchor, [0, 1])
+      gui.instance_variable_set(:@selection_end, [0, 3])
+
+      captured = nil
+      with_win32_clipboard_setter(->(_hwnd, text) { captured = text }) do
+        assert_true gui.send(:handle_normal_selection_keydown, 0x43, ctrl_pressed: true, shift_pressed: false)
+      end
+
+      assert_equal "ell", captured
+      assert_equal [], pane.writes
+      assert_equal [0, 1], gui.instance_variable_get(:@selection_anchor)
+      assert_equal [0, 3], gui.instance_variable_get(:@selection_end)
+    end
+
+    test "Windows Ctrl+C selection message is handled before window dispatch" do
+      screen = Echoes::Screen.new(rows: 1, cols: 10)
+      "hello".chars.each_with_index { |char, index| screen.grid[0][index].char = char }
+      pane = StubSelectablePane.new(screen, [], 0, 0.0, nil)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.instance_variable_set(:@cols, 10)
+      gui.instance_variable_set(:@hwnd, nil)
+      gui.instance_variable_set(:@selection_anchor, [0, 1])
+      gui.instance_variable_set(:@selection_end, [0, 3])
+
+      captured = nil
+      key_state = ->(vk) { vk == Echoes::Win32::VK_CONTROL ? 0x8000 : 0 }
+      with_win32_const(:GetKeyState, key_state) do
+        with_win32_clipboard_setter(->(_hwnd, text) { captured = text }) do
+          assert_true gui.send(:handle_normal_selection_key_message, Echoes::Win32::WM_KEYDOWN, 0x43)
+        end
+      end
+
+      assert_equal "ell", captured
+      assert_equal [], pane.writes
+    end
+
+    test "Windows modifier key alone keeps normal text selection for shortcuts" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@selection_anchor, [0, 1])
+      gui.instance_variable_set(:@selection_end, [0, 3])
+
+      assert_false gui.send(:handle_normal_selection_keydown, Echoes::Win32::VK_CONTROL,
+                            ctrl_pressed: true, shift_pressed: false)
+
+      assert_equal [0, 1], gui.instance_variable_get(:@selection_anchor)
+      assert_equal [0, 3], gui.instance_variable_get(:@selection_end)
+    end
+
+    test "Windows Ctrl+C follow-up WM_CHAR is swallowed while normal selection remains active" do
+      screen = Echoes::Screen.new(rows: 1, cols: 10)
+      pane = StubSelectablePane.new(screen, [], 0, 0.0, nil)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.instance_variable_set(:@selection_anchor, [0, 1])
+      gui.instance_variable_set(:@selection_end, [0, 3])
+
+      assert_true gui.send(:handle_normal_selection_char, 0x03)
+      assert_equal [], pane.writes
+      assert_equal [0, 1], gui.instance_variable_get(:@selection_anchor)
+      assert_equal [0, 3], gui.instance_variable_get(:@selection_end)
+    end
+
+    test "Windows non-copy key clears normal text selection without forwarding input" do
+      [
+        [0x08, false, false], # Backspace
+        [0x0D, false, false], # Enter
+        [0x41, false, false], # A
+        [0x56, true, false],  # Ctrl+V
+        [0x26, false, false]  # Up
+      ].each do |vk, ctrl_pressed, shift_pressed|
+        screen = Echoes::Screen.new(rows: 1, cols: 10)
+        pane = StubSelectablePane.new(screen, [], 0, 0.0, nil)
+        gui = Echoes::GUI.allocate
+        gui.instance_variable_set(:@active_tab, 0)
+        gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+        gui.instance_variable_set(:@selection_anchor, [0, 1])
+        gui.instance_variable_set(:@selection_end, [0, 3])
+        invalidations = 0
+        gui.define_singleton_method(:invalidate_window) { invalidations += 1 }
+
+        assert_true gui.send(:handle_normal_selection_keydown, vk,
+                             ctrl_pressed: ctrl_pressed,
+                             shift_pressed: shift_pressed)
+
+        assert_nil gui.instance_variable_get(:@selection_anchor)
+        assert_nil gui.instance_variable_get(:@selection_end)
+        assert_equal [], pane.writes
+        assert_equal 1, invalidations
+      end
+    end
+
+    test "Windows Escape clears normal text selection" do
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@selection_anchor, [0, 1])
+      gui.instance_variable_set(:@selection_end, [0, 3])
+      invalidations = 0
+      gui.define_singleton_method(:invalidate_window) { invalidations += 1 }
+
+      assert_true gui.send(:handle_normal_selection_keydown, 0x1B, ctrl_pressed: false, shift_pressed: false)
+
+      assert_nil gui.instance_variable_get(:@selection_anchor)
+      assert_nil gui.instance_variable_get(:@selection_end)
+      assert_equal 1, invalidations
+    end
+
+    test "Windows single click clears normal text selection without selecting a cell" do
+      screen = Echoes::Screen.new(rows: 4, cols: 10)
+      pane = StubSelectablePane.new(screen, [], 0, 0.0, nil)
+      pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
+      gui.instance_variable_set(:@cell_width, 8)
+      gui.instance_variable_set(:@cell_height, 16)
+      gui.instance_variable_set(:@cols, 10)
+      gui.instance_variable_set(:@rows, 4)
+      gui.instance_variable_set(:@selection_anchor, [0, 1])
+      gui.instance_variable_set(:@selection_end, [0, 3])
+      gui.define_singleton_method(:control_pressed?) { false }
+      gui.define_singleton_method(:invalidate_window) { true }
+
+      lparam = (1 * 16 << 16) | (2 * 8)
+      assert_true gui.send(:handle_left_button_down, nil, lparam)
+      assert_true gui.send(:handle_mouse_button_up, lparam)
+
+      assert_nil gui.instance_variable_get(:@selection_anchor)
+      assert_nil gui.instance_variable_get(:@selection_end)
+      assert_nil gui.send(:selection_range)
     end
 
     test "Windows right mouse reports button two" do

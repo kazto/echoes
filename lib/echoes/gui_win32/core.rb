@@ -121,6 +121,9 @@ module Echoes
       @running = false
       @window_focused = true
       @mouse_button_down = nil
+      @selection_anchor = nil
+      @selection_end = nil
+      @selection_dragged = false
       @pointer_hidden = false
       @shake_detector = nil
       @marked_text = nil # IME inline composition string
@@ -322,6 +325,8 @@ module Echoes
 
         when Win32::WM_CHAR
           char_code = wparam.to_i
+          return 0 if handle_normal_selection_char(char_code)
+
           unless [0x08, 0x09, 0x0D, 0x1B].include?(char_code)
             utf8_char = [char_code].pack('S').force_encoding('UTF-16LE').encode('UTF-8') rescue nil
             if utf8_char && (pane = current_tab&.active_pane)&.copy_mode&.active
@@ -344,6 +349,10 @@ module Echoes
           vk = wparam.to_i
           ctrl_pressed = (Win32::GetKeyState.call(0x11) & 0x8000) != 0
           shift_pressed = (Win32::GetKeyState.call(0x10) & 0x8000) != 0
+
+          if handle_normal_selection_keydown(vk, ctrl_pressed: ctrl_pressed, shift_pressed: shift_pressed)
+            return 0
+          end
 
           if (pane = current_tab&.active_pane)&.copy_mode&.active
             if (key = copy_mode_key_for_keydown(vk, ctrl_pressed: ctrl_pressed))
@@ -463,6 +472,8 @@ module Echoes
             @running = false
             break
           end
+          wparam = msg_struct[16, Fiddle::SIZEOF_VOIDP].unpack1(Fiddle::SIZEOF_VOIDP == 8 ? 'Q' : 'L')
+          next if handle_normal_selection_key_message(message, wparam)
           next if translate_accelerator(msg_struct)
 
           Win32::TranslateMessage.call(msg_struct)

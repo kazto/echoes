@@ -491,7 +491,13 @@ module Echoes
         return true
       end
 
-      false
+      abs_row = pane.screen.scrollback.size - pane.scroll_offset.to_i + local_row
+      @mouse_button_down = :selection
+      @selection_anchor = [abs_row, col]
+      @selection_end = nil
+      @selection_dragged = false
+      invalidate_window
+      true
     end
 
     private def handle_mouse_button_down(hwnd, lparam, button, name)
@@ -521,10 +527,21 @@ module Echoes
 
     private def handle_mouse_button_up(lparam)
       target = mouse_target_from_lparam(lparam)
+      selecting = @mouse_button_down == :selection
       @mouse_button_down = nil
       return false unless target
 
       tab, pane, row, col = target.values_at(:tab, :pane, :row, :col)
+      if selecting
+        if @selection_dragged && @selection_anchor
+          @selection_end = [pane.screen.scrollback.size - pane.scroll_offset.to_i + row, col]
+        else
+          clear_normal_selection
+        end
+        invalidate_window
+        return true
+      end
+
       return false if pane.screen.mouse_tracking == :off || pane.screen.mouse_tracking == :x10
 
       tab.pane_tree.active_pane = pane if pane != tab.active_pane
@@ -540,6 +557,14 @@ module Echoes
       return false unless target
 
       tab, pane, row, col = target.values_at(:tab, :pane, :row, :col)
+      if @mouse_button_down == :selection
+        end_pos = [pane.screen.scrollback.size - pane.scroll_offset.to_i + row, col]
+        @selection_dragged ||= @selection_anchor && end_pos != @selection_anchor
+        @selection_end = end_pos if @selection_dragged
+        invalidate_window
+        return true
+      end
+
       return false unless [:button_event, :any_event].include?(pane.screen.mouse_tracking)
 
       tab.pane_tree.active_pane = pane if pane != tab.active_pane
@@ -556,6 +581,59 @@ module Echoes
       when :xbutton2 then 41
       else 32
       end
+    end
+
+    private def normal_selection_active?
+      !!(@selection_anchor && @selection_end)
+    end
+
+    private def clear_normal_selection
+      @selection_anchor = nil
+      @selection_end = nil
+      @selection_dragged = false
+    end
+
+    private def handle_normal_selection_keydown(vk, ctrl_pressed:, shift_pressed:)
+      return false unless normal_selection_active?
+
+      if normal_selection_copy_key?(vk, ctrl_pressed: ctrl_pressed, shift_pressed: shift_pressed)
+        copy_to_clipboard
+        return true
+      end
+
+      return false if normal_selection_modifier_key?(vk)
+
+      clear_normal_selection
+      invalidate_window
+      true
+    end
+
+    private def handle_normal_selection_key_message(message, wparam)
+      return false unless message == Win32::WM_KEYDOWN
+      return false unless normal_selection_active?
+
+      vk = wparam.to_i
+      ctrl_pressed = (Win32::GetKeyState.call(0x11) & 0x8000) != 0
+      shift_pressed = (Win32::GetKeyState.call(0x10) & 0x8000) != 0
+      handle_normal_selection_keydown(vk, ctrl_pressed: ctrl_pressed, shift_pressed: shift_pressed)
+    end
+
+    private def normal_selection_copy_key?(vk, ctrl_pressed:, shift_pressed:)
+      ctrl_pressed && !shift_pressed && vk.to_i == 0x43 # C
+    end
+
+    private def normal_selection_modifier_key?(vk)
+      [
+        0x10, # Shift
+        Win32::VK_CONTROL,
+        0x12, # Alt
+        0x5B, # Left Windows
+        0x5C  # Right Windows
+      ].include?(vk.to_i)
+    end
+
+    private def handle_normal_selection_char(char_code)
+      normal_selection_active? && char_code.to_i > 0 && char_code.to_i < 0x20
     end
 
     private def observe_pointer_shake(lparam)
