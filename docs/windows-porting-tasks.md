@@ -11,9 +11,10 @@
 更新日: 2026-05-25
 
 - E2E テスト充実の TODO:
-  - Windows GUI smoke は `bundle exec rake test:windows_gui_smoke` として切り出した。次は CI 反映と失敗条件の調整を進める。
+  - Windows GUI smoke は `bundle exec rake test:windows_gui_smoke` として切り出し、2026-06-01 にローカル Windows で通過確認済み。
+  - GUI smoke は実ウィンドウ、SendKeys、CopyFromScreen に依存するため、GitHub hosted CI の必須チェックへ入れる前に desktop session の安定性を検証する。現時点では `workflow_dispatch` の opt-in job として追加済み。
   - `rake test:core` は Windows GUI の単一タブ時タブバーオフセット修正で通過済み。今後は GUI E2E と並行して回帰監視を続ける。
-  - ConPTY の実機寄りテストは `shell_backend_test.rb` で通過しているため、次は GUI 起動 smoke の自動化と CI 反映を進める。
+  - ConPTY の実機寄りテストは `shell_backend_test.rb` で通過している。次は GUI smoke を CI へ入れる条件を検証し、必要なら opt-in job として追加する。
 - `feature/windows` ブランチで Phase 1 と Phase 2 の最小対応を進行中。
 - `Echoes::Platform` を追加し、OS 判定と default shell 判定を集約済み。
 - `ShakeDetector` を AppKit GUI から切り出し、Windows でも OS 非依存テストに含められる状態に更新済み。
@@ -376,7 +377,9 @@
   - ConPTY process tree cleanup テスト追加後: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 14 tests, 23 assertions, 0 failures。
   - Windows ConPTY locale encoding テスト追加後: `ruby -Itest -Ilib test\echoes\shell_backend_test.rb`: 17 tests, 28 assertions, 0 failures。
   - `pane_test.rb`, `tab_test.rb` も ConPTY backend 統合後に通過済み。
-- [ ] `bundle exec rake test:windows_gui_smoke` を実行して Windows GUI smoke を確認する。
+- [x] `bundle exec rake test:windows_gui_smoke` を実行して Windows GUI smoke を確認する。
+  - 2026-06-01: `exited=true`、`tmp/gui-smoke/01-initial.png` から `05-resized.png` まで生成、`new_cmd_processes=[]` を確認。
+- [ ] GitHub Actions の `workflow_dispatch` で `run_windows_gui_smoke=true` を指定し、Windows hosted runner 上で GUI smoke が安定して動くか確認する。
 - [x] `README.md` と `docs/windows-porting-status.md` を最新状態に更新する。
 - [ ] 未対応機能を明示したリリースノート草案を作る。
 

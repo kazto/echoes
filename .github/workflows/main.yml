@@ -7,6 +7,14 @@ on:
 
   pull_request:
 
+  workflow_dispatch:
+    inputs:
+      run_windows_gui_smoke:
+        description: Run the interactive Windows GUI smoke task
+        required: false
+        default: false
+        type: boolean
+
 jobs:
   build:
     runs-on: macos-latest
@@ -44,3 +52,21 @@ jobs:
         run: gem install rake test-unit
       - name: Run core tests
         run: ruby -S rake test:core
+
+  windows-gui-smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_windows_gui_smoke }}
+    runs-on: windows-latest
+    name: Windows GUI smoke
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0'
+      - name: Install smoke test dependencies
+        run: gem install rake test-unit
+      - name: Run Windows GUI smoke
+        run: ruby -S rake test:windows_gui_smoke

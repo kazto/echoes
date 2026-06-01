@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
+  [string]$RepoRoot,
   [string]$OutDir
 )
 
@@ -21,6 +21,14 @@ public class NativeWin {
 }
 '@
 
+$scriptRootPath = if ($PSScriptRoot) {
+  $PSScriptRoot
+} else {
+  Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+if (-not $RepoRoot) {
+  $RepoRoot = Join-Path $scriptRootPath '..'
+}
 $repo = (Resolve-Path $RepoRoot).Path
 if (-not $OutDir) {
   $OutDir = Join-Path $repo 'tmp\gui-smoke'
