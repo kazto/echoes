@@ -108,6 +108,7 @@ module Echoes
 
     def read_available_output(max)
       output = @conpty.read_available_output(max)
+      output = normalize_conpty_cls_repaint(output)
       output = normalize_conpty_clear_multiline_repaint(output)
       output = normalize_conpty_repaint(output)
       output = normalize_conpty_home_erase_repaint(output)
@@ -250,7 +251,16 @@ module Echoes
     end
 
     CMD_INPUT_REPAINT_PREFIX = "\e[?25l\e[2J\e[m\e[H".b
+    CMD_FORM_FEED_CLEAR = /\A(?:cls\r\n)?(?:\r\n)?\f(?:\r\n)?(.*)\z/m.freeze
     CMD_CLEAR_MULTILINE_REPAINT = /\e\[\?25l\e\[2J\e\[m\e\[H(?=.*\r?\n).*?(?:\e\[\d+;\d+H|\e\[H)(?:\e\]0;[^\a]*\a)?\e\[\?25h/m.freeze
+
+    def normalize_conpty_cls_repaint(output)
+      if (match = CMD_FORM_FEED_CLEAR.match(output))
+        "\e[2J\e[3J\e[m\e[H".b + match[1]
+      else
+        output
+      end
+    end
 
     def normalize_conpty_clear_multiline_repaint(output)
       output.gsub(CMD_CLEAR_MULTILINE_REPAINT, "".b)

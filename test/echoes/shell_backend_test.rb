@@ -232,6 +232,94 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     backend&.close
   end
 
+  test "ConPTY backend translates cmd cls into a clear screen repaint" do
+    raw_output = "cls\r\n\f\r\nC:\\Users\\kazto\\src\\echoes>"
+    conpty = FakeConPTY.new([raw_output])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 10,
+      cols: 80,
+      conpty: conpty
+    )
+    screen = Echoes::Screen.new(rows: 10, cols: 80)
+    parser = Echoes::Parser.new(screen)
+
+    parser.feed("hello\r\nworld")
+    parser.feed(backend.read_available_output(16_384))
+
+    assert_false(screen.to_text.include?("cls"), "cls echo should be removed")
+    assert_equal("C:\\Users\\kazto\\src\\echoes>", screen.to_text)
+  ensure
+    backend&.close
+  end
+
+  test "ConPTY backend translates cmd cls form feed without extra newline" do
+    raw_output = "cls\r\n\fC:\\Users\\kazto\\src\\echoes>"
+    conpty = FakeConPTY.new([raw_output])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 10,
+      cols: 80,
+      conpty: conpty
+    )
+    screen = Echoes::Screen.new(rows: 10, cols: 80)
+    parser = Echoes::Parser.new(screen)
+
+    parser.feed("hello\r\nworld")
+    parser.feed(backend.read_available_output(16_384))
+
+    assert_false(screen.to_text.include?("cls"), "cls echo should be removed")
+    assert_equal("C:\\Users\\kazto\\src\\echoes>", screen.to_text)
+  ensure
+    backend&.close
+  end
+
+  test "ConPTY backend translates cmd cls when echo and form feed are split" do
+    conpty = FakeConPTY.new(["cls\r\n", "\fC:\\Users\\kazto\\src\\echoes>"])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 10,
+      cols: 80,
+      conpty: conpty
+    )
+    screen = Echoes::Screen.new(rows: 10, cols: 80)
+    parser = Echoes::Parser.new(screen)
+
+    parser.feed("hello\r\nworld")
+    parser.feed(backend.read_available_output(16_384))
+    parser.feed(backend.read_available_output(16_384))
+
+    assert_false(screen.to_text.include?("cls"), "cls echo should be removed")
+    assert_equal("C:\\Users\\kazto\\src\\echoes>", screen.to_text)
+  ensure
+    backend&.close
+  end
+
+  test "ConPTY backend translates cmd cls form feed after typed echo" do
+    conpty = FakeConPTY.new(["\r\n\fC:\\Users\\kazto\\src\\echoes>"])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 10,
+      cols: 80,
+      conpty: conpty
+    )
+    screen = Echoes::Screen.new(rows: 10, cols: 80)
+    parser = Echoes::Parser.new(screen)
+
+    parser.feed("hello\r\nworld\r\nC:\\Users\\kazto>cls")
+    parser.feed(backend.read_available_output(16_384))
+
+    assert_false(screen.to_text.include?("hello"), "previous output should be cleared")
+    assert_false(screen.to_text.include?("cls"), "typed cls should be cleared")
+    assert_equal("C:\\Users\\kazto\\src\\echoes>", screen.to_text)
+  ensure
+    backend&.close
+  end
+
   test "ConPTY backend translates cmd home erase repaint to backspace echo" do
     conpty = FakeConPTY.new(["\e[?25l\e[H  \e[H\e[?25h"])
     backend = Echoes::WindowsConPTYBackend.new(
