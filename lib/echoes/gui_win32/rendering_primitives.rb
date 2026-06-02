@@ -137,6 +137,27 @@ module Echoes
       @active_tab = 0
     end
 
+    private def close_dead_tabs
+      tabs = @tabs || []
+      dead_indices = tabs.each_index.select { |i| !tabs[i].alive? }
+      return false if dead_indices.empty?
+
+      dead_indices.reverse_each do |index|
+        tab = tabs[index]
+        tab&.close rescue nil
+        tabs.delete_at(index)
+      end
+
+      if tabs.empty?
+        request_window_close
+      else
+        @active_tab = [@active_tab.to_i, tabs.size - 1].min
+        invalidate_window
+      end
+
+      true
+    end
+
     private def request_window_close
       if @hwnd && !Win32.null_pointer?(@hwnd)
         Win32::DestroyWindow.call(@hwnd)
@@ -166,6 +187,12 @@ module Echoes
         poll_active_pane_output
       rescue => e
         warn "echoes win32: I/O polling error: #{e.message}"
+      end
+
+      begin
+        close_dead_tabs
+      rescue => e
+        warn "echoes win32: tab close error: #{e.message}"
       end
 
       @window_menu_update_counter = @window_menu_update_counter.to_i + 1

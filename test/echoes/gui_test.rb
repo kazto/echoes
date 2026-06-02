@@ -64,6 +64,12 @@ if Echoes::Platform.windows?
         self.closed += 1
       end
     end
+    StubLifecycleTab = Struct.new(:alive, :closed) do
+      def alive? = alive
+      def close
+        self.closed += 1
+      end
+    end
     StubCopyMode = Struct.new(:selection_start, :selection_end) do
       def active = true
       def selecting? = true
@@ -1474,6 +1480,47 @@ if Echoes::Platform.windows?
 
       assert_equal [:poll, :window_menu], calls
       assert_equal 1, gui.instance_variable_get(:@window_menu_update_counter)
+    end
+
+    test "Windows timer tick closes dead tabs and keeps live tabs open" do
+      live = StubLifecycleTab.new(true, 0)
+      dead = StubLifecycleTab.new(false, 0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@tabs, [live, dead])
+      gui.instance_variable_set(:@active_tab, 0)
+      invalidations = 0
+      close_requests = 0
+      gui.define_singleton_method(:poll_active_pane_output) { true }
+      gui.define_singleton_method(:update_window_menu_periodic) { true }
+      gui.define_singleton_method(:invalidate_window) { invalidations += 1 }
+      gui.define_singleton_method(:request_window_close) { close_requests += 1; false }
+
+      assert_true gui.send(:handle_timer_tick)
+
+      assert_equal 0, live.closed
+      assert_equal 1, dead.closed
+      assert_equal [live], gui.instance_variable_get(:@tabs)
+      assert_equal 0, gui.instance_variable_get(:@active_tab)
+      assert_equal 1, invalidations
+      assert_equal 0, close_requests
+    end
+
+    test "Windows timer tick closes the window when the last tab exits" do
+      dead = StubLifecycleTab.new(false, 0)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@tabs, [dead])
+      gui.instance_variable_set(:@active_tab, 0)
+      close_requests = 0
+      gui.define_singleton_method(:poll_active_pane_output) { true }
+      gui.define_singleton_method(:update_window_menu_periodic) { true }
+      gui.define_singleton_method(:invalidate_window) { raise "unexpected invalidate" }
+      gui.define_singleton_method(:request_window_close) { close_requests += 1; true }
+
+      assert_true gui.send(:handle_timer_tick)
+
+      assert_equal 1, dead.closed
+      assert_equal [], gui.instance_variable_get(:@tabs)
+      assert_equal 1, close_requests
     end
 
     test "Windows copy writes selected text to the clipboard" do
