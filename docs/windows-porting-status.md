@@ -2,22 +2,19 @@
 
 作成日: 2026-05-20
 
-このメモは、macOS 専用実装から Windows 対応へ進めるための引き継ぎ資料です。2026-05-25 時点では、ロード境界、Windows core test、shell backend 抽象、Windows ConPTY backend の最小 read/write/resize/cwd/env/close、installer、preferences backend 分離、Windows GUI の描画・入力・clipboard・image rendering・font fallback・OSC notification 最小境界までは進んでいます。一方で embedded rubish mode、Ctrl-C 相当の配送、native toast notification は未完です。
+このメモは、macOS 専用実装になっている Echoes を Windows 対応へ進めるための引き継ぎ資料です。現時点のソースを読んだ範囲では、Windows 対応はまだ実装途中というより、macOS 依存を分離する前段階です。`README.md` でも `macOS (uses AppKit via Fiddle; no Linux/Windows support)` と明記されています。
 
 ## 現状
 
-- Ruby gem 形式のターミナルエミュレータです。CLI 起点は `exe/echoes` で、GUI 起動時だけ OS 別 GUI backend を lazy load します。
-- GUI は macOS AppKit 実装が中心でしたが、Windows GUI の実装も進行し、ネイティブ UI パリティが向上しています。
-- Windows GUI の初期方針は Pure Ruby を維持するため Fiddle + Win32 API です。Win32 window / GDI text drawing / key input / resize / polling repaint loop / clipboard / mouse wheel scroll は実装済みです。さらに、GDI を用いたインタラクティブなタブバー（複数タブ管理）、充実したアプリケーションメニュー（'Select All'、フォント拡縮など）、GDI+ による最適化されたグラデーション描画も実装されています。clipboard は `CF_UNICODETEXT` helper 経由で copy / paste と OSC 52 に対応済みです。text drawing は regular / bold / italic / bold-italic font selection、underline / strikethrough、wide-char continuation skip、OSC 66 multicell text 描画、GDI font fallback に対応済みです。OSC 9 / OSC 777 notification request は native toast ではなく Win32 window title に反映する最小境界として対応済みです。
-- Windows の PNG decode は GDI+ を Fiddle で呼ぶ Pure Ruby 実装です。Kitty graphics と iTerm2 inline images は同じ GDI+ decoder で RGBA buffer へ変換し、Win32 GUI は GDI `StretchDIBits` で `screen.placements` を描画します。
-- `require "echoes"` は Windows でも AppKit / CoreGraphics をロードしないように分離済みです。
-- 通常ペインは `ShellBackend` 経由で shell process を扱います。macOS では既存 PTY backend、Windows では ConPTY backend を選べます。Windows ConPTY backend は console code page 由来の bytes を locale encoding から UTF-8 へ decode し、入力は UTF-8 から locale encoding へ encode します。
-- TTY モードは backend 注入に寄せていますが、Windows ではまだ GUI/通常ペインほど検証していません。
+- Ruby gem 形式のターミナルエミュレータです。CLI 起点は `exe/echoes` で、通常は `Echoes::GUI.new.run`、`--tty` 指定時のみ `Echoes::Terminal.new.run` に分岐します。
+- GUI は `lib/echoes/gui.rb` に大きく集約され、`lib/echoes/objc.rb` の Fiddle ラッパーを通じて AppKit / Foundation / CoreGraphics / CoreText を直接呼び出しています。
+- `lib/echoes.rb` が `echoes/objc`、`echoes/preferences`、`echoes/gui` を無条件で require しているため、Windows では GUI を起動しない用途でも macOS フレームワークのロードで失敗します。
+- 通常ペインは `lib/echoes/pane.rb` の `spawn_with_pty` で `PTY.open`、`fork`、`setsid`、macOS 固有 ioctl (`DARWIN_TIOCSCTTY`, `DARWIN_TIOCSPGRP`) を使います。
+- TTY モードも `lib/echoes/terminal.rb` で Ruby 標準の `PTY.spawn` に依存しています。
 - 組み込み rubish モードは `lib/echoes/embedded_shell.rb` と `lib/echoes/embedded_shell_helper.rb` で、`PTY.open`、制御 pipe、`Process.spawn`、`tcsetpgrp`、`TIOCSCTTY` を使ってジョブ制御を成立させています。
-- インストーラは OS 別に分岐済みです。macOS では `~/Applications` に `Echoes.app` / `EchoesEmbed.app` のラッパーを作り、Windows では `~/bin/echoes.bat` を生成します。
-- Preferences は OS 別 backend に分離済みです。macOS では `NSUserDefaults`、Windows では JSON file persistence を使います。
-- CI には Windows core test job を追加済みです。ただしリモート CI の成功は未確認です。
-- Windows ローカルでは `ruby -S rake test:core` が通過しています。2026-05-31 時点では 706 tests, 1660 assertions, 0 failures, 8 omissions です。`bundle exec rake ...` は `rubish` git checkout 不足で失敗するため、Windows core CI は暫定的に Bundler を使わない構成です。
+- インストーラは `lib/echoes/installer.rb` が `~/Applications` に `Echoes.app` / `EchoesEmbed.app` のラッパーを作る macOS 専用です。
+- CI は `.github/workflows/main.yml` で `macos-latest` のみです。Windows ジョブはありません。
+- `git status --short` は空で、調査開始時点では未コミット差分はありませんでした。
 
 ## Windows 対応の主なブロッカー
 
@@ -31,7 +28,7 @@
 - `/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics`
 - `/System/Library/Frameworks/CoreText.framework/CoreText`
 
-この問題は Phase 1 で対応済みです。`Echoes::Platform` と lazy load 境界により、Windows で `require "echoes"` と OS 非依存テストを動かせる状態になっています。
+Windows ではここで即時に失敗します。まず `Echoes::Platform` のような小さな判定層を作り、コア実装、GUI 実装、macOS 実装を遅延ロードできる形に分ける必要があります。
 
 ### 2. GUI バックエンドが AppKit 直結
 
@@ -45,23 +42,22 @@
 - notification / URL open
 - display enumeration / fullscreen window
 
-Windows 側は Pure Ruby 方針を維持するため、Fiddle + Win32 API で進めます。現在の機能量を考えると、描画と入力イベントを抽象化せずに Windows を足すと保守不能になるため、既存 AppKit 実装の責務分類と共通化は引き続き必要です。
+Windows 側の候補は未実装です。Ruby から直接 Win32 API を Fiddle で呼ぶか、既存 GUI toolkit を使うかを先に決める必要があります。現在の機能量を考えると、描画と入力イベントを抽象化せずに Windows を足すと保守不能になります。
 
 ### 3. PTY とプロセス制御が Unix/macOS 前提
 
-通常ペインの macOS 実装は PTY / fork / process group / ioctl 前提ですが、現在は `ShellBackend` に切り出し済みです。Windows では `lib/echoes/conpty.rb` と `WindowsConPTYBackend` が ConPTY (`CreatePseudoConsole`) を使います。
+通常ペインは `lib/echoes/pane.rb` で `PTY.open`、`fork`、`Process.setsid`、`exec`、`TIOCSCTTY`、`TIOCSPGRP` を使っています。Windows Ruby には同じ意味の `fork` / Unix PTY / process group / ioctl がありません。
 
-Windows ConPTY backend で対応済み、または残っている責務は次の通りです。
+Windows では ConPTY (`CreatePseudoConsole`) を使う別実装が必要です。必要になる責務は次の通りです。
 
-- 疑似コンソールの作成とリサイズ: 実装済み。`cmd.exe mode con` で resize 反映を確認済み。
-- 子プロセス起動 (`cmd.exe`, PowerShell, pwsh など): 初期 shell 解決と `cmd.exe` 起動は確認済み。
-- stdin/stdout pipe の読み書き: 実装済み。stdout/stderr を ConPTY output pipe に明示し、stdin は ConPTY に任せる構成。
-- 日本語などの locale encoded output: 実装済み。ConPTY 出力を locale encoding から UTF-8 へ decode し、入力を UTF-8 から locale encoding へ encode する。
-- Ctrl-C 相当の配送: 未解決。`\x03` write と `GenerateConsoleCtrlEvent` は期待通りに効いていません。
-- cwd / env / PATH の扱い: cwd と explicit env は確認済み。
-- 終了検知とリソース解放: close / process exit は確認済み。
+- 疑似コンソールの作成とリサイズ
+- 子プロセス起動 (`cmd.exe`, PowerShell, pwsh など)
+- stdin/stdout pipe の読み書き
+- Ctrl-C 相当の配送
+- cwd / env / PATH の扱い
+- 終了検知とリソース解放
 
-`Pane` は Windows で ConPTY backend を選ぶようになっています。`pane_test`, `tab_test`, `shell_backend_test` は Windows ローカルで通過済みです。
+既存の `Pane` は表示ロジックもキーバインドも多く持っているため、まず「shell backend」インターフェイスを切り出し、macOS PTY backend と Windows ConPTY backend を差し替えられる形にするのが現実的です。
 
 ### 4. 組み込み rubish モードも Unix ジョブ制御前提
 
@@ -71,45 +67,48 @@ Windows 対応では、組み込み rubish モードを初期スコープから�
 
 ### 5. `.app` バンドルとインストーラ
 
-`Echoes.app` と `EchoesEmbed.app` は bash launcher と `Info.plist` を持つ macOS app bundle です。`lib/echoes/installer.rb` は macOS では `~/Applications` へ app wrapper をコピーします。
+`Echoes.app` と `EchoesEmbed.app` は bash launcher と `Info.plist` を持つ macOS app bundle です。`lib/echoes/installer.rb` は `~/Applications` へ app wrapper をコピーします。
 
-Windows では初期対応として `~/bin/echoes.bat` を生成します。これは gem-bundled launcher を `ruby ... %*` で呼ぶ薄い wrapper です。将来的に Windows 用 executable / installer を用意する余地はありますが、現時点では `.bat` launcher を採用しています。
+Windows では別の配布・起動経路が必要です。候補:
+
+- gem executable のみをサポートする
+- `.bat` / `.cmd` launcher を生成する
+- 将来的に Windows 用 executable / installer を用意する
+
+`echoes install` は OS 別に分岐し、Windows では未対応メッセージまたは Windows launcher 生成に切り替える必要があります。
 
 ### 6. 設定・永続化
 
-`lib/echoes/preferences.rb` は OS 別 backend に分離済みです。`MacOSBackend` は既存の `NSUserDefaults` suite を維持し、`JsonBackend` は `%APPDATA%/Echoes/preferences.json` に保存します。テスト時や明示指定時は `ECHOES_CONFIG_HOME/preferences.json` を使います。JSON backend の保存先選択と round-trip はテスト済みです。
+`lib/echoes/preferences.rb` は `NSUserDefaults` 固定です。`lib/echoes/configuration.rb` の DSL 設定は `~/.config/echoes/echoes.conf` を読むため Windows でも動く可能性はありますが、Windows らしい場所ではありません。
 
-対応済み:
+必要対応:
 
 - GUI preferences を OS 別 backend に分離する
-- Windows では `%APPDATA%/Echoes` を使う
-- `Configuration` の DSL 設定は Windows では `%APPDATA%/Echoes/echoes.conf`、次に既存 `~/.config/echoes/echoes.conf` を読む
+- Windows では `%APPDATA%/Echoes` などを候補にする
+- 既存 `~/.config/echoes/echoes.conf` 互換を残すか決める
 
 ### 7. 画像・フォント・描画
 
-Kitty graphics / iTerm2 images は macOS では AppKit / CoreGraphics の PNG decode と CGImage 描画に依存しています。Windows では GDI+ decoder で PNG / raw RGB / raw RGBA を RGBA buffer に変換し、GUI 上では GDI `StretchDIBits` で描画します。基本的な text style は GDI font selection と `FillRect` decoration で描画します。OSC 66 / OSC 7772 multicell text は GDI font と `TextOutW` で描画し、family 指定時の予約幅は `GetTextExtentPoint32W` で測ります。GUI の高度なフォント計測はまだ AppKit の `NSFont` / `NSString#sizeWithAttributes:` / CoreText fallback に依存します。
+Kitty graphics / iTerm2 images は AppKit / CoreGraphics の PNG decode と CGImage 描画に依存しています。`lib/echoes/kitty_graphics.rb` は AppKit decoder を遅延ロードする形ですが、Windows 実装はありません。GUI のフォント計測も AppKit の `NSFont` / `NSString#sizeWithAttributes:` / CoreText fallback に依存します。
 
-Windows 側では以下を実装済み、または後続対応とします。
+Windows 側では以下の代替が必要です。
 
-- PNG decode: GDI+ decoder 実装済み
-- RGBA buffer の描画: GDI `StretchDIBits` 実装済み
-- 等幅セル幅・行高の計測: 実装済み
-- Unicode fallback font の解決: `GetGlyphIndicesW` で base font に glyph がない文字を検出し、`Yu Gothic UI` / `Meiryo` / `Segoe UI Emoji` / `Segoe UI Symbol` / `MS Gothic` へ run 単位で切り替える。color emoji / complex shaping は GDI 依存の制限あり。
-- underline / strikethrough / bold / italic: 実装済み
-- ligature の扱い: 後続対応
-
-Clipboard は Win32 `CF_UNICODETEXT` 経由の helper を追加済みです。
+- PNG decode
+- RGBA buffer の描画
+- 等幅セル幅・行高の計測
+- Unicode fallback font の解決
+- underline / strikethrough / bold / italic / ligature の扱い
 
 ### 8. テストが macOS / Unix コマンド前提
 
-初期状態では `test/test_helper.rb` が `require "echoes"` した時点で AppKit 依存をロードし、Windows では大半のテストがロード段階で失敗していました。現在は core test のロード境界を分離済みですが、フルテストにはまだ以下のような macOS / Unix 前提が残っています。
+`test/test_helper.rb` が `require "echoes"` するため、現状のままだと Windows では大半のテストがロード段階で失敗します。さらに以下のような前提があります。
 
 - `/bin/cat`, `/bin/sh`, `/bin/sleep`, `/bin/echo`, `/usr/bin/true`, `/usr/bin/env`, `/usr/bin/tput`
-- AppKit を直接触る `gui_test.rb`, `objc_test.rb`
-- `Echoes.app` / `EchoesEmbed.app` を前提にする macOS installer tests
+- AppKit を直接触る `gui_test.rb`, `objc_test.rb`, `preferences_test.rb`
+- `Echoes.app` / `EchoesEmbed.app` を前提にする `installer_test.rb`
 - macOS の `/tmp` 解決差を考慮したテストコメント
 
-Windows 対応では、純粋な parser / screen / cell / copy mode / pane tree などの OS 非依存テストを先に分離し、OS 依存テストには skip 条件または backend 別 test helper を入れる必要があります。現在は preferences tests と Windows installer tests も core 対象に含まれています。
+Windows 対応では、純粋な parser / screen / cell / copy mode / pane tree などの OS 非依存テストを先に分離し、OS 依存テストには skip 条件または backend 別 test helper を入れる必要があります。
 
 ## 対応方針
 
@@ -138,9 +137,9 @@ Windows 対応では、純粋な parser / screen / cell / copy mode / pane tree 
 ### フェーズ 4: GUI backend の設計と実装
 
 - `GUI` の責務を、terminal state orchestration と AppKit rendering/event handling に分離する。
-- Windows の GUI 技術は Fiddle + Win32 API とする。Pure Ruby 方針を維持し、toolkit / native helper は現時点では採用しない。
-- 当初は window、text drawing、keyboard input などの最小構成から開始しましたが、現在はインタラクティブなタブバー、GDI+ によるグラデーション描画、'Select All' やフォント拡縮を含む充実したアプリケーションメニューなど、高度な機能まで実装が進んでいます。
-- IME、drag and drop、file dialog、multi-display presentation window は対応済みです。native toast notification は後続に回すか代替手段を検討します。OSC notification の最小境界は window title 反映として実装済みです。
+- Windows の GUI 技術を決める。Fiddle で Win32 + DirectWrite/GDI を叩く場合は既存 AppKit 実装に近いが実装量が大きい。toolkit 採用の場合は依存と配布方法の判断が必要。
+- 最小版は、window、text drawing、keyboard input、clipboard、resize、timer から始める。
+- IME、drag and drop、file dialog、multi-display presentation window、native notification は後続に回す。
 
 ### フェーズ 5: インストール・CI・ドキュメント
 
