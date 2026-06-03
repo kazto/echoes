@@ -5,6 +5,7 @@ require 'shellwords'
 require 'socket'
 require 'uri'
 require 'json'
+require_relative "gui/search_controller"
 
 module Echoes
   class GUI
@@ -57,12 +58,7 @@ module Echoes
       @nsstring_cache = {}
       @cursor_blink_on = true
       @cursor_blink_counter = 0
-      @search_mode = false
-      @search_query = +""
-      @search_matches = []
-      @search_index = -1
-      @search_regex_mode = false
-      @search_case_insensitive = false
+      @search = GUI::SearchController.new
       @bell_flash = 0
       @marked_text = nil
       @current_event = nil
@@ -146,10 +142,7 @@ module Echoes
       ws[:nsview] = @view
       ws[:tabs] = @tabs
       ws[:active_tab] = @active_tab
-      ws[:search_mode] = @search_mode
-      ws[:search_query] = @search_query
-      ws[:search_matches] = @search_matches
-      ws[:search_index] = @search_index
+      ws[:search] = @search
       ws[:bell_flash] = @bell_flash
       ws[:marked_text] = @marked_text
       ws[:current_event] = @current_event
@@ -165,10 +158,7 @@ module Echoes
       @view = ws[:nsview]
       @tabs = ws[:tabs]
       @active_tab = ws[:active_tab]
-      @search_mode = ws[:search_mode]
-      @search_query = ws[:search_query]
-      @search_matches = ws[:search_matches]
-      @search_index = ws[:search_index]
+      @search = ws[:search] || GUI::SearchController.new
       @bell_flash = ws[:bell_flash]
       @marked_text = ws[:marked_text]
       @current_event = ws[:current_event]
@@ -732,13 +722,13 @@ module Echoes
         ObjC::MSG_VOID_I.call(@view, ObjC.sel('setNeedsDisplay:'), 1)
       })
       @find_next_closure = menu_action.call(-> {
-        if @search_mode && !@search_matches.empty?
+        if @search.active && !@search.matches.empty?
           search_next
           ObjC::MSG_VOID_I.call(@view, ObjC.sel('setNeedsDisplay:'), 1)
         end
       })
       @find_prev_closure = menu_action.call(-> {
-        if @search_mode && !@search_matches.empty?
+        if @search.active && !@search.matches.empty?
           search_prev
           ObjC::MSG_VOID_I.call(@view, ObjC.sel('setNeedsDisplay:'), 1)
         end
@@ -983,19 +973,19 @@ module Echoes
 
 
       # Draw search bar
-      if @search_mode
+      if @search.active
         bar_h = @cell_height + 4.0
         bar_y = gy_off + @rows * @cell_height
         bar_bg = make_color(0.2, 0.2, 0.2)
         ObjC::MSG_VOID.call(bar_bg, ObjC.sel('setFill'))
         ObjC::NSRectFill.call(0.0, bar_y, @cols * @cell_width, bar_h)
 
-        match_info = @search_matches.empty? ? "" : " [#{@search_index + 1}/#{@search_matches.size}]"
+        match_info = @search.matches.empty? ? "" : " [#{@search.index + 1}/#{@search.matches.size}]"
         mode_flags = []
-        mode_flags << 'regex' if @search_regex_mode
-        mode_flags << 'i'     if @search_case_insensitive
+        mode_flags << 'regex' if @search.regex_mode
+        mode_flags << 'i'     if @search.case_insensitive
         mode_tag = mode_flags.empty? ? '' : " (#{mode_flags.join(', ')})"
-        label = "Find#{mode_tag}: #{@search_query}_#{match_info}"
+        label = "Find#{mode_tag}: #{@search.query}_#{match_info}"
         ns_str = ObjC.nsstring(label)
         ns_attrs = ObjC.nsdict({
           ObjC::NSFontAttributeName => @font,
@@ -1100,8 +1090,8 @@ module Echoes
           has_bg = !bg_val.nil? || cell.inverse
 
           selected = is_active && cell_selected?(src, c)
-          is_match = is_active && @search_mode && search_match_at?(src, c)
-          is_current_match = is_active && @search_mode && current_search_match_at?(src, c)
+          is_match = is_active && @search.active && search_match_at?(src, c)
+          is_current_match = is_active && @search.active && current_search_match_at?(src, c)
 
           # Copy mode selection highlight
           if copy_mode&.active && copy_mode.selecting?
@@ -1423,7 +1413,7 @@ module Echoes
     end
 
     def key_down(event_ptr)
-      if @search_mode
+      if @search.active
         search_key_down(event_ptr)
         return
       end
@@ -2177,12 +2167,7 @@ module Echoes
       @view = new_view
       @tabs = [tab]
       @active_tab = 0
-      @search_mode = false
-      @search_query = +""
-      @search_matches = []
-      @search_index = -1
-      @search_regex_mode = false
-      @search_case_insensitive = false
+      @search = GUI::SearchController.new
       @bell_flash = 0
       @marked_text = nil
       @current_event = nil
@@ -2558,12 +2543,7 @@ module Echoes
     end
 
     def toggle_search
-      @search_mode = !@search_mode
-      if @search_mode
-        @search_query = +""
-        @search_matches = []
-        @search_index = -1
-      end
+      @search.toggle
     end
 
     def search_key_down(event_ptr)
@@ -2576,8 +2556,7 @@ module Echoes
 
       case key_code
       when 53 # Escape
-        @search_mode = false
-        @search_matches = []
+        @search.cancel
       when 36 # Return
         if (flags & ObjC::NSEventModifierFlagShift) != 0
           search_prev
@@ -2585,7 +2564,7 @@ module Echoes
           search_next
         end
       when 51 # Backspace
-        @search_query.chop!
+        @search.backspace_query
         perform_search
       else
         # Cmd+R toggles regex; Cmd+I toggles case-insensitive.
@@ -2594,14 +2573,14 @@ module Echoes
         if cmd_held && chars.length == 1
           case chars.downcase
           when 'r'
-            @search_regex_mode = !@search_regex_mode
+            @search.toggle_regex
             perform_search
           when 'i'
-            @search_case_insensitive = !@search_case_insensitive
+            @search.toggle_case_insensitive
             perform_search
           end
         elsif !chars.empty? && chars[0].ord >= 0x20
-          @search_query << chars
+          @search.append_query(chars)
           perform_search
         end
       end
@@ -2609,112 +2588,49 @@ module Echoes
     end
 
     def perform_search
-      @search_matches = []
-      @search_index = -1
-      return if @search_query.empty?
-
       tab = current_tab
-      screen = tab.screen
-      scrollback = screen.scrollback
-
-      matcher = build_search_matcher(@search_query)
-      return unless matcher    # invalid regex → no matches, no crash
-
-      # Search scrollback
-      scrollback.each_with_index do |row, abs_row|
-        scan_row_for_matches(row, abs_row, matcher)
-      end
-
-      # Search grid
-      screen.grid.each_with_index do |row, grid_row|
-        abs_row = scrollback.size + grid_row
-        scan_row_for_matches(row, abs_row, matcher)
-      end
-
-      @search_index = @search_matches.size - 1 if @search_matches.any?
-      scroll_to_match if @search_index >= 0
+      return unless tab
+      @search.perform(tab.screen)
+      scroll_to_match
     end
 
-    # Returns an object that responds to `find_in(text, pos)` →
-    # `[start_idx, length]` or nil. Encapsulates the two axes —
-    # regex vs substring × case-sensitive vs case-insensitive —
-    # so the row scan stays loop-shaped regardless of mode.
-    # Returns nil if `query` is an invalid regex while in regex mode.
     def build_search_matcher(query)
-      if @search_regex_mode
-        flags = @search_case_insensitive ? Regexp::IGNORECASE : 0
-        re = Regexp.new(query, flags) rescue nil
-        return nil unless re
-        ->(text, pos) {
-          m = re.match(text, pos)
-          m && [m.begin(0), m.end(0) - m.begin(0)]
-        }
-      elsif @search_case_insensitive
-        needle = query.downcase
-        len = needle.length
-        ->(text, pos) {
-          idx = text.downcase.index(needle, pos)
-          idx && [idx, len]
-        }
-      else
-        len = query.length
-        ->(text, pos) {
-          idx = text.index(query, pos)
-          idx && [idx, len]
-        }
-      end
+      @search.send(:build_matcher, query)
     end
 
     def scan_row_for_matches(row, abs_row, matcher)
-      text = row.map(&:char).join
-      pos = 0
-      while pos <= text.length && (hit = matcher.call(text, pos))
-        idx, len = hit
-        # Ruby's `Regexp#match(s, pos)` past `s.length` still
-        # returns the trailing zero-width match, so any
-        # zero-width regex (`\b`, `(?=…)`, `^`, `$`) would
-        # spin forever without these two guards: bail if the
-        # match doesn't start at or after `pos`, and forcibly
-        # advance by 1 cell when the match is zero-width.
-        break if idx < pos
-        step = [len, 1].max
-        @search_matches << [abs_row, idx, step]
-        pos = idx + step
-      end
+      @search.send(:scan_row, row, abs_row, matcher)
     end
 
     def search_next
-      return if @search_matches.empty?
-      @search_index = (@search_index + 1) % @search_matches.size
+      @search.next_match
       scroll_to_match
     end
 
     def search_prev
-      return if @search_matches.empty?
-      @search_index = (@search_index - 1) % @search_matches.size
+      @search.prev_match
       scroll_to_match
     end
 
     def scroll_to_match
-      abs_row, = @search_matches[@search_index]
+      abs_row = @search.current_match_row
+      return unless abs_row
       tab = current_tab
+      return unless tab
       scrollback_size = tab.screen.scrollback.size
       if abs_row < scrollback_size
-        tab.scroll_offset = scrollback_size - abs_row - (@rows / 2)
-        tab.scroll_offset = tab.scroll_offset.clamp(0, scrollback_size)
+        tab.scroll_offset = (scrollback_size - abs_row - (@rows / 2)).clamp(0, scrollback_size)
       else
         tab.scroll_offset = 0
       end
     end
 
     def search_match_at?(abs_row, col)
-      @search_matches.any? { |r, c, len| r == abs_row && col >= c && col < c + len }
+      @search.match_at?(abs_row, col)
     end
 
     def current_search_match_at?(abs_row, col)
-      return false if @search_index < 0 || @search_index >= @search_matches.size
-      r, c, len = @search_matches[@search_index]
-      r == abs_row && col >= c && col < c + len
+      @search.current_match_at?(abs_row, col)
     end
 
     URL_REGEX = /https?:\/\/\S+/
@@ -3210,12 +3126,7 @@ module Echoes
       @view = new_view
       @tabs = [tab]
       @active_tab = 0
-      @search_mode = false
-      @search_query = +""
-      @search_matches = []
-      @search_index = -1
-      @search_regex_mode = false
-      @search_case_insensitive = false
+      @search = GUI::SearchController.new
       @bell_flash = 0
       @marked_text = nil
       @current_event = nil

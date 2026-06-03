@@ -5,6 +5,7 @@ require 'rbconfig'
 require 'socket'
 require 'uri'
 require 'zlib'
+require_relative "../gui/search_controller"
 
 module Echoes
   class GUI
@@ -115,12 +116,7 @@ module Echoes
       @window_menu_handle = nil
       @window_menu_update_counter = 0
       @window_menu_dynamic_count = 0
-      @search_mode = false
-      @search_query = +""
-      @search_matches = []
-      @search_index = -1
-      @search_regex_mode = false
-      @search_case_insensitive = false
+      @search = Echoes::GUI::SearchController.new
       @win32_pending_vk = nil
       @win32_pending_scan = 0
       @win32_pending_ctrl_state = 0
@@ -325,7 +321,7 @@ module Echoes
               Win32::InvalidateRect.call(hwnd, nil, 1)
               return 0
             end
-            if utf8_char && @search_mode
+            if utf8_char && @search.active
               handle_search_char(utf8_char)
               Win32::InvalidateRect.call(hwnd, nil, 1)
               return 0
@@ -353,7 +349,7 @@ module Echoes
             return 0
           end
 
-          if @search_mode && handle_search_keydown(vk, ctrl_pressed: ctrl_pressed, shift_pressed: shift_pressed)
+          if @search.active && handle_search_keydown(vk, ctrl_pressed: ctrl_pressed, shift_pressed: shift_pressed)
             Win32::InvalidateRect.call(hwnd, nil, 1)
             return 0
           end

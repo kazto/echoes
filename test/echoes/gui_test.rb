@@ -1330,16 +1330,14 @@ if Echoes::Platform.windows?
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.instance_variable_set(:@rows, 2)
-      gui.instance_variable_set(:@search_query, "foo")
-      gui.instance_variable_set(:@search_matches, [])
-      gui.instance_variable_set(:@search_index, -1)
-      gui.instance_variable_set(:@search_regex_mode, false)
-      gui.instance_variable_set(:@search_case_insensitive, false)
+      sc = Echoes::GUI::SearchController.new
+      sc.append_query("foo")
+      gui.instance_variable_set(:@search, sc)
 
       gui.send(:perform_search)
 
-      assert_equal [[0, 4, 3], [1, 0, 3], [2, 4, 3]], gui.instance_variable_get(:@search_matches)
-      assert_equal 2, gui.instance_variable_get(:@search_index)
+      assert_equal [[0, 4, 3], [1, 0, 3], [2, 4, 3]], gui.instance_variable_get(:@search).matches
+      assert_equal 2, gui.instance_variable_get(:@search).index
       assert_equal 0, pane.scroll_offset
     end
 
@@ -1351,30 +1349,32 @@ if Echoes::Platform.windows?
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.instance_variable_set(:@rows, 1)
-      gui.instance_variable_set(:@search_mode, true)
-      gui.instance_variable_set(:@search_query, +"")
-      gui.instance_variable_set(:@search_matches, [])
-      gui.instance_variable_set(:@search_index, -1)
-      gui.instance_variable_set(:@search_regex_mode, false)
-      gui.instance_variable_set(:@search_case_insensitive, false)
+      sc = Echoes::GUI::SearchController.new
+      sc.toggle
+      gui.instance_variable_set(:@search, sc)
 
       assert_true gui.send(:handle_search_char, "f")
-      assert_equal "f", gui.instance_variable_get(:@search_query)
-      assert_equal [[0, 4, 1]], gui.instance_variable_get(:@search_matches)
+      assert_equal "f", gui.instance_variable_get(:@search).query
+      assert_equal [[0, 4, 1]], gui.instance_variable_get(:@search).matches
       assert_true gui.send(:handle_search_keydown, 0x49, ctrl_pressed: true, shift_pressed: false)
-      assert_equal [[0, 0, 1], [0, 4, 1]], gui.instance_variable_get(:@search_matches)
+      assert_equal [[0, 0, 1], [0, 4, 1]], gui.instance_variable_get(:@search).matches
       assert_true gui.send(:handle_search_keydown, 0x08, ctrl_pressed: false, shift_pressed: false)
-      assert_equal "", gui.instance_variable_get(:@search_query)
+      assert_equal "", gui.instance_variable_get(:@search).query
       assert_true gui.send(:handle_search_keydown, 0x1B, ctrl_pressed: false, shift_pressed: false)
-      assert_false gui.instance_variable_get(:@search_mode)
+      assert_false gui.instance_variable_get(:@search).active
     end
 
     test "Windows search keydown routes next and previous navigation keys" do
       gui = Echoes::GUI.allocate
+      sc = Echoes::GUI::SearchController.new
+      gui.instance_variable_set(:@search, sc)
+      gui.define_singleton_method(:scroll_to_search_match) { }
+      gui.define_singleton_method(:current_tab) { nil }
+
       nexts = 0
       prevs = 0
-      gui.define_singleton_method(:search_next) { nexts += 1 }
-      gui.define_singleton_method(:search_prev) { prevs += 1 }
+      sc.define_singleton_method(:next_match) { nexts += 1; false }
+      sc.define_singleton_method(:prev_match) { prevs += 1; false }
 
       assert_true gui.send(:handle_search_keydown, 0x22, ctrl_pressed: false, shift_pressed: false)
       assert_true gui.send(:handle_search_keydown, 0x21, ctrl_pressed: false, shift_pressed: false)
@@ -2491,8 +2491,10 @@ end
 class Echoes::GUISearchMatcherTest < Test::Unit::TestCase
   def make_gui(regex: false, case_insensitive: false)
     gui = Echoes::GUI.allocate
-    gui.instance_variable_set(:@search_regex_mode, regex)
-    gui.instance_variable_set(:@search_case_insensitive, case_insensitive)
+    sc = Echoes::GUI::SearchController.new
+    sc.toggle_regex if regex
+    sc.toggle_case_insensitive if case_insensitive
+    gui.instance_variable_set(:@search, sc)
     gui
   end
 

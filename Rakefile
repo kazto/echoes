@@ -7,6 +7,7 @@ require_relative "lib/echoes/platform"
 CORE_TEST_FILES = FileList[
   "test/echoes_test.rb",
   "test/echoes/cell_test.rb",
+  "test/echoes/gui_search_controller_test.rb",
   "test/echoes/cli_test.rb",
   "test/echoes/client_test.rb",
   "test/echoes/configuration_test.rb",

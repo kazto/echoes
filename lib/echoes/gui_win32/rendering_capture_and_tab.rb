@@ -431,7 +431,7 @@ module Echoes
     end
 
     private def search_colors_for_cell(is_active, abs_row, col)
-      return nil unless is_active && @search_mode
+      return nil unless is_active && @search.active
       return [@default_fg, @search_current_bg] if current_search_match_at?(abs_row, col)
       return [@default_fg, @search_match_bg] if search_match_at?(abs_row, col)
 
