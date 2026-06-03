@@ -11,9 +11,9 @@ module Echoes
 
     private def handle_search_char(chars)
       return false if chars.nil? || chars.empty?
-      @search.append_query(chars)
       screen = current_tab&.screen
       return false unless screen
+      @search.append_query(chars)
       @search.perform(screen)
       scroll_to_search_match
       true
@@ -33,9 +33,9 @@ module Echoes
         scroll_to_search_match
         true
       when 0x08  # Backspace
-        @search.backspace_query
         screen = current_tab&.screen
         return false unless screen
+        @search.backspace_query
         @search.perform(screen)
         scroll_to_search_match
         true
@@ -59,17 +59,17 @@ module Echoes
         true
       when 0x49  # I
         return false unless ctrl_pressed
-        @search.toggle_case_insensitive
         screen = current_tab&.screen
         return false unless screen
+        @search.toggle_case_insensitive
         @search.perform(screen)
         scroll_to_search_match
         true
       when 0x52  # R
         return false unless ctrl_pressed
-        @search.toggle_regex
         screen = current_tab&.screen
         return false unless screen
+        @search.toggle_regex
         @search.perform(screen)
         scroll_to_search_match
         true
