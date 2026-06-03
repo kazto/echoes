@@ -161,6 +161,43 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     backend&.close
   end
 
+  test "ConPTY backend tracks Win32 input mode requests" do
+    conpty = FakeConPTY.new(["\e[?9001h", "\e[?9001l"])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    assert_false backend.win32_input_mode?
+    backend.read_available_output(16_384)
+    assert_true backend.win32_input_mode?
+    backend.read_available_output(16_384)
+    assert_false backend.win32_input_mode?
+  ensure
+    backend&.close
+  end
+
+  test "ConPTY backend writes Win32 key events in CSI underscore format" do
+    conpty = FakeConPTY.new
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    backend.write_win32_key(0x41, 0x1E, "A".ord, true, 0x10)
+    backend.write_win32_key(0x41, 0x1E, "A".ord, false, 0x10)
+
+    assert_equal ["\e[65;30;65;1;16_", "\e[65;30;65;0;16_"], conpty.writes
+  ensure
+    backend&.close
+  end
+
   test "ConPTY backend sends console Ctrl-C before ETX fallback" do
     conpty = FakeConPTY.new
     backend = Echoes::WindowsConPTYBackend.new(
@@ -596,6 +633,26 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
       end
 
       assert_match(/C:\\.*>\z/, screen.to_text)
+    ensure
+      backend.close
+    end
+  end
+
+  test "Windows ConPTY backend gives WSL tty stdio for prompts" do
+    omit("Windows only") unless TestHelper::IS_WINDOWS
+    omit("wsl.exe is not available") unless system("where.exe", "wsl.exe", out: File::NULL, err: File::NULL)
+
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: 'wsl.exe --exec sh -ic "test -t 1; echo stdout_tty=$?; test -t 2; echo stderr_tty=$?"',
+      env: nil,
+      rows: 10,
+      cols: 80
+    )
+    begin
+      output = drain_backend_output(backend, until_match: /stderr_tty=\d/, attempts: 80)
+      omit("WSL did not run a shell command") unless output.match?(/stderr_tty=\d/)
+      assert_match(/stdout_tty=0/, output)
+      assert_match(/stderr_tty=0/, output)
     ensure
       backend.close
     end

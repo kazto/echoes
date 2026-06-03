@@ -26,6 +26,12 @@ module Echoes
       end
     end
 
+    private def windows_char_input(char_code)
+      return nil if char_code < 0x20 || char_code == 0x7F
+
+      [char_code].pack('S').force_encoding('UTF-16LE').encode('UTF-8') rescue nil
+    end
+
     private def update_window_list
       return unless @window_menu_handle
 
@@ -922,6 +928,80 @@ module Echoes
       x = (rect[:x] + cursor.col) * @cell_width
       y = (rect[:y] + cursor.row + 1) * @cell_height
       [x, y]
+    end
+
+    # --- Win32 input mode (for WSL) ---
+    # When WSL sends \e[?9001h it requests structured Win32 keyboard events.
+    # We deliver them as CSI vk;scan;unicode;keydown;ctrl_state _ sequences,
+    # which ConPTY forwards as KEY_EVENT_RECORDs via ReadConsoleInput.
+
+    # VK codes that do not generate a subsequent WM_CHAR message.
+    WIN32_NO_WM_CHAR_VK = [
+      0x21, 0x22, 0x23, 0x24,  # PgUp PgDn End Home
+      0x25, 0x26, 0x27, 0x28,  # Left Up Right Down
+      0x2D, 0x2E,              # Insert Delete
+      *0x70..0x7B              # F1-F12
+    ].freeze
+
+    # dwControlKeyState flag bits
+    WIN32_RIGHT_ALT_PRESSED  = 0x0001
+    WIN32_LEFT_ALT_PRESSED   = 0x0002
+    WIN32_RIGHT_CTRL_PRESSED = 0x0004
+    WIN32_LEFT_CTRL_PRESSED  = 0x0008
+    WIN32_SHIFT_PRESSED      = 0x0010
+    WIN32_ENHANCED_KEY       = 0x0100
+
+    private def pane_win32_input_mode?(pane)
+      pane.respond_to?(:shell_backend) &&
+        pane.shell_backend.respond_to?(:win32_input_mode?) &&
+        pane.shell_backend.win32_input_mode?
+    end
+
+    private def windows_ctrl_state(ctrl_pressed:, shift_pressed:)
+      state = 0
+      state |= WIN32_LEFT_CTRL_PRESSED if ctrl_pressed
+      state |= WIN32_SHIFT_PRESSED     if shift_pressed
+      state
+    end
+
+    private def win32_scan_code(vk)
+      return 0 unless Win32::MapVirtualKeyW
+      Win32::MapVirtualKeyW.call(vk, 0)  # MAPVK_VK_TO_VSC
+    end
+
+    private def handle_win32_keydown(pane, vk, ctrl_pressed:, shift_pressed:)
+      ctrl_state = windows_ctrl_state(ctrl_pressed: ctrl_pressed, shift_pressed: shift_pressed)
+      scan = win32_scan_code(vk)
+
+      if WIN32_NO_WM_CHAR_VK.include?(vk)
+        # Navigation / function keys: no WM_CHAR follows, send now.
+        ctrl_state |= WIN32_ENHANCED_KEY if vk >= 0x21 && vk <= 0x28
+        pane.shell_backend.write_win32_key(vk, scan, 0, true,  ctrl_state)
+        pane.shell_backend.write_win32_key(vk, scan, 0, false, ctrl_state)
+        @win32_pending_vk = nil
+      elsif ctrl_pressed && vk >= 0x41 && vk <= 0x5A
+        # Ctrl+letter: compute unicode (control code), send immediately.
+        # A WM_CHAR with the control code will follow; we suppress it via
+        # @win32_pending_vk = nil so deliver_win32_char is never called.
+        uc = vk - 0x40
+        pane.shell_backend.write_win32_key(vk, scan, uc, true,  ctrl_state)
+        pane.shell_backend.write_win32_key(vk, scan, uc, false, ctrl_state)
+        @win32_pending_vk = nil
+      else
+        # Printable key or special key that will produce a WM_CHAR.
+        @win32_pending_vk         = vk
+        @win32_pending_scan       = scan
+        @win32_pending_ctrl_state = ctrl_state
+      end
+    end
+
+    private def deliver_win32_char(pane, char_code)
+      vk         = @win32_pending_vk
+      scan       = @win32_pending_scan
+      ctrl_state = @win32_pending_ctrl_state
+      @win32_pending_vk = nil
+      pane.shell_backend.write_win32_key(vk, scan, char_code, true,  ctrl_state)
+      pane.shell_backend.write_win32_key(vk, scan, char_code, false, ctrl_state)
     end
   end
 end

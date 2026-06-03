@@ -98,23 +98,42 @@ module Echoes
       @pid = @conpty.h_process_id.to_i
       @closed = false
       @conpty_output_ended_with_cr = false
+      @win32_input_mode = false
       @read_io = WindowsConPTYIO.new(self, readable: true, rows: rows, cols: cols)
       @write_io = WindowsConPTYIO.new(self, readable: false, rows: rows, cols: cols)
+    end
+
+    def win32_input_mode?
+      @win32_input_mode
+    end
+
+    # Send a key event in win32-input-mode format (RFC by Windows Terminal):
+    # ESC [ vk ; scan ; unicode ; key_down ; ctrl_state _
+    def write_win32_key(vk, scan, unicode, key_down, ctrl_state = 0)
+      s = "\e[#{vk};#{scan};#{unicode};#{key_down ? 1 : 0};#{ctrl_state}_"
+      @conpty.write(encode_console_input(s))
     end
 
     def write(bytes)
       @conpty.write(encode_console_input(bytes))
     end
 
+    WIN32_INPUT_MODE_ON  = "\e[?9001h".b.freeze
+    WIN32_INPUT_MODE_OFF = "\e[?9001l".b.freeze
+
     def read_available_output(max)
       output = @conpty.read_available_output(max)
+      return output if output.empty?
+
       output = normalize_conpty_cls_repaint(output)
       output = normalize_conpty_clear_multiline_repaint(output)
       output = normalize_conpty_repaint(output)
       output = normalize_conpty_home_erase_repaint(output)
       output = normalize_conpty_cr_erase_repaint(output)
       output = normalize_conpty_resize_repaint(output)
-      decode_console_output(normalize_output_newlines(output))
+      decoded = decode_console_output(normalize_output_newlines(output))
+      detect_win32_input_mode(decoded.b)
+      decoded
     end
 
     def resize(rows, cols, px_width: 0, px_height: 0)
@@ -130,6 +149,18 @@ module Echoes
     def alive?
       @conpty.alive?
     end
+
+    private
+
+    def detect_win32_input_mode(bytes)
+      if bytes.include?(WIN32_INPUT_MODE_ON)
+        @win32_input_mode = true
+      elsif bytes.include?(WIN32_INPUT_MODE_OFF)
+        @win32_input_mode = false
+      end
+    end
+
+    public
 
     def interrupt
       return if @conpty.respond_to?(:interrupt) && @conpty.interrupt

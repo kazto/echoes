@@ -163,9 +163,10 @@ module Echoes
           si_ex = Fiddle::Pointer.malloc(startup_info_ex_size, Fiddle::RUBY_FREE)
           si_ex[0, startup_info_ex_size] = "\x00" * startup_info_ex_size
           si_ex[0, 4] = [startup_info_ex_size].pack('L') # STARTUPINFOEXW cbSize
+          # Let the pseudoconsole install console std handles. Passing the
+          # pipe handles here makes WSL see stdout/stderr as non-tty pipes,
+          # which suppresses zsh prompt rendering.
           si_ex[60, 4] = [STARTF_USESTDHANDLES].pack('L')
-          si_ex[88, Fiddle::SIZEOF_VOIDP] = [h_pipe_out_w].pack(Fiddle::SIZEOF_VOIDP == 8 ? 'Q' : 'L')
-          si_ex[96, Fiddle::SIZEOF_VOIDP] = [h_pipe_out_w].pack(Fiddle::SIZEOF_VOIDP == 8 ? 'Q' : 'L')
           si_ex[startup_info_size, Fiddle::SIZEOF_VOIDP] = [attr_list.to_i].pack(Fiddle::SIZEOF_VOIDP == 8 ? 'Q' : 'L')
 
           # Build PROCESS_INFORMATION (24 bytes)

@@ -10,8 +10,8 @@ Echoes is a Ruby gem (currently a freshly scaffolded template at v0.1.0). Author
 
 - **Install dependencies:** `bin/setup`
 - **Run all tests:** `bundle exec rake test` (or just `bundle exec rake`, test is the default task)
-- **Run a single test file:** `bundle exec ruby -Ilib:test test/echoes_test.rb`
-- **Run a single test method:** `bundle exec ruby -Ilib:test test/echoes_test.rb -n test_method_name`
+- **Run a single test file:** `bundle exec ruby -Ilib -Itest test/echoes_test.rb`
+- **Run a single test method:** `bundle exec ruby -Ilib -Itest test/echoes_test.rb -n test_method_name`
 - **Interactive console:** `bin/console`
 - **Install gem locally:** `bundle exec rake install`
 
@@ -26,11 +26,13 @@ Standard Ruby gem layout:
 
 ## Testing
 
-Uses the **test-unit** gem (~> 3.0). Test classes inherit from `Test::Unit::TestCase`. Test helper is at `test/test_helper.rb`.
+Uses the **test-unit** gem (~> 3.0). Test classes inherit from `Test::Unit::TestCase`. Test helper is at `test/test_helper.rb`. When invoking test files directly, use separate include flags: `bundle exec ruby -Ilib -Itest ...`.
 
 ## Windows GUI Manual Verification
 
 Run `bundle exec rake test:windows_gui_smoke` from the repository root. The task launches `ruby -Ilib exe\echoes`, drives the Win32 window, writes screenshots to `tmp\gui-smoke\`, and fails if the window does not exit cleanly or leaves `cmd.exe` behind.
+
+After any fix, the agent must personally exercise the changed behavior and confirm it works, using the GUI smoke task or another direct manual operation appropriate to the change. Do not rely on code inspection alone.
 
 ## CI
 

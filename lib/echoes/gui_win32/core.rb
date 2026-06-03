@@ -133,11 +133,14 @@ module Echoes
       @window_menu_update_counter = 0
       @window_menu_dynamic_count = 0
       @search_mode = false
-      @search_query = +"" 
+      @search_query = +""
       @search_matches = []
       @search_index = -1
       @search_regex_mode = false
       @search_case_insensitive = false
+      @win32_pending_vk = nil
+      @win32_pending_scan = 0
+      @win32_pending_ctrl_state = 0
 
       # カラーテーマの初期化
       @active_profile = Echoes.config.active_profile rescue nil
@@ -327,8 +330,13 @@ module Echoes
           char_code = wparam.to_i
           return 0 if handle_normal_selection_char(char_code)
 
-          unless [0x08, 0x09, 0x0D, 0x1B].include?(char_code)
-            utf8_char = [char_code].pack('S').force_encoding('UTF-16LE').encode('UTF-8') rescue nil
+          if @win32_pending_vk && (tab = current_tab) && (pane = tab.active_pane) &&
+             pane_win32_input_mode?(pane)
+            deliver_win32_char(pane, char_code)
+            next 0
+          end
+
+          if (utf8_char = windows_char_input(char_code))
             if utf8_char && (pane = current_tab&.active_pane)&.copy_mode&.active
               handle_copy_mode_key(pane, utf8_char)
               Win32::InvalidateRect.call(hwnd, nil, 1)
@@ -376,6 +384,13 @@ module Echoes
             when 0x56 # V
               paste_from_clipboard
               handled_key = true
+            end
+          end
+
+          unless handled_key
+            if (pane = current_tab&.active_pane) && pane_win32_input_mode?(pane)
+              handle_win32_keydown(pane, vk, ctrl_pressed: ctrl_pressed, shift_pressed: shift_pressed)
+              next 0
             end
           end
 

@@ -156,6 +156,21 @@ if Echoes::Platform.windows?
       assert_nil gui.send(:windows_key_sequence, 0x41)
     end
 
+    test "Windows char message ignores control characters already handled by keydown" do
+      gui = Echoes::GUI.allocate
+
+      assert_nil gui.send(:windows_char_input, 0x0C)
+      assert_nil gui.send(:windows_char_input, 0x03)
+      assert_equal "A", gui.send(:windows_char_input, "A".ord)
+    end
+
+    test "Windows Win32 input WndProc branches return an LRESULT" do
+      source = File.read(File.expand_path("../../lib/echoes/gui_win32/core.rb", __dir__))
+
+      assert_match(/deliver_win32_char\(pane, char_code\)[^\n]*\n\s+next 0/, source)
+      assert_match(/handle_win32_keydown\(pane, vk, [^\n]*\)[^\n]*\n\s+next 0/, source)
+    end
+
     test "Windows copy mode keydown maps navigation and paging keys" do
       gui = Echoes::GUI.allocate
 

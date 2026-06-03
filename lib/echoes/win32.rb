@@ -64,6 +64,7 @@ module Echoes
     FillRect          = new_func(USER32, 'FillRect', [P, P, P], I)
     SetWindowTextW    = new_func(USER32, 'SetWindowTextW', [P, P], I)
     GetKeyState       = new_func(USER32, 'GetKeyState', [I], I)
+    MapVirtualKeyW    = new_func(USER32, 'MapVirtualKeyW', [U, U], U)
     InvertRect        = new_func(USER32, 'InvertRect', [P, P], I)
     OpenClipboard     = new_func(USER32, 'OpenClipboard', [P], I)
     CloseClipboard    = new_func(USER32, 'CloseClipboard', [], I)
