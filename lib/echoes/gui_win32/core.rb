@@ -8,6 +8,7 @@ require 'zlib'
 
 module Echoes
   class GUI
+    require_relative "../gui/osc7"
     MENU_NEW_TAB = 10_001
     MENU_OPEN_FILE = 10_002
     MENU_EXIT = 10_003
@@ -62,25 +63,7 @@ module Echoes
       [Win32::FCONTROL | Win32::FVIRTKEY, 0x30, MENU_RESET_FONT]  # Ctrl+0
     ].freeze
 
-    def self.pane_local_cwd(pane)
-      uri_str = pane&.screen&.current_directory
-      cwd_from_osc7_uri(uri_str)
-    end
-
-    def self.cwd_from_osc7_uri(uri_str)
-      return nil if uri_str.nil? || uri_str.empty?
-      uri = URI.parse(uri_str) rescue nil
-      return nil unless uri && uri.scheme == 'file'
-      host = uri.host.to_s
-      local_host = Socket.gethostname
-      unless host.empty? || host == 'localhost' ||
-             host == local_host || host == local_host.split('.').first
-        return nil
-      end
-      path = URI.decode_www_form_component(uri.path) rescue nil
-      path = path[1..] if path && path.match?(/\A\/[A-Za-z]:\//)
-      path if path && !path.empty? && Dir.exist?(path)
-    end
+    extend Echoes::GUI::Osc7
 
     def initialize(command: Echoes.config.shell, rows: Echoes.config.rows, cols: Echoes.config.cols, font_size: nil)
       if ENV['ECHOES_EMBED'] == '1'

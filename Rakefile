@@ -13,6 +13,7 @@ CORE_TEST_FILES = FileList[
   "test/echoes/copy_mode_test.rb",
   "test/echoes/cursor_test.rb",
   "test/echoes/embedded_shell_test.rb",
+  "test/echoes/gui_osc7_test.rb",
   "test/echoes/gui_test.rb",
   "test/echoes/iterm2_images_test.rb",
   "test/echoes/installer_test.rb",
