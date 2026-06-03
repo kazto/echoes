@@ -6,6 +6,7 @@ require 'socket'
 require 'uri'
 require 'zlib'
 require_relative "../gui/search_controller"
+require_relative "../gui/layout"
 
 module Echoes
   class GUI
@@ -153,11 +154,11 @@ module Echoes
 
     def tab_bar_height
       return 0.0 unless @cell_height
-      @tabs.size > 1 ? @cell_height : 0.0
+      Echoes::GUI::Layout.tab_bar_height(@tabs.size, @cell_height)
     end
 
     def tab_bar_y
-      0.0
+      Echoes::GUI::Layout.tab_bar_y(:top, @cell_height.to_f, @rows.to_i)
     end
 
     def create_tab(editor_file: nil)

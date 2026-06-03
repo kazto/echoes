@@ -6,6 +6,7 @@ require 'socket'
 require 'uri'
 require 'json'
 require_relative "gui/search_controller"
+require_relative "gui/layout"
 
 module Echoes
   class GUI
@@ -197,15 +198,15 @@ module Echoes
     end
 
     def tab_bar_height
-      @tabs.size > 1 ? @cell_height : 0.0
+      GUI::Layout.tab_bar_height(@tabs.size, @cell_height)
     end
 
     def grid_y_offset
-      Echoes.config.tab_position == :bottom ? 0.0 : tab_bar_height
+      GUI::Layout.grid_y_offset(Echoes.config.tab_position, tab_bar_height)
     end
 
     def tab_bar_y
-      Echoes.config.tab_position == :bottom ? @cell_height * @rows : 0.0
+      GUI::Layout.tab_bar_y(Echoes.config.tab_position, @cell_height, @rows)
     end
 
     def setup_app
@@ -1968,14 +1969,7 @@ module Echoes
     end
 
     def handle_resize(w, h)
-      tbh = tab_bar_height
-      grid_height = h - tbh
-
-      new_cols = (w / @cell_width).to_i
-      new_rows = (grid_height / @cell_height).to_i
-      new_cols = 1 if new_cols < 1
-      new_rows = 1 if new_rows < 1
-
+      new_rows, new_cols = GUI::Layout.rows_cols_for(w.to_f, h.to_f, @cell_width, @cell_height, tab_bar_height)
       return if new_rows == @rows && new_cols == @cols
 
       @rows = new_rows
