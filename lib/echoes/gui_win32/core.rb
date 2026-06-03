@@ -489,7 +489,16 @@ module Echoes
           end
           wparam = msg_struct[16, Fiddle::SIZEOF_VOIDP].unpack1(Fiddle::SIZEOF_VOIDP == 8 ? 'Q' : 'L')
           next if handle_normal_selection_key_message(message, wparam)
-          next if translate_accelerator(msg_struct)
+          # In win32_input_mode (e.g. WSL), plain Ctrl+letter keys must reach
+          # the shell as control characters (^A = line-begin, ^W = kill-word,
+          # etc.). Skip the accelerator table so WM_KEYDOWN dispatches to
+          # handle_win32_keydown instead of firing GUI actions like select-all.
+          skip_accel = message == Win32::WM_KEYDOWN &&
+                       (Win32::GetKeyState.call(0x11) & 0x8000) != 0 &&
+                       (Win32::GetKeyState.call(0x10) & 0x8000) == 0 &&
+                       (pane = current_tab&.active_pane) &&
+                       pane_win32_input_mode?(pane)
+          next if !skip_accel && translate_accelerator(msg_struct)
 
           Win32::TranslateMessage.call(msg_struct)
           Win32::DispatchMessageW.call(msg_struct)

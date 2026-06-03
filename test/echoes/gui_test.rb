@@ -171,6 +171,32 @@ if Echoes::Platform.windows?
       assert_match(/handle_win32_keydown\(pane, vk, [^\n]*\)[^\n]*\n\s+next 0/, source)
     end
 
+    test "pane_win32_input_mode? returns true only for panes with an active win32 shell backend" do
+      gui = Echoes::GUI.allocate
+      backend_on  = Struct.new(:win32_input_mode?) {}.new(true)
+      backend_off = Struct.new(:win32_input_mode?) {}.new(false)
+      pane_on  = Struct.new(:shell_backend) {}.new(backend_on)
+      pane_off = Struct.new(:shell_backend) {}.new(backend_off)
+
+      assert  gui.send(:pane_win32_input_mode?, pane_on),  "active win32 mode should be detected"
+      refute  gui.send(:pane_win32_input_mode?, pane_off), "inactive win32 mode should not match"
+      refute  gui.send(:pane_win32_input_mode?, StubPane.new(nil, [], nil)), "plain pane has no shell_backend"
+    end
+
+    test "handle_win32_keydown sends ctrl+A as win32 key event with unicode 1" do
+      win32_keys = []
+      backend = Struct.new(:win32_input_mode?) {
+        define_method(:write_win32_key) { |vk, scan, uc, down, ctrl| win32_keys << [vk, uc, down, ctrl] }
+      }.new(true)
+      pane = Struct.new(:shell_backend) {}.new(backend)
+      gui = Echoes::GUI.allocate
+      gui.instance_variable_set(:@win32_pending_vk, nil)
+      gui.send(:handle_win32_keydown, pane, 0x41, ctrl_pressed: true, shift_pressed: false)
+      assert_equal 2, win32_keys.size, "key-down and key-up events expected"
+      assert_equal [0x41, 1, true,  Echoes::GUI::WIN32_LEFT_CTRL_PRESSED], win32_keys[0]
+      assert_equal [0x41, 1, false, Echoes::GUI::WIN32_LEFT_CTRL_PRESSED], win32_keys[1]
+    end
+
     test "Windows copy mode keydown maps navigation and paging keys" do
       gui = Echoes::GUI.allocate
 
