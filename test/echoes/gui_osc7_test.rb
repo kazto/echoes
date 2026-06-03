@@ -46,7 +46,7 @@ class GuiOsc7Test < Test::Unit::TestCase
       encoded = URI::DEFAULT_PARSER.escape("/" + dir.gsub("\\", "/"))
       uri = "file://localhost#{encoded}"
       result = cwd_from_osc7_uri(uri)
-      assert result.nil? || !result.start_with?("/"), "should not start with / on Windows, got: #{result.inspect}"
+      assert_equal dir.gsub("\\", "/"), result
     end
   end
 

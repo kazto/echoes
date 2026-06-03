@@ -2408,54 +2408,6 @@ if Echoes::Platform.macos?
   end
 end
 
-if defined?(Echoes::GUI)
-class Echoes::GUICwdFromOsc7UriTest < Test::Unit::TestCase
-  def file_uri(path, host: nil)
-    normalized = path.tr('\\', '/')
-    uri_path = normalized.start_with?('/') ? normalized : "/#{normalized}"
-    "file://#{host}#{uri_path.gsub(' ', '%20')}"
-  end
-
-  test "returns nil for nil or empty input" do
-    assert_nil(Echoes::GUI.cwd_from_osc7_uri(nil))
-    assert_nil(Echoes::GUI.cwd_from_osc7_uri(""))
-  end
-
-  test "returns the path for file://localhost/<existing path>" do
-    path = Dir.tmpdir
-    assert_equal(path, Echoes::GUI.cwd_from_osc7_uri(file_uri(path, host: 'localhost')))
-  end
-
-  test "returns the path for file:///<existing path> (empty host)" do
-    path = Dir.tmpdir
-    assert_equal(path, Echoes::GUI.cwd_from_osc7_uri(file_uri(path)))
-  end
-
-  test "URL-decodes percent-encoded path components" do
-    Dir.mktmpdir("echoes test ") do |dir|
-      encoded = file_uri(dir, host: 'localhost')
-      assert_equal(dir, Echoes::GUI.cwd_from_osc7_uri(encoded))
-    end
-  end
-
-  test "returns nil for non-file scheme" do
-    assert_nil(Echoes::GUI.cwd_from_osc7_uri("http://localhost/tmp"))
-  end
-
-  test "returns nil for a remote host" do
-    assert_nil(Echoes::GUI.cwd_from_osc7_uri("file://other-host.example.com/tmp"))
-  end
-
-  test "returns nil for a path that does not exist locally" do
-    assert_nil(Echoes::GUI.cwd_from_osc7_uri("file:///nonexistent-#{rand(1 << 30)}"))
-  end
-
-  test "returns nil for a malformed URI" do
-    assert_nil(Echoes::GUI.cwd_from_osc7_uri("file://[bad"))
-  end
-end
-end
-
 class Echoes::GUISelectedTextTest < Test::Unit::TestCase
   # Regression: copying a region that contained an OSC 66 multicell
   # character (or a wide CJK / emoji glyph) used to include a literal
