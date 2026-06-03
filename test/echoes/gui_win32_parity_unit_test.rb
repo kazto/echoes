@@ -11,7 +11,7 @@ if Echoes::Platform.windows?
     StubTab = Struct.new(:active_pane)
 
     def setup
-      @gui = Echoes::GUI.allocate
+      @gui = Echoes::GUI::Backend::Win32.allocate
     end
 
     test "select_all enters copy mode and selects everything" do

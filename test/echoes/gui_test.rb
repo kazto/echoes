@@ -118,7 +118,7 @@ if Echoes::Platform.windows?
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       screen.bracketed_paste_mode = true
       pane = StubPane.new(screen, [])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.instance_variable_set(:@hwnd, nil)
@@ -131,7 +131,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows key sequence maps navigation and editing keys" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
 
       assert_equal "\e[A", gui.send(:windows_key_sequence, 0x26)
       assert_equal "\e[B", gui.send(:windows_key_sequence, 0x28)
@@ -149,7 +149,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows key sequence maps control letters" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
 
       assert_equal "\x03", gui.send(:windows_key_sequence, 0x43, ctrl_pressed: true)
       assert_equal "\x1A", gui.send(:windows_key_sequence, 0x5A, ctrl_pressed: true)
@@ -157,7 +157,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows char message ignores control characters already handled by keydown" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
 
       assert_nil gui.send(:windows_char_input, 0x0C)
       assert_nil gui.send(:windows_char_input, 0x03)
@@ -172,7 +172,7 @@ if Echoes::Platform.windows?
     end
 
     test "pane_win32_input_mode? returns true only for panes with an active win32 shell backend" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       backend_on  = Struct.new(:win32_input_mode?) {}.new(true)
       backend_off = Struct.new(:win32_input_mode?) {}.new(false)
       pane_on  = Struct.new(:shell_backend) {}.new(backend_on)
@@ -189,16 +189,16 @@ if Echoes::Platform.windows?
         define_method(:write_win32_key) { |vk, scan, uc, down, ctrl| win32_keys << [vk, uc, down, ctrl] }
       }.new(true)
       pane = Struct.new(:shell_backend) {}.new(backend)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@win32_pending_vk, nil)
       gui.send(:handle_win32_keydown, pane, 0x41, ctrl_pressed: true, shift_pressed: false)
       assert_equal 2, win32_keys.size, "key-down and key-up events expected"
-      assert_equal [0x41, 1, true,  Echoes::GUI::WIN32_LEFT_CTRL_PRESSED], win32_keys[0]
-      assert_equal [0x41, 1, false, Echoes::GUI::WIN32_LEFT_CTRL_PRESSED], win32_keys[1]
+      assert_equal [0x41, 1, true,  Echoes::GUI::Backend::Win32::WIN32_LEFT_CTRL_PRESSED], win32_keys[0]
+      assert_equal [0x41, 1, false, Echoes::GUI::Backend::Win32::WIN32_LEFT_CTRL_PRESSED], win32_keys[1]
     end
 
     test "Windows copy mode keydown maps navigation and paging keys" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
 
       assert_equal "h", gui.send(:copy_mode_key_for_keydown, 0x25, ctrl_pressed: false)
       assert_equal "j", gui.send(:copy_mode_key_for_keydown, 0x28, ctrl_pressed: false)
@@ -214,7 +214,7 @@ if Echoes::Platform.windows?
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       10.times { screen.scrollback << [] }
       pane = StubScrollablePane.new(screen, 0, 0.0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
 
@@ -229,7 +229,7 @@ if Echoes::Platform.windows?
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       2.times { screen.scrollback << [] }
       pane = StubScrollablePane.new(screen, 1, 0.0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
 
@@ -242,7 +242,7 @@ if Echoes::Platform.windows?
 
     test "Windows pane input snaps scrolled pane back to live output" do
       pane = StubInputPane.new(Echoes::Screen.new(rows: 2, cols: 10), [], 4, 1.5)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
 
       gui.send(:write_pane_input, pane, "x")
 
@@ -252,7 +252,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows dropped file paths are quoted for shell paste" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
 
       assert_equal 'C:\tmp\a.txt "C:\tmp\my file.txt"',
                    gui.send(:file_paths_for_paste, ['C:\tmp\a.txt', 'C:\tmp\my file.txt'])
@@ -262,7 +262,7 @@ if Echoes::Platform.windows?
     test "Windows file drop pastes paths into the active pane" do
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       pane = StubInputPane.new(screen, [], 0, 0.0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
 
@@ -282,7 +282,7 @@ if Echoes::Platform.windows?
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       screen.bracketed_paste_mode = true
       pane = StubInputPane.new(screen, [], 0, 0.0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.define_singleton_method(:file_paths_for_paste) { |_paths| 'C:\tmp\a.txt' }
@@ -303,7 +303,7 @@ if Echoes::Platform.windows?
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       screen.focus_reporting = true
       pane = StubInputPane.new(screen, [], 0, 0.0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.instance_variable_set(:@hwnd, nil)
@@ -318,7 +318,7 @@ if Echoes::Platform.windows?
     test "Windows focus reporting ignores panes that did not request it" do
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       pane = StubInputPane.new(screen, [], 0, 0.0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.instance_variable_set(:@hwnd, nil)
@@ -335,7 +335,7 @@ if Echoes::Platform.windows?
       end
       pane = StubInputPane.new(screen, [], 0, 0.0)
       pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 40, h: 2, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
       gui.instance_variable_set(:@cell_width, 8)
@@ -359,7 +359,7 @@ if Echoes::Platform.windows?
       screen.mouse_tracking = :normal
       pane = StubInputPane.new(screen, [], 0, 0.0)
       pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
       gui.instance_variable_set(:@cell_width, 8)
@@ -380,7 +380,7 @@ if Echoes::Platform.windows?
       screen.mouse_encoding = :sgr
       pane = StubInputPane.new(screen, [], 0, 0.0)
       pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
       gui.instance_variable_set(:@cell_width, 8)
@@ -403,7 +403,7 @@ if Echoes::Platform.windows?
       screen.scrollback << Array.new(10) { Echoes::Cell.new }
       pane = StubSelectablePane.new(screen, [], 1, 0.0, nil)
       pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
       gui.instance_variable_set(:@cell_width, 8)
@@ -430,7 +430,7 @@ if Echoes::Platform.windows?
       screen = Echoes::Screen.new(rows: 1, cols: 10)
       "hello".chars.each_with_index { |char, index| screen.grid[0][index].char = char }
       pane = StubSelectablePane.new(screen, [], 0, 0.0, nil)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.instance_variable_set(:@cols, 10)
@@ -453,7 +453,7 @@ if Echoes::Platform.windows?
       screen = Echoes::Screen.new(rows: 1, cols: 10)
       "hello".chars.each_with_index { |char, index| screen.grid[0][index].char = char }
       pane = StubSelectablePane.new(screen, [], 0, 0.0, nil)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.instance_variable_set(:@cols, 10)
@@ -474,7 +474,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows modifier key alone keeps normal text selection for shortcuts" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@selection_anchor, [0, 1])
       gui.instance_variable_set(:@selection_end, [0, 3])
 
@@ -488,7 +488,7 @@ if Echoes::Platform.windows?
     test "Windows Ctrl+C follow-up WM_CHAR is swallowed while normal selection remains active" do
       screen = Echoes::Screen.new(rows: 1, cols: 10)
       pane = StubSelectablePane.new(screen, [], 0, 0.0, nil)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.instance_variable_set(:@selection_anchor, [0, 1])
@@ -510,7 +510,7 @@ if Echoes::Platform.windows?
       ].each do |vk, ctrl_pressed, shift_pressed|
         screen = Echoes::Screen.new(rows: 1, cols: 10)
         pane = StubSelectablePane.new(screen, [], 0, 0.0, nil)
-        gui = Echoes::GUI.allocate
+        gui = Echoes::GUI::Backend::Win32.allocate
         gui.instance_variable_set(:@active_tab, 0)
         gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
         gui.instance_variable_set(:@selection_anchor, [0, 1])
@@ -530,7 +530,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows Escape clears normal text selection" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@selection_anchor, [0, 1])
       gui.instance_variable_set(:@selection_end, [0, 3])
       invalidations = 0
@@ -547,7 +547,7 @@ if Echoes::Platform.windows?
       screen = Echoes::Screen.new(rows: 4, cols: 10)
       pane = StubSelectablePane.new(screen, [], 0, 0.0, nil)
       pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
       gui.instance_variable_set(:@cell_width, 8)
@@ -573,7 +573,7 @@ if Echoes::Platform.windows?
       screen.mouse_tracking = :normal
       pane = StubInputPane.new(screen, [], 0, 0.0)
       pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
       gui.instance_variable_set(:@cell_width, 8)
@@ -593,7 +593,7 @@ if Echoes::Platform.windows?
       screen.mouse_tracking = :normal
       pane = StubInputPane.new(screen, [], 0, 0.0)
       pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
       gui.instance_variable_set(:@cell_width, 8)
@@ -614,7 +614,7 @@ if Echoes::Platform.windows?
       screen.mouse_encoding = :sgr
       pane = StubInputPane.new(screen, [], 0, 0.0)
       pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
       gui.instance_variable_set(:@cell_width, 8)
@@ -635,7 +635,7 @@ if Echoes::Platform.windows?
       screen.mouse_tracking = :normal
       pane = StubInputPane.new(screen, [], 0, 0.0)
       pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
       gui.instance_variable_set(:@cell_width, 8)
@@ -657,7 +657,7 @@ if Echoes::Platform.windows?
       screen.mouse_encoding = :sgr
       pane = StubInputPane.new(screen, [], 0, 0.0)
       pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 4, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
       gui.instance_variable_set(:@cell_width, 8)
@@ -674,7 +674,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows terminal cursor loads and applies the I-beam cursor" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       calls = []
       load_cursor = ->(instance, cursor_id) { calls << [:load, instance, cursor_id]; 1234 }
       set_cursor = ->(cursor) { calls << [:set, cursor]; cursor }
@@ -694,7 +694,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows set cursor applies terminal cursor only in client area" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       applied = 0
       defaults = []
       gui.define_singleton_method(:set_terminal_cursor) { applied += 1; true }
@@ -712,7 +712,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows per-cell cursor rects fall back to I-beam when Win32 functions unavailable" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@pointer_hidden, false)
 
       # When Win32 functions are not available, cursor_for_mouse_position returns nil
@@ -721,7 +721,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows per-cell cursor rects return 0 when pointer hidden" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@pointer_hidden, true)
 
       result = gui.send(:cursor_for_mouse_position, :hwnd)
@@ -729,7 +729,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows set cursor uses cursor_for_mouse_position when available" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@pointer_hidden, false)
 
       # Mock the cursor_for_mouse_position to return a specific cursor
@@ -742,7 +742,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows menu bar installs File Edit View Window Shell and Help menus" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hwnd, 99)
       popup_handles = [200, 201, 202, 203, 204, 205, 206, 207]
       calls = []
@@ -761,32 +761,32 @@ if Echoes::Platform.windows?
         end
       end
 
-      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_ABOUT]
-      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_HIDE]
-      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_HIDE_OTHERS]
-      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_SHOW_ALL]
-      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_EXIT]
-      assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_NEW_TAB]
-      assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_OPEN_FILE]
-      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_COPY]
-      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_PASTE]
-      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_FIND]
-      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_FIND_NEXT]
-      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_FIND_PREVIOUS]
-      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_TOGGLE_POINTER]
+      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_ABOUT]
+      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_HIDE]
+      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_HIDE_OTHERS]
+      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_SHOW_ALL]
+      assert_include calls, [:append, 200, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_EXIT]
+      assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_NEW_TAB]
+      assert_include calls, [:append, 201, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_OPEN_FILE]
+      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_COPY]
+      assert_include calls, [:append, 202, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_PASTE]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_FIND]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_FIND_NEXT]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_FIND_PREVIOUS]
+      assert_include calls, [:append, 203, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_TOGGLE_POINTER]
       assert_include calls, [:append, 203, Echoes::Win32::MF_POPUP, 207]
-      assert_include calls, [:append, 207, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_PROFILE_BASE]
-      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MINIMIZE]
-      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_MAXIMIZE]
-      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_WINDOW_FULLSCREEN]
-      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_PREVIOUS_TAB]
-      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_NEXT_TAB]
-      assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_CLOSE_TAB]
-      assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_SPLIT_RIGHT]
-      assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_SPLIT_DOWN]
-      assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_CLOSE_PANE]
-      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_BRING_ALL_TO_FRONT]
-      assert_include calls, [:append, 206, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_ABOUT]
+      assert_include calls, [:append, 207, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_PROFILE_BASE]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_WINDOW_MINIMIZE]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_WINDOW_MAXIMIZE]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_WINDOW_FULLSCREEN]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_PREVIOUS_TAB]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_NEXT_TAB]
+      assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_CLOSE_TAB]
+      assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_SPLIT_RIGHT]
+      assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_SPLIT_DOWN]
+      assert_include calls, [:append, 205, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_CLOSE_PANE]
+      assert_include calls, [:append, 204, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_BRING_ALL_TO_FRONT]
+      assert_include calls, [:append, 206, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_ABOUT]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 200]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 201]
       assert_include calls, [:append, 100, Echoes::Win32::MF_POPUP, 202]
@@ -798,7 +798,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows menu commands dispatch to GUI actions" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hwnd, 101)
       gui.instance_variable_set(:@running, true)
       created = []
@@ -838,26 +838,26 @@ if Echoes::Platform.windows?
       gui.define_singleton_method(:apply_profile_by_menu) { |_command_id| profiles += 1 }
       gui.define_singleton_method(:toggle_copy_mode) { copy_modes += 1 }
 
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_NEW_TAB)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_OPEN_FILE)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_ABOUT)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_HIDE)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_HIDE_OTHERS)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_SHOW_ALL)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_TOGGLE_POINTER)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_COPY)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_PASTE)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_CLOSE_TAB)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_SPLIT_RIGHT)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_SPLIT_DOWN)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_CLOSE_PANE)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_FIND)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_FIND_NEXT)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_FIND_PREVIOUS)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_TOGGLE_COPY_MODE)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_BRING_ALL_TO_FRONT)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_PROFILE_BASE)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_EXIT)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_NEW_TAB)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_OPEN_FILE)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_ABOUT)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_HIDE)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_HIDE_OTHERS)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_SHOW_ALL)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_TOGGLE_POINTER)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_COPY)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_PASTE)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_CLOSE_TAB)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_SPLIT_RIGHT)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_SPLIT_DOWN)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_CLOSE_PANE)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_FIND)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_FIND_NEXT)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_FIND_PREVIOUS)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_TOGGLE_COPY_MODE)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_BRING_ALL_TO_FRONT)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_PROFILE_BASE)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_EXIT)
       assert_false gui.send(:dispatch_menu_command, 999_999)
 
       assert_equal [nil, "C:/tmp/demo.txt"], created
@@ -879,12 +879,12 @@ if Echoes::Platform.windows?
       assert_equal 1, profiles
       assert_equal 1, copy_modes
       gui.instance_variable_set(:@hwnd, nil)
-      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::MENU_EXIT)
+      assert_true gui.send(:dispatch_menu_command, Echoes::GUI::Backend::Win32::MENU_EXIT)
       assert_false gui.instance_variable_get(:@running)
     end
 
     test "Windows app menu hide and show actions target registry windows" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hwnd, 101)
       calls = []
 
@@ -909,7 +909,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows close requests destroy the window when present and stop the loop otherwise" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@running, true)
       gui.instance_variable_set(:@hwnd, Fiddle::Pointer.malloc(1))
 
@@ -937,7 +937,7 @@ if Echoes::Platform.windows?
     test "Windows profile menu applies profile colors and marks panes dirty" do
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       pane = StubInputPane.new(screen, [], 0, 0.0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
 
@@ -957,7 +957,7 @@ if Echoes::Platform.windows?
       req = {word_start: 4, candidates: ["alpha", "alpine", "alto"]}
       pane = StubEmbeddedPane.new(screen, req, [])
       pane_tree = StubPaneTree.new(pane, [{x: 5, y: 1, w: 10, h: 4, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hwnd, 99)
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
@@ -977,7 +977,7 @@ if Echoes::Platform.windows?
           }) do
             with_win32_const(:TrackPopupMenu, ->(menu, flags, x, y, _reserved, hwnd, _rect) {
               calls << [:track, menu, flags, x, y, hwnd]
-              Echoes::GUI::MENU_COMPLETION_BASE + 1
+              Echoes::GUI::Backend::Win32::MENU_COMPLETION_BASE + 1
             }) do
               with_win32_const(:DestroyMenu, ->(menu) { calls << [:destroy, menu]; 1 }) do
                 assert_true gui.send(:show_completion_popup, pane, req)
@@ -987,8 +987,8 @@ if Echoes::Platform.windows?
         end
       end
 
-      assert_include calls, [:append, 500, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_COMPLETION_BASE]
-      assert_include calls, [:append, 500, Echoes::Win32::MF_STRING, Echoes::GUI::MENU_COMPLETION_BASE + 1]
+      assert_include calls, [:append, 500, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_COMPLETION_BASE]
+      assert_include calls, [:append, 500, Echoes::Win32::MF_STRING, Echoes::GUI::Backend::Win32::MENU_COMPLETION_BASE + 1]
       assert_include calls, [:client_to_screen, 80, 80]
       assert_include calls, [:track, 500, Echoes::Win32::TPM_RETURNCMD | Echoes::Win32::TPM_RIGHTBUTTON, 180, 280, 99]
       assert_include calls, [:destroy, 500]
@@ -1000,7 +1000,7 @@ if Echoes::Platform.windows?
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       req = {word_start: 0, candidates: ["cat", "cd"]}
       pane = StubEmbeddedPane.new(screen, req, [])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       shown = []
       gui.define_singleton_method(:show_completion_popup) { |shown_pane, shown_req| shown << [shown_pane, shown_req]; true }
 
@@ -1009,23 +1009,23 @@ if Echoes::Platform.windows?
     end
 
     test "Windows accelerator table encodes menu shortcuts" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
 
-      bytes = gui.send(:accelerator_table_bytes, Echoes::GUI::ACCELERATORS)
+      bytes = gui.send(:accelerator_table_bytes, Echoes::GUI::Backend::Win32::ACCELERATORS)
       entries = bytes.bytes.each_slice(6).map { |chunk| chunk.pack("C*").unpack("Cxvv") }
 
-      assert_equal Echoes::GUI::ACCELERATORS.size, entries.size
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x54, Echoes::GUI::MENU_NEW_TAB], entries[0]
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x46, Echoes::GUI::MENU_FIND], entries[2]
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x57, Echoes::GUI::MENU_CLOSE_TAB], entries[5]
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x50, Echoes::GUI::MENU_TOGGLE_POINTER], entries[8]
-      assert_equal [Echoes::Win32::FVIRTKEY, 0x70, Echoes::GUI::MENU_ABOUT], entries[10]
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x41, Echoes::GUI::MENU_SELECT_ALL], entries[11]
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY | 0x80, 0x30, Echoes::GUI::MENU_RESET_FONT], entries[-1]
+      assert_equal Echoes::GUI::Backend::Win32::ACCELERATORS.size, entries.size
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x54, Echoes::GUI::Backend::Win32::MENU_NEW_TAB], entries[0]
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x46, Echoes::GUI::Backend::Win32::MENU_FIND], entries[2]
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x57, Echoes::GUI::Backend::Win32::MENU_CLOSE_TAB], entries[5]
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x50, Echoes::GUI::Backend::Win32::MENU_TOGGLE_POINTER], entries[8]
+      assert_equal [Echoes::Win32::FVIRTKEY, 0x70, Echoes::GUI::Backend::Win32::MENU_ABOUT], entries[10]
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x41, Echoes::GUI::Backend::Win32::MENU_SELECT_ALL], entries[11]
+      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY | 0x80, 0x30, Echoes::GUI::Backend::Win32::MENU_RESET_FONT], entries[-1]
     end
 
     test "Windows pointer visibility toggles through ShowCursor and clears cursor while hidden" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@cursor_handle, 4321)
       calls = []
       show_returns = [-1, 0]
@@ -1054,7 +1054,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows hidden pointer is restored by shake detection" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@pointer_hidden, true)
       gui.instance_variable_set(:@shake_detector, Echoes::ShakeDetector.new)
       gui.instance_variable_set(:@mouse_button_down, nil)
@@ -1080,7 +1080,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows setup and destroy accelerators use native accelerator table" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       calls = []
 
       with_win32_const(:CreateAcceleratorTableW, ->(_table, count) {
@@ -1098,7 +1098,7 @@ if Echoes::Platform.windows?
         gui.send(:destroy_accelerators)
       end
 
-      assert_equal [[:create, Echoes::GUI::ACCELERATORS.size], [:destroy, 1234]], calls
+      assert_equal [[:create, Echoes::GUI::Backend::Win32::ACCELERATORS.size], [:destroy, 1234]], calls
       assert_nil gui.instance_variable_get(:@accelerators)
     end
 
@@ -1106,7 +1106,7 @@ if Echoes::Platform.windows?
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       screen.current_directory = "file://localhost/C:/Users"
       pane = StubInputPane.new(screen, [], 0, 0.0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hwnd, :hwnd)
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
@@ -1124,7 +1124,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows about panel text includes runtime and curated environment only" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       old_path = ENV["PATH"]
       old_secret = ENV["AWS_SECRET_ACCESS_KEY"]
       ENV["PATH"] = "C:\\bin"
@@ -1146,7 +1146,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows about panel uses MessageBox helper" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hwnd, :hwnd)
       gui.define_singleton_method(:about_panel_text) { "about text" }
       calls = []
@@ -1162,7 +1162,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows IME composition updates marked text when composition string is present" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.define_singleton_method(:read_ime_composition_string) do |hwnd, flag|
         [hwnd, flag] == [:hwnd, Echoes::Win32::GCS_COMPSTR] ? "かな" : nil
       end
@@ -1172,7 +1172,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows IME composition clears marked text when composition string is empty" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@marked_text, "かな")
       gui.define_singleton_method(:read_ime_composition_string) { |_hwnd, _flag| "" }
 
@@ -1181,7 +1181,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows IME composition ignores updates without composition string flag" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@marked_text, "かな")
       gui.define_singleton_method(:read_ime_composition_string) { |_hwnd, _flag| flunk("should not read IME composition") }
 
@@ -1190,7 +1190,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows IME composition commits result string when result flag is present" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       pane = StubInputPane.new(Echoes::Screen.new(rows: 2, cols: 10), [], 0, 0.0)
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
@@ -1205,7 +1205,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows IME commit sends result string to active pane" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       pane = StubInputPane.new(Echoes::Screen.new(rows: 2, cols: 10), [], 0, 0.0)
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
@@ -1223,7 +1223,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows IME commit ignores empty result strings" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       pane = StubInputPane.new(Echoes::Screen.new(rows: 2, cols: 10), [], 0, 0.0)
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
@@ -1240,7 +1240,7 @@ if Echoes::Platform.windows?
       screen.cursor.col = 3
       pane = StubInputPane.new(screen, [], 0, 0.0)
       pane_tree = StubPaneTree.new(pane, [{x: 5, y: 1, w: 10, h: 4, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
       gui.instance_variable_set(:@cell_width, 8)
@@ -1257,7 +1257,7 @@ if Echoes::Platform.windows?
       screen.cursor.col = 2
       pane = StubInputPane.new(screen, [], 0, 0.0)
       pane_tree = StubPaneTree.new(pane, [{x: 1, y: 2, w: 10, h: 4, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
       gui.instance_variable_set(:@cell_width, 10)
@@ -1290,7 +1290,7 @@ if Echoes::Platform.windows?
     test "Windows I/O polling feeds active pane output to its parser" do
       parser = StubParser.new([])
       pane = StubPollingPane.new(true, ["hello"], parser)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.instance_variable_set(:@hwnd, nil)
@@ -1302,7 +1302,7 @@ if Echoes::Platform.windows?
     test "Windows I/O polling ignores empty output and inactive panes" do
       parser = StubParser.new([])
       empty_pane = StubPollingPane.new(true, [""], parser)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(empty_pane)])
       gui.instance_variable_set(:@hwnd, nil)
@@ -1326,7 +1326,7 @@ if Echoes::Platform.windows?
       "old foo".chars.each_with_index { |char, i| scroll_row[i].char = char }
       screen.scrollback << scroll_row
       pane = StubInputPane.new(screen, [], 0, 0.0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.instance_variable_set(:@rows, 2)
@@ -1345,7 +1345,7 @@ if Echoes::Platform.windows?
       screen = Echoes::Screen.new(rows: 1, cols: 12)
       "Foo foo".chars.each_with_index { |char, i| screen.grid[0][i].char = char }
       pane = StubInputPane.new(screen, [], 0, 0.0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.instance_variable_set(:@rows, 1)
@@ -1365,7 +1365,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows search keydown routes next and previous navigation keys" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       sc = Echoes::GUI::SearchController.new
       gui.instance_variable_set(:@search, sc)
       gui.define_singleton_method(:scroll_to_search_match) { }
@@ -1387,7 +1387,7 @@ if Echoes::Platform.windows?
 
     test "Windows resize updates rows and cols from pixel dimensions" do
       tab = StubResizableTab.new([])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@tabs, [tab])
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@cell_width, 8)
@@ -1404,7 +1404,7 @@ if Echoes::Platform.windows?
 
     test "Windows resize ignores missing cell metrics and unchanged sizes" do
       tab = StubResizableTab.new([])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@tabs, [tab])
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@cols, 80)
@@ -1423,7 +1423,7 @@ if Echoes::Platform.windows?
 
     test "Windows paint size sync updates rows after cell metrics become available" do
       tab = StubResizableTab.new([])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@tabs, [tab])
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@cell_width, 8)
@@ -1440,7 +1440,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows double buffered paint renders into memory DC then blits" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       calls = []
       gui.define_singleton_method(:create_compatible_dc) { |hdc| calls << [:create_dc, hdc]; :mem_dc }
       gui.define_singleton_method(:create_compatible_bitmap) { |hdc, width, height| calls << [:create_bitmap, hdc, width, height]; :bitmap }
@@ -1471,7 +1471,7 @@ if Echoes::Platform.windows?
     test "Windows GUI cleanup closes tabs once and clears the tab list" do
       tab1 = StubClosableTab.new(0)
       tab2 = StubClosableTab.new(0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@tabs, [tab1, tab2])
       gui.instance_variable_set(:@active_tab, 1)
 
@@ -1485,7 +1485,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows native timer starts and stops on the window handle" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hwnd, 99)
       calls = []
 
@@ -1504,14 +1504,14 @@ if Echoes::Platform.windows?
       end
 
       assert_equal [
-        [:set, 99, Echoes::GUI::TIMER_ID, Echoes::GUI::TIMER_INTERVAL_MS, nil],
-        [:kill, 99, Echoes::GUI::TIMER_ID]
+        [:set, 99, Echoes::GUI::Backend::Win32::TIMER_ID, Echoes::GUI::Backend::Win32::TIMER_INTERVAL_MS, nil],
+        [:kill, 99, Echoes::GUI::Backend::Win32::TIMER_ID]
       ], calls
       assert_false gui.instance_variable_get(:@native_timer_enabled)
     end
 
     test "Windows timer tick polls output and refreshes window menu periodically" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@window_menu_update_counter, 0)
       calls = []
       gui.define_singleton_method(:poll_active_pane_output) { calls << :poll }
@@ -1526,7 +1526,7 @@ if Echoes::Platform.windows?
     test "Windows timer tick closes dead tabs and keeps live tabs open" do
       live = StubLifecycleTab.new(true, 0)
       dead = StubLifecycleTab.new(false, 0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@tabs, [live, dead])
       gui.instance_variable_set(:@active_tab, 0)
       invalidations = 0
@@ -1548,7 +1548,7 @@ if Echoes::Platform.windows?
 
     test "Windows timer tick closes the window when the last tab exits" do
       dead = StubLifecycleTab.new(false, 0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@tabs, [dead])
       gui.instance_variable_set(:@active_tab, 0)
       close_requests = 0
@@ -1571,7 +1571,7 @@ if Echoes::Platform.windows?
       end
       copy_mode = StubCopyMode.new([0, 1], [0, 3])
       pane = StubPane.new(screen, [], copy_mode)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.instance_variable_set(:@cols, 10)
@@ -1595,7 +1595,7 @@ if Echoes::Platform.windows?
       end
       copy_mode = StubCopyMode.new([0, 0], [0, 2])
       pane = StubPane.new(screen, [], copy_mode)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.instance_variable_set(:@cols, 10)
@@ -1615,7 +1615,7 @@ if Echoes::Platform.windows?
         screen.grid[0][index].char = char
       end
       pane = StubPane.new(screen, [], nil)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
       gui.instance_variable_set(:@cols, 10)
@@ -1635,7 +1635,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows image blit converts RGBA bytes to BGRA for GDI" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       rgba = "\x01\x02\x03\x04\x10\x20\x30\x40".b
 
       assert_equal "\x03\x02\x01\x04\x30\x20\x10\x40".b,
@@ -1643,7 +1643,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows bitmap info uses a negative height for top-down pixels" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       header = gui.send(:bitmap_info_header, 2, 3, 24)
 
       assert_equal 40, header[0, 4].unpack1('L')
@@ -1654,7 +1654,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows text style selects bold and italic fonts" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hfont, 1)
       gui.instance_variable_set(:@bold_hfont, 2)
       gui.instance_variable_set(:@italic_hfont, 3)
@@ -1667,7 +1667,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows font fallback selects a candidate that has the glyph" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hfont, :base)
       gui.instance_variable_set(:@font_fallback_candidates, ["Yu Gothic UI", "Segoe UI Emoji"])
 
@@ -1685,7 +1685,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows font fallback prefers emoji font when GDI cannot confirm emoji glyphs" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hfont, :base)
       gui.instance_variable_set(:@font_fallback_candidates, ["Segoe UI Emoji"])
 
@@ -1696,7 +1696,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows font fallback splits text runs by fallback font" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hfont, :base)
       gui.instance_variable_set(:@font_fallback_candidates, ["Yu Gothic UI"])
 
@@ -1716,7 +1716,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows text decoration rects cover underline and strikethrough" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@cell_height, 16)
 
       assert_equal [[10, 24, 34, 25], [10, 18, 34, 19]],
@@ -1727,7 +1727,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows multicell helpers scale and align text inside the reserved block" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
 
       assert_equal 1.5, gui.send(:effective_multicell_scale, {scale: 3, frac_n: 1, frac_d: 2})
       assert_equal [25, 18],
@@ -1739,7 +1739,7 @@ if Echoes::Platform.windows?
     test "Windows pane drawing clears the pane background before cell drawing" do
       screen = StubDrawScreen.new([], 0, 0, [], [], StubCursor.new(0, 0, false), nil, [])
       pane = StubDrawPane.new(screen, 0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@default_bg, 0x112233)
       gui.instance_variable_set(:@cell_width, 8)
       gui.instance_variable_set(:@cell_height, 16)
@@ -1761,7 +1761,7 @@ if Echoes::Platform.windows?
         [{rect: [1, 1, 5, 9], color: [0.0, 1.0, 0.0, 1.0]}]
       )
       pane = StubDrawPane.new(screen, 0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@default_bg, 0x112233)
       gui.instance_variable_set(:@cell_width, 8)
       gui.instance_variable_set(:@cell_height, 16)
@@ -1781,7 +1781,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows linear gradient draws vertical scanlines for 90 degrees" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       fills = []
       gui.define_singleton_method(:fill_rect_color) do |_hdc, left, top, right, bottom, color|
         fills << [left, top, right, bottom, color]
@@ -1796,7 +1796,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows linear gradient supports multiple color stops" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       fills = []
       gui.define_singleton_method(:fill_rect_color) do |_hdc, left, top, right, bottom, color|
         fills << [left, top, right, bottom, color]
@@ -1814,7 +1814,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows RGBA colors are blended against the default background" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@default_bg, 0x000000)
 
       assert_equal [128, 0, 0], gui.send(:rgba_to_rgb, [255, 0, 0, 0.5])
@@ -1832,7 +1832,7 @@ if Echoes::Platform.windows?
       ]
       screen = StubDrawScreen.new([], 1, 6, [row], [], StubCursor.new(0, 0, false), nil, [])
       pane = StubDrawPane.new(screen, 0)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@colors, [])
       gui.instance_variable_set(:@default_fg, 0xeeeeee)
       gui.instance_variable_set(:@default_bg, 0x000000)
@@ -1855,7 +1855,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows IME marked text draws with fallback font runs" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@cell_width, 8)
       gui.instance_variable_set(:@cell_height, 16)
       gui.instance_variable_set(:@hfont, :base)
@@ -1882,7 +1882,7 @@ if Echoes::Platform.windows?
     test "Windows screen handlers wire OSC notifications" do
       screen = StubHandlerScreen.new
       pane = StubHandlerPane.new(screen)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       delivered = []
       gui.define_singleton_method(:post_notification) do |source_pane, title, message|
         delivered << [source_pane, title, message]
@@ -1897,7 +1897,7 @@ if Echoes::Platform.windows?
     test "Windows screen handlers wire OSC capture" do
       screen = StubHandlerScreen.new
       pane = StubHandlerPane.new(screen)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       captured = []
       gui.define_singleton_method(:capture_pane_to_png) do |source_pane, path|
         captured << [source_pane, path]
@@ -1912,7 +1912,7 @@ if Echoes::Platform.windows?
     test "Windows screen handlers wire OSC display info" do
       screen = StubHandlerScreen.new
       pane = StubHandlerPane.new(screen)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.define_singleton_method(:display_info_json) { |source_pane| "json:#{source_pane.object_id}" }
 
       gui.send(:wire_screen_handlers, pane)
@@ -1923,7 +1923,7 @@ if Echoes::Platform.windows?
     test "Windows screen handlers wire OSC open-window" do
       screen = StubHandlerScreen.new
       pane = StubHandlerPane.new(screen)
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       seen = []
       gui.define_singleton_method(:open_window_from_osc) do |source_pane, args|
         seen << [source_pane, args]
@@ -1936,7 +1936,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows notification title falls back to window title" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hwnd, :hwnd)
       titles = []
       gui.define_singleton_method(:set_window_title) { |title| titles << title }
@@ -1947,7 +1947,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows display info JSON includes monitor geometry and current monitor" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hwnd, 99)
       monitors = [
         {handle: 10, x: 0, y: 0, w: 1920, h: 1080, work_x: 0, work_y: 0, work_w: 1920, work_h: 1040, primary: true, dpi_x: 96, dpi_y: 96, scale: 1.0},
@@ -2001,7 +2001,7 @@ if Echoes::Platform.windows?
       argv = ["C:/Program Files/Demo/demo.exe", "--show"]
       args = "display=1:program=#{[JSON.generate(argv)].pack('m0')}:fullscreen=no"
       spawned = []
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@cell_width, 8)
       gui.instance_variable_set(:@cell_height, 16)
       gui.define_singleton_method(:child_env_for_open_window) { {"PATH" => "C:\\Windows"} }
@@ -2034,7 +2034,7 @@ if Echoes::Platform.windows?
       argv = ["demo.exe"]
       args = "display=0:program=#{[JSON.generate(argv)].pack('m0')}:fullscreen=yes"
       envs = []
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@cell_width, 10)
       gui.instance_variable_set(:@cell_height, 20)
       gui.define_singleton_method(:child_env_for_open_window) { {} }
@@ -2051,7 +2051,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows open-window env can seed command and initial window rect" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       argv = ["demo.exe", "--arg"]
       env = {
         "ECHOES_OPEN_WINDOW_PROGRAM" => [JSON.generate(argv)].pack("m0"),
@@ -2069,7 +2069,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows initial window rect restores saved preferences when env is absent" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       prefs = {
         "window_x" => 12.0,
         "window_y" => 34.0,
@@ -2083,7 +2083,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows explicit window env overrides saved preferences" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       prefs = {
         "window_x" => 12.0,
         "window_y" => 34.0,
@@ -2098,7 +2098,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows save window rect stores current frame preferences" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hwnd, 99)
       gui.instance_variable_set(:@window_rect_autosave, true)
       prefs = {}
@@ -2119,7 +2119,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows save window rect skips explicit env windows" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hwnd, 99)
       gui.instance_variable_set(:@window_rect_autosave, false)
       prefs = {}
@@ -2132,7 +2132,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows PNG encoder writes a valid RGBA PNG container" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       rgba = "\xFF\x00\x00\xFF\x00\xFF\x00\xFF".b
 
       png = gui.send(:encode_png_rgba, 2, 1, rgba)
@@ -2145,7 +2145,7 @@ if Echoes::Platform.windows?
     end
 
     test "Windows PDF encoder wraps RGB pixels in an image PDF" do
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       rgb = "\xFF\x00\x00\x00\xFF\x00".b
 
       pdf = gui.send(:encode_pdf_rgb_image, 2, 1, rgb)
@@ -2163,7 +2163,7 @@ if Echoes::Platform.windows?
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       pane = StubInputPane.new(screen, [], 0, 0.0)
       pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 2, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
       gui.instance_variable_set(:@cell_width, 8)
@@ -2186,7 +2186,7 @@ if Echoes::Platform.windows?
       screen = Echoes::Screen.new(rows: 2, cols: 10)
       pane = StubInputPane.new(screen, [], 0, 0.0)
       pane_tree = StubPaneTree.new(pane, [{x: 0, y: 0, w: 10, h: 2, pane: pane}])
-      gui = Echoes::GUI.allocate
+      gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@active_tab, 0)
       gui.instance_variable_set(:@tabs, [StubLayoutTab.new(pane_tree)])
       gui.instance_variable_set(:@cell_width, 8)
@@ -2424,7 +2424,7 @@ class Echoes::GUISelectedTextTest < Test::Unit::TestCase
 
   def make_gui_with_screen(rows: 5, cols: 30)
     screen = Echoes::Screen.new(rows: rows, cols: cols)
-    gui = Echoes::GUI.allocate
+    gui = Echoes::GUI::Backend::Win32.allocate
     gui.instance_variable_set(:@cols, cols)
     gui.instance_variable_set(:@rows, rows)
     gui.instance_variable_set(:@active_tab, 0)
@@ -2490,7 +2490,7 @@ end
 
 class Echoes::GUISearchMatcherTest < Test::Unit::TestCase
   def make_gui(regex: false, case_insensitive: false)
-    gui = Echoes::GUI.allocate
+    gui = Echoes::GUI::Backend::Win32.allocate
     sc = Echoes::GUI::SearchController.new
     sc.toggle_regex if regex
     sc.toggle_case_insensitive if case_insensitive

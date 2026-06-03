@@ -35,6 +35,7 @@ module Echoes
   module_function
 
   def load_gui_backend
+    require_relative "echoes/gui/backend"
     if Platform.windows?
       require_relative "echoes/win32"
       require_relative "echoes/gui_win32"
@@ -44,6 +45,7 @@ module Echoes
     else
       raise Error, "Echoes GUI is not supported on this platform"
     end
+    require_relative "echoes/gui_orchestrator"
   end
 end
 

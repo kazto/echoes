@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Echoes
-  class GUI
+  class GUI::Backend::Win32
     private
 
     private def wire_screen_handlers(pane)

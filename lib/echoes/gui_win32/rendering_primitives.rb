@@ -3,7 +3,7 @@
 require_relative "../gui/layout"
 
 module Echoes
-  class GUI
+  class GUI::Backend::Win32
     private
 
     private def draw_text_run(hdc, x, y, text, font)

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative 'gui/backend'   # Must load before core.rb defines Backend::Win32
 require_relative 'win32'
 require_relative 'window_registry'
 require_relative 'tab'
