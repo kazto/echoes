@@ -441,6 +441,58 @@ class Echoes::ShellBackendTest < Test::Unit::TestCase
     backend&.close
   end
 
+  test "ConPTY backend preserves cmd startup repaint banner after mode sequences" do
+    raw_output = "\e[?9001h\e[?1004h\e[?25l\e[2J\e[m\e[H" \
+                 "Microsoft Windows [Version 10.0.26200.8457]" \
+                 "\e]0;C:\\windows\\SYSTEM32\\cmd.exe\a\e[?25h\e[?25l\r\n" \
+                 "(c) Microsoft Corporation. All rights reserved." \
+                 "\e[4;1HC:\\Users\\kazto\\src\\echoes>\e[?25h"
+    conpty = FakeConPTY.new([raw_output])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    output = backend.read_available_output(16_384)
+    assert_include(output, "Microsoft Windows")
+    assert_include(output, "(c) Microsoft Corporation")
+    assert_include(output, "C:\\Users\\kazto\\src\\echoes>")
+  ensure
+    backend&.close
+  end
+
+  test "ConPTY backend preserves cmd startup banner when GUI window triggers resize repaint" do
+    # GUI launch: cmd.exe outputs banner, then Echoes sends resize, cmd.exe repaints
+    empty_rows = "\e[K\r\n" * 22
+    raw_output = "\e[?9001h\e[?1004h\e[?25l\e[2J\e[m\e[H" \
+                 "Microsoft Windows [Version 10.0.26200.8457]" \
+                 "\e]0;C:\\windows\\system32\\cmd.exe\a\e[?25h" \
+                 "\e[?25l\e[8;27;89t\e[H" \
+                 "Microsoft Windows [Version 10.0.26200.8457]\e[K\r\n" \
+                 "(c) Microsoft Corporation. All rights reserved.\e[K\r\n" \
+                 "\e[K\r\nC:\\Users\\kazto>\e[K\r\n" +
+                 empty_rows +
+                 "\e[4;1H\e[?25h"
+    conpty = FakeConPTY.new([raw_output])
+    backend = Echoes::WindowsConPTYBackend.new(
+      command: "cmd.exe",
+      env: nil,
+      rows: 24,
+      cols: 80,
+      conpty: conpty
+    )
+
+    output = backend.read_available_output(16_384)
+    assert_include(output, "Microsoft Windows")
+    assert_include(output, "(c) Microsoft Corporation")
+    assert_include(output, "C:\\Users\\kazto>")
+  ensure
+    backend&.close
+  end
+
   test "ConPTY backend preserves prior output before multiline cmd resize repaint" do
     prior_output = "dir\r\nfile.txt\r\nC:\\Users\\kazto>"
     repaint = "\e[?25l\e[2J\e[m\e[H" \

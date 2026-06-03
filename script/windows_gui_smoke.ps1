@@ -36,6 +36,9 @@ if (-not $OutDir) {
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
 $beforeCmd = @(Get-Process -Name cmd -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
+# Force cmd.exe so the startup-banner fix is exercised; the SHELL env var (set
+# by Git Bash) would otherwise override Platform.default_shell on this machine.
+$env:SHELL = if ($env:COMSPEC) { $env:COMSPEC } else { 'C:\Windows\System32\cmd.exe' }
 $p = Start-Process -FilePath 'ruby' -ArgumentList @('-Ilib', 'exe\echoes') -WorkingDirectory $repo -PassThru
 
 function Capture([string]$Name) {
@@ -59,6 +62,28 @@ function Capture([string]$Name) {
   $path
 }
 
+function Assert-HasTerminalText([string]$Path) {
+  $bmp = [System.Drawing.Bitmap]::FromFile($Path)
+  try {
+    $ink = 0
+    $startY = [Math]::Min($bmp.Height - 1, 120)
+    for ($y = $startY; $y -lt $bmp.Height; $y += 3) {
+      for ($x = 40; $x -lt $bmp.Width; $x += 3) {
+        $p = $bmp.GetPixel($x, $y)
+        if ($p.R -gt 90 -or $p.G -gt 90 -or $p.B -gt 90) {
+          $ink++
+        }
+      }
+    }
+    if ($ink -lt 600) {
+      throw "initial terminal text was not visible in screenshot: $Path"
+    }
+  }
+  finally {
+    $bmp.Dispose()
+  }
+}
+
 try {
   $deadline = (Get-Date).AddSeconds(15)
   do {
@@ -74,6 +99,7 @@ try {
   Start-Sleep -Seconds 3
 
   $initial = Capture '01-initial.png'
+  Assert-HasTerminalText $initial
   [System.Windows.Forms.SendKeys]::SendWait('d')
   Start-Sleep -Seconds 1
   $typedD = Capture '02-typed-d.png'
