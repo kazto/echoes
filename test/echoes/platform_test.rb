@@ -51,4 +51,18 @@ class Echoes::PlatformTest < Test::Unit::TestCase
       Echoes::Platform.default_shell("x64-mingw-ucrt", env: {}, executable_lookup: lookup)
     )
   end
+
+  test "gui_backend raises Error for unsupported platform" do
+    assert_raise(Echoes::Error) do
+      Echoes::Platform.gui_backend("linux-gnu")
+    end
+  end
+
+  if Echoes::Platform.windows?
+    test "gui_backend returns Win32 backend class on Windows" do
+      omit "GUI::Backend::Win32 not yet defined" unless defined?(Echoes::GUI::Backend::Win32)
+      klass = Echoes::Platform.gui_backend
+      assert_equal "Echoes::GUI::Backend::Win32", klass.name
+    end
+  end
 end

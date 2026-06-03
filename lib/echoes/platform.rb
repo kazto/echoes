@@ -25,6 +25,16 @@ module Echoes
       !windows?(os)
     end
 
+    def gui_backend(os = host_os)
+      if windows?(os)
+        GUI::Backend::Win32
+      elsif macos?(os)
+        GUI::Backend::Mac
+      else
+        raise Echoes::Error, "Echoes GUI is not supported on this platform"
+      end
+    end
+
     def default_shell(os = host_os, env: ENV, executable_lookup: method(:find_executable))
       return '/bin/bash' unless windows?(os)
 
