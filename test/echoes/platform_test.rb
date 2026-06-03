@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "echoes/gui/backend"
 
 class Echoes::PlatformTest < Test::Unit::TestCase
   test "detects Windows host os variants" do
