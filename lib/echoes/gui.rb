@@ -7,6 +7,7 @@ require 'uri'
 require 'json'
 require_relative "gui/search_controller"
 require_relative "gui/layout"
+require_relative "gui/selection"
 
 module Echoes
   class GUI
@@ -2527,15 +2528,7 @@ module Echoes
         end
     
         def selection_range
-          return nil unless @selection_anchor && @selection_end
-    
-          a_r, a_c = @selection_anchor
-          b_r, b_c = @selection_end
-          if a_r < b_r || (a_r == b_r && a_c <= b_c)
-            [a_r, a_c, b_r, b_c]
-          else
-            [b_r, b_c, a_r, a_c]
-          end
+          GUI::Selection.normalize_selection(@selection_anchor, @selection_end)
         end
     
         def toggle_search
@@ -2712,14 +2705,8 @@ module Echoes
         def cell_selected?(row, col)
           range = selection_range
           return false unless range
-    
-          sr, sc, er, ec = range
-          return false if row < sr || row > er
-          return col >= sc && col <= ec if sr == er
-          return col >= sc if row == sr
-          return col <= ec if row == er
-    
-          true
+
+          GUI::Selection.cell_in_range?(row, col, *range)
         end
     
         # NSView's frame.size.height in points. Querying live (rather than caching

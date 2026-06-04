@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../gui/selection"
+
 module Echoes
   class GUI::Backend::Win32
     private
@@ -323,10 +325,7 @@ module Echoes
         return [sr, sc, er, ec]
       end
 
-      return nil unless @selection_anchor && @selection_end
-
-      (sr, sc), (er, ec) = [@selection_anchor, @selection_end].sort_by { |p| [p[0], p[1]] }
-      [sr, sc, er, ec]
+      Echoes::GUI::Selection.normalize_selection(@selection_anchor, @selection_end)
     end
 
     private def measure_glyph(text, family, scale, frac_n, frac_d)

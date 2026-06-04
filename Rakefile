@@ -16,6 +16,7 @@ CORE_TEST_FILES = FileList[
   "test/echoes/embedded_shell_test.rb",
   "test/echoes/gui_layout_test.rb",
   "test/echoes/gui_osc7_test.rb",
+  "test/echoes/gui_selection_test.rb",
   "test/echoes/gui_win32_lint_test.rb",
   "test/echoes/gui_test.rb",
   "test/echoes/iterm2_images_test.rb",
