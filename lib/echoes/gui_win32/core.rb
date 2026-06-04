@@ -166,6 +166,10 @@ module Echoes
       tab.panes.each { |pane| wire_screen_handlers(pane) }
       @tabs << tab
       @active_tab = @tabs.size - 1
+      # Reflow @rows when the tab bar toggles (appears at 2 tabs, disappears at 1).
+      # WM_SIZE does not fire on tab count changes, so we sync explicitly —
+      # same pattern as macOS reflow_to_current_view_size.
+      sync_window_size_from_client_rect
       tab
     end
 

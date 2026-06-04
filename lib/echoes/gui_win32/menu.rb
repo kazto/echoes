@@ -373,9 +373,10 @@ module Echoes
       tab = @tabs.delete_at(index)
       tab&.close
       if @tabs.empty?
-        create_tab
+        create_tab  # create_tab calls sync_window_size_from_client_rect internally
       else
         @active_tab = [index, @tabs.size - 1].min
+        sync_window_size_from_client_rect
       end
       true
     end
