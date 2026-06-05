@@ -51,7 +51,6 @@ Gem::Specification.new do |spec|
   MSG
 
   # Uncomment to register a new dependency of your gem
-  spec.add_dependency 'syslog'
   spec.add_dependency 'fiddle'
 
   # For more information and examples about making a new gem, check out our
