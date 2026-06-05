@@ -654,14 +654,42 @@ class Echoes::ScreenTest < Test::Unit::TestCase
     assert_empty @screen.placements
   end
 
-  test "put_kitty_image discards an image that's larger than the screen" do
+  test "put_kitty_image scales an oversized image down to fit the screen (preserving aspect)" do
     @screen = Echoes::Screen.new(rows: 5, cols: 10)
     @screen.cell_pixel_width  = 10.0
     @screen.cell_pixel_height = 20.0
-    # 200px wide / 10px-per-cell = 20 cells > 10 col limit.
+    # 200px / 10px-per-cell = 20 cols (> 10 limit); 100px / 20 = 5 rows (== 5).
+    # Uniform fit scale = min(10/20, 5/5) = 0.5 → 10 cols × 2 rows.
     rgba = "\x00".b * (200 * 100 * 4)
     @screen.put_kitty_image(rgba: rgba, width: 200, height: 100)
-    assert_nil @screen.grid[0][0].multicell
+    anchor = @screen.grid[0][0].multicell
+    refute_nil anchor, "oversized image should be scaled to fit, not dropped"
+    assert_equal 10, anchor[:cols]
+    assert_equal 2,  anchor[:rows]
+    pl = @screen.placements.first
+    assert_equal 10, pl[:cell_cols]
+    assert_equal 2,  pl[:cell_rows]
+    # The full-resolution bitmap is preserved; only the draw rect
+    # shrinks (StretchDIBits scales it into the smaller cell rect).
+    assert_equal 200, pl[:image][:width]
+    assert_equal 100, pl[:image][:height]
+  end
+
+  test "put_kitty_image scales an image that overflows only one axis" do
+    @screen = Echoes::Screen.new(rows: 10, cols: 10)
+    @screen.cell_pixel_width  = 10.0
+    @screen.cell_pixel_height = 20.0
+    # 40px / 10 = 4 cols (fits); 400px / 20 = 20 rows (> 10).
+    # scale = min(10/4, 10/20) = 0.5 → 2 cols × 10 rows.
+    # suppress_cursor avoids the bottom-edge scroll so the anchor
+    # stays at (0,0) for inspection.
+    rgba = "\x00".b * (40 * 400 * 4)
+    @screen.put_kitty_image(rgba: rgba, width: 40, height: 400,
+                            suppress_cursor: true)
+    anchor = @screen.grid[0][0].multicell
+    refute_nil anchor
+    assert_equal 2,  anchor[:cols]
+    assert_equal 10, anchor[:rows]
   end
 
   # --- to_text ---

@@ -266,7 +266,16 @@ module Echoes
       mc_rows = cells_h && cells_h > 0 ? cells_h : (height / @cell_pixel_height).ceil
       mc_cols = [mc_cols, 1].max
       mc_rows = [mc_rows, 1].max
-      return if mc_cols > @cols || mc_rows > @rows
+
+      # Scale oversized images down to fit the grid (preserving
+      # aspect ratio) instead of dropping them. The GUI blits the
+      # full-resolution bitmap into the cell rect via StretchDIBits,
+      # so fewer cells simply renders a smaller image — no data lost.
+      if mc_cols > @cols || mc_rows > @rows
+        fit = [@cols.to_f / mc_cols, @rows.to_f / mc_rows].min
+        mc_cols = [(mc_cols * fit).floor, 1].max
+        mc_rows = [(mc_rows * fit).floor, 1].max
+      end
 
       if suppress_cursor
         # C=1 (slide-presentation mode): anchor at the current
