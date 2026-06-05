@@ -35,6 +35,7 @@ CORE_TEST_FILES = FileList[
   "test/echoes/sixel_decoder_test.rb",
   "test/echoes/tab_test.rb",
   "test/echoes/terminal_test.rb",
+  "test/ziglow_echoes_smoke_script_test.rb",
 ]
 
 Rake::TestTask.new(:test) do |t|
@@ -66,6 +67,19 @@ namespace :test do
     command = [powershell, "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script]
     puts command.map { |part| part.include?(" ") ? %("#{part}") : part }.join(" ")
     raise "Windows GUI smoke failed" unless system(*command)
+  end
+
+  desc "Run ziglow inside Echoes and capture Windows GUI screenshots"
+  task :ziglow_echoes_smoke do
+    abort "test:ziglow_echoes_smoke is only available on Windows" unless Echoes::Platform.windows?
+
+    script = File.expand_path("script/ziglow_echoes_smoke.ps1", __dir__)
+    abort "missing ziglow Echoes smoke script: #{script}" unless File.exist?(script)
+
+    powershell = ENV.fetch("POWERSHELL", "powershell.exe")
+    command = [powershell, "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script]
+    puts command.map { |part| part.include?(" ") ? %("#{part}") : part }.join(" ")
+    raise "Ziglow Echoes smoke failed" unless system(*command)
   end
 end
 

@@ -174,7 +174,30 @@ module Echoes
     end
 
     def put_multicell(text, scale:, width:, frac_n:, frac_d:, valign:, halign:,
-                       family: nil, flip_h: false, flip_v: false)
+                       family: nil, flip_h: false, flip_v: false, style_attrs: nil)
+      if style_attrs && !style_attrs.empty?
+        saved_attrs = Cell.new
+        saved_attrs.copy_from(@attrs)
+        style_attrs.each do |key, value|
+          case key
+          when :fg then @attrs.fg = value
+          when :bg then @attrs.bg = value
+          when :bold then @attrs.bold = value
+          end
+        end
+
+        begin
+          return put_multicell(
+            text,
+            scale: scale, width: width, frac_n: frac_n, frac_d: frac_d,
+            valign: valign, halign: halign, family: family,
+            flip_h: flip_h, flip_v: flip_v,
+          )
+        ensure
+          @attrs = saved_attrs
+        end
+      end
+
       mc_rows = scale
 
       if width > 0

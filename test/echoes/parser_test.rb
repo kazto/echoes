@@ -248,6 +248,15 @@ class Echoes::ParserTest < Test::Unit::TestCase
     assert_equal(4, mc[:frac_d])
   end
 
+  test "OSC 66 Echoes style metadata applies colors to multicell anchor" do
+    @parser.feed("\e]66;s=2:e_fg=228:e_bg=63:e_bold=1;H\x07")
+    cell = @screen.grid[0][0]
+    assert_equal("H", cell.char)
+    assert_equal(228, cell.fg)
+    assert_equal(63, cell.bg)
+    assert_true(cell.bold)
+  end
+
   test "OSC 66 ignores f= (Echoes extension lives on OSC 7772 ;multicell)" do
     @parser.feed("\e]66;s=2:f=Helvetica Neue;Title\x07")
     mc = @screen.grid[0][0].multicell
