@@ -36,6 +36,15 @@ module Echoes
           # spawn inherit these via the normal env-inheritance path.
           ENV['TERM_PROGRAM']         = 'Echoes'
           ENV['TERM_PROGRAM_VERSION'] = Echoes::VERSION
+          # Advertise which inline-image protocol actually survives this
+          # terminal's transport, so emitters (e.g. ziglow) can pick the
+          # one that reaches us instead of guessing from the OS. On Windows
+          # panes run under ConPTY, which discards APC frames (the Kitty
+          # graphics protocol) but passes OSC through intact at any size —
+          # so OSC 1337 (iTerm2 inline images) is the only protocol that
+          # arrives. On macOS/Linux the real PTY passes APC through, so the
+          # native Kitty graphics protocol works.
+          ENV['ECHOES_INLINE_IMAGE_PROTOCOL'] = Platform.windows? ? 'osc1337' : 'kitty'
           @rows = rows
           @cols = cols
           # Persisted font size wins over the config default; both wrappers

@@ -74,6 +74,12 @@ module Echoes
 
       ENV['TERM_PROGRAM']         = 'Echoes'
       ENV['TERM_PROGRAM_VERSION'] = Echoes::VERSION
+      # Windows panes run under ConPTY, which discards APC frames (the
+      # Kitty graphics protocol) but passes OSC through intact at any
+      # size. So OSC 1337 (iTerm2 inline images) is the only inline-image
+      # protocol that reaches us — advertise it so emitters (e.g. ziglow)
+      # pick it instead of Kitty graphics, which never arrive.
+      ENV['ECHOES_INLINE_IMAGE_PROTOCOL'] = 'osc1337'
       @rows = positive_env_integer('ECHOES_ROWS') || rows
       @cols = positive_env_integer('ECHOES_COLS') || cols
       @font_size = font_size || Preferences.fetch_double(:font_size, default: Echoes.config.font_size)
