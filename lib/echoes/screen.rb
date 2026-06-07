@@ -249,8 +249,10 @@ module Echoes
     # Place a Kitty-graphics-protocol image as a multicell anchor.
     # `rgba` is a Ruby string of width*height*4 bytes (RGBA8, top
     # row first). `cells_w` / `cells_h` come from the wire's `c=` /
-    # `r=` options; when nil we size to the image's natural pixel
-    # dims divided by cell pixel size. `suppress_cursor` honors the
+    # `r=` options. When both are nil we size to the image's natural
+    # pixel dims divided by cell pixel size; when only one is given the
+    # other is derived to preserve the image's aspect ratio (matching
+    # Kitty/iTerm2 single-dimension semantics). `suppress_cursor` honors the
     # `C=1` request to leave the cursor where it was.
     #
     # The renderer is format-agnostic: it just blits `multicell.sixel`'s
@@ -262,8 +264,27 @@ module Echoes
       return if rgba.nil? || width <= 0 || height <= 0
       return if @cell_pixel_width.to_f <= 0 || @cell_pixel_height.to_f <= 0
 
-      mc_cols = cells_w && cells_w > 0 ? cells_w : (width  / @cell_pixel_width ).ceil
-      mc_rows = cells_h && cells_h > 0 ? cells_h : (height / @cell_pixel_height).ceil
+      have_w = cells_w && cells_w > 0
+      have_h = cells_h && cells_h > 0
+      if have_w && have_h
+        mc_cols = cells_w
+        mc_rows = cells_h
+      elsif have_w
+        # Only the width was requested: derive the height so the box
+        # keeps the image's pixel aspect ratio (Kitty/iTerm2 single-
+        # dimension semantics). Box px = mc_cols*cell_w by mc_rows*cell_h,
+        # so mc_rows = mc_cols * cell_w * (height/width) / cell_h.
+        mc_cols = cells_w
+        mc_rows = (cells_w * @cell_pixel_width * height /
+                   (width * @cell_pixel_height)).round
+      elsif have_h
+        mc_rows = cells_h
+        mc_cols = (cells_h * @cell_pixel_height * width /
+                   (height * @cell_pixel_width)).round
+      else
+        mc_cols = (width  / @cell_pixel_width ).ceil
+        mc_rows = (height / @cell_pixel_height).ceil
+      end
       mc_cols = [mc_cols, 1].max
       mc_rows = [mc_rows, 1].max
 

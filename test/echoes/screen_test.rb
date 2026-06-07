@@ -528,6 +528,34 @@ class Echoes::ScreenTest < Test::Unit::TestCase
     assert_equal 2, anchor.multicell[:rows]
   end
 
+  test "put_kitty_image derives rows from the chosen width, preserving aspect" do
+    @screen = Echoes::Screen.new(rows: 30, cols: 60)
+    @screen.cell_pixel_width  = 10.0
+    @screen.cell_pixel_height = 20.0
+    # 100×100px square image. Natural sizing → 10 cols × 5 rows (square
+    # in pixels but skewed in cells). With cells_w=20 the box is
+    # 20*10=200px wide; preserving aspect → 200px tall → 200/20 = 10 rows.
+    rgba = "\x00".b * (100 * 100 * 4)
+    @screen.put_kitty_image(rgba: rgba, width: 100, height: 100, cells_w: 20)
+    anchor = @screen.grid[0][0]
+    assert_equal 20, anchor.multicell[:cols]
+    assert_equal 10, anchor.multicell[:rows]
+  end
+
+  test "put_kitty_image derives cols from the chosen height, preserving aspect" do
+    @screen = Echoes::Screen.new(rows: 30, cols: 60)
+    @screen.cell_pixel_width  = 10.0
+    @screen.cell_pixel_height = 20.0
+    # 100×100px square image. Natural cols would be 100/10 = 10. With
+    # cells_h=10 the box is 10*20=200px tall; preserving aspect → 200px
+    # wide → 200/10 = 20 cols.
+    rgba = "\x00".b * (100 * 100 * 4)
+    @screen.put_kitty_image(rgba: rgba, width: 100, height: 100, cells_h: 10)
+    anchor = @screen.grid[0][0]
+    assert_equal 20, anchor.multicell[:cols]
+    assert_equal 10, anchor.multicell[:rows]
+  end
+
   test "put_kitty_image advances cursor to the row after the image" do
     @screen = Echoes::Screen.new(rows: 10, cols: 30)
     @screen.cell_pixel_width  = 10.0
