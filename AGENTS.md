@@ -34,6 +34,36 @@ Run `bundle exec rake test:windows_gui_smoke` from the repository root. The task
 
 After any fix, the agent must personally exercise the changed behavior and confirm it works, using the GUI smoke task or another direct manual operation appropriate to the change. Do not rely on code inspection alone.
 
+**Required for any change to `lib/echoes/gui_win32/` files:** After `bundle exec rake test`, also run the smoke task OR manually verify `bundle exec ruby -Ilib exe/echoes` starts without error. The unit tests use `.allocate` (bypasses `initialize`) so runtime errors in `initialize` are invisible to the test suite.
+
+## Win32 Backend Class Notation Rule
+
+All `lib/echoes/gui_win32/*.rb` files **must** use the compact class notation:
+
+```ruby
+# CORRECT — nesting: [Echoes::GUI::Backend::Win32, Echoes]
+module Echoes
+  class GUI::Backend::Win32
+    Win32::Foo  # resolves to Echoes::Win32::Foo ✓
+  end
+end
+```
+
+```ruby
+# WRONG — nesting: [Echoes::GUI::Backend::Win32, Echoes::GUI::Backend, Echoes::GUI, Echoes]
+module Echoes
+  class GUI
+    class Backend
+      class Win32 < Backend
+        Win32::Foo  # resolves to Echoes::GUI::Backend::Win32::Foo ✗ (shadows Echoes::Win32)
+      end
+    end
+  end
+end
+```
+
+Deep nesting causes the class name `Win32` to shadow `Echoes::Win32` in Ruby's constant lookup chain. The lint test `test/echoes/gui_win32_lint_test.rb` enforces this automatically.
+
 ## CI
 
 GitHub Actions runs `bundle exec rake` on push to master and on pull requests (Ruby 4.1.0, ubuntu-latest).
