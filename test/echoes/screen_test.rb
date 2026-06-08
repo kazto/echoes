@@ -720,6 +720,38 @@ class Echoes::ScreenTest < Test::Unit::TestCase
     assert_equal 10, anchor[:rows]
   end
 
+  test "erasing the anchor row drops the placement (cls via per-line erase)" do
+    @screen = Echoes::Screen.new(rows: 6, cols: 10)
+    @screen.cell_pixel_width  = 10.0
+    @screen.cell_pixel_height = 20.0
+    rgba = "\x00".b * (20 * 40 * 4)
+    @screen.put_kitty_image(rgba: rgba, width: 20, height: 40, suppress_cursor: true)
+    assert_equal 1, @screen.placements.size
+
+    # `cls` clears the screen with \e[K per line, not \e[2J. Erasing the
+    # image's anchor row must drop the placement so it doesn't linger.
+    @screen.cursor.row = 0
+    @screen.cursor.col = 0
+    @screen.erase_in_line(0)
+    assert_equal 0, @screen.placements.size,
+                 "placement should be dropped when its anchor row is erased"
+  end
+
+  test "erasing a different row keeps the placement" do
+    @screen = Echoes::Screen.new(rows: 6, cols: 10)
+    @screen.cell_pixel_width  = 10.0
+    @screen.cell_pixel_height = 20.0
+    rgba = "\x00".b * (20 * 40 * 4)
+    @screen.put_kitty_image(rgba: rgba, width: 20, height: 40, suppress_cursor: true)
+    assert_equal 1, @screen.placements.size
+
+    @screen.cursor.row = 5
+    @screen.cursor.col = 0
+    @screen.erase_in_line(0)
+    assert_equal 1, @screen.placements.size,
+                 "placement should survive erasing an unrelated row"
+  end
+
   # --- to_text ---
 
   test "to_text on empty screen" do

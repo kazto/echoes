@@ -565,6 +565,7 @@ module Echoes
         @scrollback.clear
         @scrollback_wrapped.clear
       end
+      prune_orphaned_placements
     end
 
     def erase_in_line(mode = 0)
@@ -578,6 +579,7 @@ module Echoes
       when 2
         clear_row(@cursor.row)
       end
+      prune_orphaned_placements
     end
 
     def insert_lines(n = 1)
@@ -665,6 +667,21 @@ module Echoes
       return if @placements.empty?
       @placements.each { |p| p[:anchor_row] += delta }
       @placements.reject! { |p| p[:anchor_row] + p[:cell_rows] <= 0 }
+    end
+
+    # Drop placements whose anchor cell is no longer an image multicell —
+    # i.e. the row backing the image was erased (e.g. `cls`, which clears the
+    # screen with per-line `\e[K` rather than `\e[2J`, and `\e[K` resets the
+    # anchor cell). The renderer draws from @placements independently of the
+    # grid, so an erased image would otherwise linger on screen.
+    def prune_orphaned_placements
+      return if @placements.empty?
+      @placements.reject! do |p|
+        r = p[:anchor_row]
+        next false if r < 0 || r >= @grid.size
+        cell = @grid[r][p[:anchor_col]]
+        !(cell && cell.multicell.is_a?(Hash))
+      end
     end
 
     def scroll_down(n = 1)

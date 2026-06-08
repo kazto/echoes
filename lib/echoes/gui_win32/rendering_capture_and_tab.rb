@@ -167,13 +167,16 @@ module Echoes
       rects
     end
 
-    private def blit_kitty_placement(hdc, pl, px, py, pane_rows)
+    private def blit_kitty_placement(hdc, pl, px, py, pane_rows, row_offset = 0)
       return unless Win32::StretchDIBits
 
       img = pl[:image]
       return unless img && img[:rgba] && img[:width].to_i > 0 && img[:height].to_i > 0
-      return if pl[:anchor_row] + pl[:cell_rows] <= 0
-      return if pl[:anchor_row] >= pane_rows
+      # Shift the anchor by the scrollback view offset so the image tracks the
+      # text as the viewport scrolls; skip when fully scrolled out of the pane.
+      anchor_row = pl[:anchor_row] + row_offset
+      return if anchor_row + pl[:cell_rows] <= 0
+      return if anchor_row >= pane_rows
 
       width = img[:width].to_i
       height = img[:height].to_i
@@ -182,7 +185,7 @@ module Echoes
 
       bitmap_info = bitmap_info_header(width, height, bitmap.bytesize)
       x = px + pl[:anchor_col] * @cell_width + pl[:x_off].to_i
-      y = py + pl[:anchor_row] * @cell_height + pl[:y_off].to_i
+      y = py + anchor_row * @cell_height + pl[:y_off].to_i
       draw_w = pl[:cell_cols] * @cell_width
       draw_h = pl[:cell_rows] * @cell_height
 

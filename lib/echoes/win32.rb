@@ -167,6 +167,9 @@ module Echoes
     GetGlyphIndicesW  = new_func(GDI32, 'GetGlyphIndicesW', [P, P, I, P, U], U)
     StretchDIBits     = new_func(GDI32, 'StretchDIBits', [P, I, I, I, I, I, I, I, I, P, P, U, L], I)
     GetDIBits         = new_func(GDI32, 'GetDIBits', [P, P, U, U, P, P, U], I)
+    SaveDC            = new_func(GDI32, 'SaveDC', [P], I)
+    RestoreDC         = new_func(GDI32, 'RestoreDC', [P, I], I)
+    IntersectClipRect = new_func(GDI32, 'IntersectClipRect', [P, I, I, I, I], I)
 
     # Win32 Constants
     CS_VREDRAW         = 0x0001

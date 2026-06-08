@@ -482,8 +482,17 @@ module Echoes
         end
       end
 
-      screen.placements.each do |pl|
-        blit_kitty_placement(hdc, pl, px, py, pane_rows)
+      unless screen.placements.empty?
+        # Images are anchored in live-grid rows; shift them by the scrollback
+        # view offset so they track the text, and clip to the pane so a
+        # partially-scrolled image doesn't bleed over the tab bar or neighbours.
+        row_offset = pane.scroll_offset.to_i
+        saved = Win32::SaveDC.call(hdc)
+        Win32::IntersectClipRect.call(hdc, px, py, px + pane_cols * @cell_width, py + pane_rows * @cell_height)
+        screen.placements.each do |pl|
+          blit_kitty_placement(hdc, pl, px, py, pane_rows, row_offset)
+        end
+        Win32::RestoreDC.call(hdc, saved) if saved != 0
       end
 
       # IMEインライン変換の描画
