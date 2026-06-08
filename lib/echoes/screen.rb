@@ -260,9 +260,11 @@ module Echoes
     # rather than introducing a parallel `:image` key.
     def put_kitty_image(rgba:, width:, height:, cells_w: nil, cells_h: nil,
                          px_x_offset: 0, px_y_offset: 0,
-                         suppress_cursor: false, image_id: nil)
+                         suppress_cursor: false, advance_cursor: nil,
+                         image_id: nil)
       return if rgba.nil? || width <= 0 || height <= 0
       return if @cell_pixel_width.to_f <= 0 || @cell_pixel_height.to_f <= 0
+      advance_cursor = !suppress_cursor if advance_cursor.nil?
 
       have_w = cells_w && cells_w > 0
       have_h = cells_h && cells_h > 0
@@ -370,7 +372,7 @@ module Echoes
         image:      {rgba: rgba, width: width, height: height},
       }
 
-      unless suppress_cursor
+      if advance_cursor
         # Sixel parity: cursor lands at column 0 of the row after
         # the image. If that row is past the bottom, scroll.
         @cursor.col = 0
@@ -666,7 +668,9 @@ module Echoes
     def shift_placements(delta)
       return if @placements.empty?
       @placements.each { |p| p[:anchor_row] += delta }
-      @placements.reject! { |p| p[:anchor_row] + p[:cell_rows] <= 0 }
+      @placements.reject! do |p|
+        p[:anchor_row] + p[:cell_rows] <= -@scrollback.size
+      end
     end
 
     # Drop placements whose anchor cell is no longer an image multicell —

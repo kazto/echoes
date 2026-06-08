@@ -640,7 +640,7 @@ class Echoes::ScreenTest < Test::Unit::TestCase
     assert_equal 60,   p[:image][:height]
   end
 
-  test "scroll_up shifts placement anchor_row and drops fully-offscreen entries" do
+  test "scroll_up shifts placement anchor_row while image remains in scrollback" do
     @screen = Echoes::Screen.new(rows: 10, cols: 30)
     @screen.cell_pixel_width  = 10.0
     @screen.cell_pixel_height = 20.0
@@ -652,10 +652,45 @@ class Echoes::ScreenTest < Test::Unit::TestCase
     assert_equal 1, @screen.placements.first[:anchor_row]
     @screen.scroll_up(1)
     assert_equal 0, @screen.placements.first[:anchor_row]
-    # Two more rows of scroll → anchor at -2, cell_rows=2, so it
-    # fully exits the visible area and should be dropped.
+    # Two more rows of scroll move the image fully above the live grid,
+    # but the bitmap is still in scrollback and must remain drawable
+    # when the user scrolls up.
     @screen.scroll_up(2)
+    assert_equal(-2, @screen.placements.first[:anchor_row])
+  end
+
+  test "scroll_up keeps image placements that are still in scrollback" do
+    @screen = Echoes::Screen.new(rows: 10, cols: 30)
+    @screen.cell_pixel_width  = 10.0
+    @screen.cell_pixel_height = 20.0
+    rgba = "\x00".b * (20 * 40 * 4)
+    @screen.put_kitty_image(rgba: rgba, width: 20, height: 40,
+                            image_id: 'A', suppress_cursor: true)
+
+    @screen.scroll_up(2)
+
+    assert_equal 2, @screen.scrollback.size
+    assert_equal 1, @screen.placements.size
+    assert_equal(-2, @screen.placements.first[:anchor_row])
+    assert_equal 'A', @screen.placements.first[:image_id]
+  end
+
+  test "scroll_up drops image placements after they leave the scrollback limit" do
+    old_limit = Echoes.config.scrollback_limit
+    Echoes.config.scrollback_limit 2
+    @screen = Echoes::Screen.new(rows: 10, cols: 30)
+    @screen.cell_pixel_width  = 10.0
+    @screen.cell_pixel_height = 20.0
+    rgba = "\x00".b * (20 * 40 * 4)
+    @screen.put_kitty_image(rgba: rgba, width: 20, height: 40,
+                            image_id: 'A', suppress_cursor: true)
+
+    @screen.scroll_up(4)
+
+    assert_equal 2, @screen.scrollback.size
     assert_empty @screen.placements
+  ensure
+    Echoes.config.scrollback_limit old_limit
   end
 
   test "erase_in_display(2) clears the placement list" do

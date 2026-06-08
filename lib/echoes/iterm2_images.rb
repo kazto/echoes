@@ -53,6 +53,7 @@ module Echoes
         height:  image[:height],
         cells_w: cells_w,
         cells_h: cells_h,
+        advance_cursor: false,
       )
       true
     end

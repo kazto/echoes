@@ -88,6 +88,23 @@ class Echoes::Iterm2ImagesTest < Test::Unit::TestCase
     assert_equal 8,  @screen.images.first[:cells_h]
   end
 
+  test "handle leaves cursor flow to the surrounding text layout" do
+    screen = Echoes::Screen.new(rows: 10, cols: 30)
+    screen.cell_pixel_width = 10.0
+    screen.cell_pixel_height = 20.0
+    Echoes::Iterm2Images.stub_decoder do |_|
+      {rgba: "\x00".b * (40 * 60 * 4), width: 40, height: 60}
+    end
+
+    assert Echoes::Iterm2Images.handle("File=inline=1;width=4;height=3:#{b64('x')}",
+                                       screen: screen)
+
+    assert_equal 0, screen.cursor.row
+    assert_equal 0, screen.cursor.col
+    assert_equal 1, screen.placements.size
+    assert_equal 3, screen.placements.first[:cell_rows]
+  end
+
   test "handle ignores inline=0 (file-save mode)" do
     Echoes::Iterm2Images.stub_decoder do |_|
       flunk "decoder shouldn't run for inline=0"
