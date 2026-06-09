@@ -2,6 +2,34 @@
 
 module Echoes
   class GUI::Backend::Win32
+    MENU_SHORTCUT_LABELS = {
+      MENU_EXIT => "Alt+F4",
+      MENU_COPY => "Ctrl+Shift+C",
+      MENU_PASTE => "Ctrl+Shift+V",
+      MENU_SELECT_ALL => "Ctrl+Shift+A",
+      MENU_NEW_TAB => "Ctrl+Shift+T",
+      MENU_OPEN_FILE => "Ctrl+Shift+O",
+      MENU_INCREASE_FONT => "Ctrl+Shift++",
+      MENU_DECREASE_FONT => "Ctrl+Shift+-",
+      MENU_RESET_FONT => "Ctrl+Shift+0",
+      MENU_FIND => "Ctrl+Shift+F",
+      MENU_FIND_NEXT => "Ctrl+Shift+G",
+      MENU_FIND_PREVIOUS => "Shift+F3",
+      MENU_TOGGLE_POINTER => "Ctrl+Shift+P",
+      MENU_WINDOW_MINIMIZE => "Ctrl+Shift+M",
+      MENU_WINDOW_MAXIMIZE => "Ctrl+Shift+Up",
+      MENU_TOGGLE_COPY_MODE => "Ctrl+Alt+C",
+      MENU_WINDOW_FULLSCREEN => "Alt+Enter",
+      MENU_PREVIOUS_TAB => "Ctrl+Shift+[",
+      MENU_NEXT_TAB => "Ctrl+Shift+]",
+      MENU_PREVIOUS_PANE => "Ctrl+Shift+Left",
+      MENU_NEXT_PANE => "Ctrl+Shift+Right",
+      MENU_CLOSE_TAB => "Ctrl+Shift+W",
+      MENU_SPLIT_RIGHT => "Ctrl+Shift+D",
+      MENU_SPLIT_DOWN => "Ctrl+Alt+Shift+D",
+      MENU_CLOSE_PANE => "Ctrl+Alt+W",
+    }.freeze
+
     private
 
     private def setup_menu
@@ -110,7 +138,12 @@ module Echoes
     end
 
     private def append_menu_item(menu, id, label)
-      Win32::AppendMenuW.call(menu, Win32::MF_STRING, id, Fiddle::Pointer[Win32.to_wstring(label)])
+      Win32::AppendMenuW.call(menu, Win32::MF_STRING, id, Fiddle::Pointer[Win32.to_wstring(menu_item_label(id, label))])
+    end
+
+    private def menu_item_label(id, label)
+      shortcut = MENU_SHORTCUT_LABELS[id]
+      shortcut ? "#{label}\t#{shortcut}" : label
     end
 
     private def append_menu_separator(menu)

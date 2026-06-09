@@ -59,6 +59,16 @@ module Echoes
       [Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x72, MENU_FIND_PREVIOUS], # Shift+F3
       [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x57, MENU_CLOSE_TAB], # Ctrl+Shift+W
       [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x44, MENU_SPLIT_RIGHT], # Ctrl+Shift+D
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x4D, MENU_WINDOW_MINIMIZE], # Ctrl+Shift+M
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x26, MENU_WINDOW_MAXIMIZE], # Ctrl+Shift+Up
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FALT | Echoes::Win32::FVIRTKEY, 0x43, MENU_TOGGLE_COPY_MODE], # Ctrl+Alt+C
+      [Echoes::Win32::FALT | Echoes::Win32::FVIRTKEY, 0x0D, MENU_WINDOW_FULLSCREEN], # Alt+Enter
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0xDB, MENU_PREVIOUS_TAB], # Ctrl+Shift+[
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0xDD, MENU_NEXT_TAB], # Ctrl+Shift+]
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x25, MENU_PREVIOUS_PANE], # Ctrl+Shift+Left
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x27, MENU_NEXT_PANE], # Ctrl+Shift+Right
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FALT | Echoes::Win32::FVIRTKEY, 0x44, MENU_SPLIT_DOWN], # Ctrl+Alt+Shift+D
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FALT | Echoes::Win32::FVIRTKEY, 0x57, MENU_CLOSE_PANE], # Ctrl+Alt+W
       [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x50, MENU_TOGGLE_POINTER], # Ctrl+Shift+P
       [Echoes::Win32::FALT | Echoes::Win32::FVIRTKEY, 0x73, MENU_EXIT],          # Alt+F4
       [Echoes::Win32::FVIRTKEY, 0x70, MENU_ABOUT],                       # F1

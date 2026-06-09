@@ -820,6 +820,46 @@ if Echoes::Platform.windows?
       assert_include calls, [:draw, 99]
     end
 
+    test "Windows menu labels include shortcut hints" do
+      gui = Echoes::GUI::Backend::Win32.allocate
+      gui.instance_variable_set(:@hwnd, 99)
+      popup_handles = [200, 201, 202, 203, 204, 205, 206, 207]
+      labels = {}
+
+      with_window_registry_windows([]) do
+        with_win32_const(:CreateMenu, -> { 100 }) do
+          with_win32_const(:CreatePopupMenu, -> { popup_handles.shift }) do
+            with_win32_const(:AppendMenuW, ->(_menu, flags, id, label_ptr) {
+              labels[id] = Echoes::Win32.from_wstring(label_ptr) if flags == Echoes::Win32::MF_STRING
+              1
+            }) do
+              with_win32_const(:SetMenu, ->(_hwnd, _menu) { 1 }) do
+                with_win32_const(:DrawMenuBar, ->(_hwnd) { 1 }) do
+                  assert_true gui.send(:setup_menu)
+                end
+              end
+            end
+          end
+        end
+      end
+
+      assert_equal "New Tab\tCtrl+Shift+T", labels[Echoes::GUI::Backend::Win32::MENU_NEW_TAB]
+      assert_equal "Copy\tCtrl+Shift+C", labels[Echoes::GUI::Backend::Win32::MENU_COPY]
+      assert_equal "Find Next\tCtrl+Shift+G", labels[Echoes::GUI::Backend::Win32::MENU_FIND_NEXT]
+      assert_equal "Find Previous\tShift+F3", labels[Echoes::GUI::Backend::Win32::MENU_FIND_PREVIOUS]
+      assert_equal "Quit Echoes\tAlt+F4", labels[Echoes::GUI::Backend::Win32::MENU_EXIT]
+      assert_equal "Minimize\tCtrl+Shift+M", labels[Echoes::GUI::Backend::Win32::MENU_WINDOW_MINIMIZE]
+      assert_equal "Maximize\tCtrl+Shift+Up", labels[Echoes::GUI::Backend::Win32::MENU_WINDOW_MAXIMIZE]
+      assert_equal "Toggle Copy Mode\tCtrl+Alt+C", labels[Echoes::GUI::Backend::Win32::MENU_TOGGLE_COPY_MODE]
+      assert_equal "Enter Full Screen\tAlt+Enter", labels[Echoes::GUI::Backend::Win32::MENU_WINDOW_FULLSCREEN]
+      assert_equal "Show Previous Tab\tCtrl+Shift+[", labels[Echoes::GUI::Backend::Win32::MENU_PREVIOUS_TAB]
+      assert_equal "Show Next Tab\tCtrl+Shift+]", labels[Echoes::GUI::Backend::Win32::MENU_NEXT_TAB]
+      assert_equal "Select Previous Pane\tCtrl+Shift+Left", labels[Echoes::GUI::Backend::Win32::MENU_PREVIOUS_PANE]
+      assert_equal "Select Next Pane\tCtrl+Shift+Right", labels[Echoes::GUI::Backend::Win32::MENU_NEXT_PANE]
+      assert_equal "Split Down\tCtrl+Alt+Shift+D", labels[Echoes::GUI::Backend::Win32::MENU_SPLIT_DOWN]
+      assert_equal "Close Pane\tCtrl+Alt+W", labels[Echoes::GUI::Backend::Win32::MENU_CLOSE_PANE]
+    end
+
     test "Windows menu commands dispatch to GUI actions" do
       gui = Echoes::GUI::Backend::Win32.allocate
       gui.instance_variable_set(:@hwnd, 101)
@@ -1034,6 +1074,8 @@ if Echoes::Platform.windows?
     test "Windows accelerator table encodes menu shortcuts" do
       gui = Echoes::GUI::Backend::Win32.allocate
       ctrl_shift = Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY
+      ctrl_alt = Echoes::Win32::FCONTROL | Echoes::Win32::FALT | Echoes::Win32::FVIRTKEY
+      alt = Echoes::Win32::FALT | Echoes::Win32::FVIRTKEY
 
       bytes = gui.send(:accelerator_table_bytes, Echoes::GUI::Backend::Win32::ACCELERATORS)
       entries = bytes.bytes.each_slice(6).map { |chunk| chunk.pack("C*").unpack("Cxvv") }
@@ -1047,6 +1089,16 @@ if Echoes::Platform.windows?
       assert_include entries, [ctrl_shift, 0x46, Echoes::GUI::Backend::Win32::MENU_FIND]
       assert_include entries, [ctrl_shift, 0x57, Echoes::GUI::Backend::Win32::MENU_CLOSE_TAB]
       assert_include entries, [ctrl_shift, 0x44, Echoes::GUI::Backend::Win32::MENU_SPLIT_RIGHT]
+      assert_include entries, [ctrl_shift, 0x4D, Echoes::GUI::Backend::Win32::MENU_WINDOW_MINIMIZE]
+      assert_include entries, [ctrl_shift, 0x26, Echoes::GUI::Backend::Win32::MENU_WINDOW_MAXIMIZE]
+      assert_include entries, [ctrl_alt, 0x43, Echoes::GUI::Backend::Win32::MENU_TOGGLE_COPY_MODE]
+      assert_include entries, [alt, 0x0D, Echoes::GUI::Backend::Win32::MENU_WINDOW_FULLSCREEN]
+      assert_include entries, [ctrl_shift, 0xDB, Echoes::GUI::Backend::Win32::MENU_PREVIOUS_TAB]
+      assert_include entries, [ctrl_shift, 0xDD, Echoes::GUI::Backend::Win32::MENU_NEXT_TAB]
+      assert_include entries, [ctrl_shift, 0x25, Echoes::GUI::Backend::Win32::MENU_PREVIOUS_PANE]
+      assert_include entries, [ctrl_shift, 0x27, Echoes::GUI::Backend::Win32::MENU_NEXT_PANE]
+      assert_include entries, [ctrl_shift | Echoes::Win32::FALT, 0x44, Echoes::GUI::Backend::Win32::MENU_SPLIT_DOWN]
+      assert_include entries, [ctrl_alt, 0x57, Echoes::GUI::Backend::Win32::MENU_CLOSE_PANE]
       assert_include entries, [ctrl_shift, 0xBB, Echoes::GUI::Backend::Win32::MENU_INCREASE_FONT]
       assert_include entries, [ctrl_shift, 0xBD, Echoes::GUI::Backend::Win32::MENU_DECREASE_FONT]
       assert_include entries, [ctrl_shift | 0x80, 0x30, Echoes::GUI::Backend::Win32::MENU_RESET_FONT]
