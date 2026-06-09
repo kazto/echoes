@@ -150,6 +150,22 @@ class Echoes::ScreenTest < Test::Unit::TestCase
     assert_equal(0, @screen.cursor.col)
   end
 
+  test "backspace crosses a wrapped line back to the previous row" do
+    screen = Echoes::Screen.new(rows: 5, cols: 3)
+    "abcd".chars.each { |c| screen.put_char(c) }
+
+    assert_equal(1, screen.cursor.row)
+    assert_equal(1, screen.cursor.col)
+
+    screen.backspace
+    assert_equal(1, screen.cursor.row)
+    assert_equal(0, screen.cursor.col)
+
+    screen.backspace
+    assert_equal(0, screen.cursor.row)
+    assert_equal(2, screen.cursor.col)
+  end
+
   test "erase_in_display 0 (below)" do
     5.times { |r| @screen.grid[r].each { |c| c.char = "X" } }
     @screen.cursor.row = 2
@@ -530,6 +546,34 @@ class Echoes::ScreenTest < Test::Unit::TestCase
     assert_equal 2, anchor.multicell[:rows]
   end
 
+  test "put_kitty_image derives rows from the chosen width, preserving aspect" do
+    @screen = Echoes::Screen.new(rows: 30, cols: 60)
+    @screen.cell_pixel_width  = 10.0
+    @screen.cell_pixel_height = 20.0
+    # 100×100px square image. Natural sizing → 10 cols × 5 rows (square
+    # in pixels but skewed in cells). With cells_w=20 the box is
+    # 20*10=200px wide; preserving aspect → 200px tall → 200/20 = 10 rows.
+    rgba = "\x00".b * (100 * 100 * 4)
+    @screen.put_kitty_image(rgba: rgba, width: 100, height: 100, cells_w: 20)
+    anchor = @screen.grid[0][0]
+    assert_equal 20, anchor.multicell[:cols]
+    assert_equal 10, anchor.multicell[:rows]
+  end
+
+  test "put_kitty_image derives cols from the chosen height, preserving aspect" do
+    @screen = Echoes::Screen.new(rows: 30, cols: 60)
+    @screen.cell_pixel_width  = 10.0
+    @screen.cell_pixel_height = 20.0
+    # 100×100px square image. Natural cols would be 100/10 = 10. With
+    # cells_h=10 the box is 10*20=200px tall; preserving aspect → 200px
+    # wide → 200/10 = 20 cols.
+    rgba = "\x00".b * (100 * 100 * 4)
+    @screen.put_kitty_image(rgba: rgba, width: 100, height: 100, cells_h: 10)
+    anchor = @screen.grid[0][0]
+    assert_equal 20, anchor.multicell[:cols]
+    assert_equal 10, anchor.multicell[:rows]
+  end
+
   test "put_kitty_image advances cursor to the row after the image" do
     @screen = Echoes::Screen.new(rows: 10, cols: 30)
     @screen.cell_pixel_width  = 10.0
@@ -654,7 +698,7 @@ class Echoes::ScreenTest < Test::Unit::TestCase
     assert_equal 3, @screen.placements.last[:z_index]
   end
 
-  test "scroll_up shifts placement anchor_row and drops fully-offscreen entries" do
+  test "scroll_up shifts placement anchor_row while image remains in scrollback" do
     @screen = Echoes::Screen.new(rows: 10, cols: 30)
     @screen.cell_pixel_width  = 10.0
     @screen.cell_pixel_height = 20.0
@@ -666,10 +710,45 @@ class Echoes::ScreenTest < Test::Unit::TestCase
     assert_equal 1, @screen.placements.first[:anchor_row]
     @screen.scroll_up(1)
     assert_equal 0, @screen.placements.first[:anchor_row]
-    # Two more rows of scroll → anchor at -2, cell_rows=2, so it
-    # fully exits the visible area and should be dropped.
+    # Two more rows of scroll move the image fully above the live grid,
+    # but the bitmap is still in scrollback and must remain drawable
+    # when the user scrolls up.
     @screen.scroll_up(2)
+    assert_equal(-2, @screen.placements.first[:anchor_row])
+  end
+
+  test "scroll_up keeps image placements that are still in scrollback" do
+    @screen = Echoes::Screen.new(rows: 10, cols: 30)
+    @screen.cell_pixel_width  = 10.0
+    @screen.cell_pixel_height = 20.0
+    rgba = "\x00".b * (20 * 40 * 4)
+    @screen.put_kitty_image(rgba: rgba, width: 20, height: 40,
+                            image_id: 'A', suppress_cursor: true)
+
+    @screen.scroll_up(2)
+
+    assert_equal 2, @screen.scrollback.size
+    assert_equal 1, @screen.placements.size
+    assert_equal(-2, @screen.placements.first[:anchor_row])
+    assert_equal 'A', @screen.placements.first[:image_id]
+  end
+
+  test "scroll_up drops image placements after they leave the scrollback limit" do
+    old_limit = Echoes.config.scrollback_limit
+    Echoes.config.scrollback_limit 2
+    @screen = Echoes::Screen.new(rows: 10, cols: 30)
+    @screen.cell_pixel_width  = 10.0
+    @screen.cell_pixel_height = 20.0
+    rgba = "\x00".b * (20 * 40 * 4)
+    @screen.put_kitty_image(rgba: rgba, width: 20, height: 40,
+                            image_id: 'A', suppress_cursor: true)
+
+    @screen.scroll_up(4)
+
+    assert_equal 2, @screen.scrollback.size
     assert_empty @screen.placements
+  ensure
+    Echoes.config.scrollback_limit old_limit
   end
 
   test "erase_in_display(2) clears the placement list" do
@@ -696,14 +775,74 @@ class Echoes::ScreenTest < Test::Unit::TestCase
     assert_empty @screen.placements
   end
 
-  test "put_kitty_image discards an image that's larger than the screen" do
+  test "put_kitty_image scales an oversized image down to fit the screen (preserving aspect)" do
     @screen = Echoes::Screen.new(rows: 5, cols: 10)
     @screen.cell_pixel_width  = 10.0
     @screen.cell_pixel_height = 20.0
-    # 200px wide / 10px-per-cell = 20 cells > 10 col limit.
+    # 200px / 10px-per-cell = 20 cols (> 10 limit); 100px / 20 = 5 rows (== 5).
+    # Uniform fit scale = min(10/20, 5/5) = 0.5 → 10 cols × 2 rows.
     rgba = "\x00".b * (200 * 100 * 4)
     @screen.put_kitty_image(rgba: rgba, width: 200, height: 100)
-    assert_nil @screen.grid[0][0].multicell
+    anchor = @screen.grid[0][0].multicell
+    refute_nil anchor, "oversized image should be scaled to fit, not dropped"
+    assert_equal 10, anchor[:cols]
+    assert_equal 2,  anchor[:rows]
+    pl = @screen.placements.first
+    assert_equal 10, pl[:cell_cols]
+    assert_equal 2,  pl[:cell_rows]
+    # The full-resolution bitmap is preserved; only the draw rect
+    # shrinks (StretchDIBits scales it into the smaller cell rect).
+    assert_equal 200, pl[:image][:width]
+    assert_equal 100, pl[:image][:height]
+  end
+
+  test "put_kitty_image scales an image that overflows only one axis" do
+    @screen = Echoes::Screen.new(rows: 10, cols: 10)
+    @screen.cell_pixel_width  = 10.0
+    @screen.cell_pixel_height = 20.0
+    # 40px / 10 = 4 cols (fits); 400px / 20 = 20 rows (> 10).
+    # scale = min(10/4, 10/20) = 0.5 → 2 cols × 10 rows.
+    # suppress_cursor avoids the bottom-edge scroll so the anchor
+    # stays at (0,0) for inspection.
+    rgba = "\x00".b * (40 * 400 * 4)
+    @screen.put_kitty_image(rgba: rgba, width: 40, height: 400,
+                            suppress_cursor: true)
+    anchor = @screen.grid[0][0].multicell
+    refute_nil anchor
+    assert_equal 2,  anchor[:cols]
+    assert_equal 10, anchor[:rows]
+  end
+
+  test "erasing the anchor row drops the placement (cls via per-line erase)" do
+    @screen = Echoes::Screen.new(rows: 6, cols: 10)
+    @screen.cell_pixel_width  = 10.0
+    @screen.cell_pixel_height = 20.0
+    rgba = "\x00".b * (20 * 40 * 4)
+    @screen.put_kitty_image(rgba: rgba, width: 20, height: 40, suppress_cursor: true)
+    assert_equal 1, @screen.placements.size
+
+    # `cls` clears the screen with \e[K per line, not \e[2J. Erasing the
+    # image's anchor row must drop the placement so it doesn't linger.
+    @screen.cursor.row = 0
+    @screen.cursor.col = 0
+    @screen.erase_in_line(0)
+    assert_equal 0, @screen.placements.size,
+                 "placement should be dropped when its anchor row is erased"
+  end
+
+  test "erasing a different row keeps the placement" do
+    @screen = Echoes::Screen.new(rows: 6, cols: 10)
+    @screen.cell_pixel_width  = 10.0
+    @screen.cell_pixel_height = 20.0
+    rgba = "\x00".b * (20 * 40 * 4)
+    @screen.put_kitty_image(rgba: rgba, width: 20, height: 40, suppress_cursor: true)
+    assert_equal 1, @screen.placements.size
+
+    @screen.cursor.row = 5
+    @screen.cursor.col = 0
+    @screen.erase_in_line(0)
+    assert_equal 1, @screen.placements.size,
+                 "placement should survive erasing an unrelated row"
   end
 
   # --- to_text ---

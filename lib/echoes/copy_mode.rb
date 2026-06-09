@@ -3,7 +3,7 @@
 module Echoes
   class CopyMode
     attr_reader :active, :cursor_row, :cursor_col
-    attr_reader :selection_start, :selection_end
+    attr_accessor :selection_start, :selection_end
 
     def initialize(screen)
       @screen = screen

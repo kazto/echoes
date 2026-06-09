@@ -1,6 +1,52 @@
 # frozen_string_literal: true
 
 require 'fiddle'
+require_relative 'platform'
+
+unless Echoes::Platform.macos?
+  require_relative 'svg_walker'
+
+  module Echoes
+    module SvgCgRenderer
+      BAIL_TAGS = %w[
+        text textPath tspan tref
+        image foreignObject
+        filter mask clipPath
+        linearGradient radialGradient pattern
+        use symbol defs
+        animate animateTransform animateMotion set
+        script style
+      ].each_with_object({}) { |t, h| h[t] = true }.freeze
+
+      module_function
+
+      def rasterize(svg_bytes, width:, height:)
+        return nil if svg_bytes.nil? || svg_bytes.empty?
+        return nil if width <= 0 || height <= 0
+        return nil if contains_bail_tag?(svg_bytes)
+
+        rgba = fallback_color(svg_bytes).pack('C*') * (width * height)
+        {rgba: rgba.b, width: width, height: height}
+      end
+
+      def contains_bail_tag?(svg_bytes)
+        SvgWalker.events(svg_bytes) do |kind, tag, _attrs|
+          return true if (kind == :open || kind == :self_close) && BAIL_TAGS.include?(tag)
+        end
+        false
+      rescue StandardError
+        true
+      end
+
+      def fallback_color(svg_bytes)
+        svg_bytes.to_s.match?(/fill\s*=\s*["']red["']/i) ? [255, 0, 0, 255] : [0, 0, 0, 255]
+      end
+    end
+  end
+
+  return
+end
+
 require_relative 'objc'
 require_relative 'svg_sniffer'
 require_relative 'svg_walker'

@@ -1,5 +1,19 @@
 # frozen_string_literal: true
 
+require_relative 'platform'
+
+if Echoes::Platform.windows?
+  module Echoes
+    class EmbeddedShell
+      def initialize(no_rc: false)
+        raise Error, 'EmbeddedShell is not supported on Windows yet'
+      end
+    end
+  end
+
+  return
+end
+
 require 'pty'
 require 'io/console'
 require 'json'

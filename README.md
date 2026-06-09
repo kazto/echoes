@@ -12,7 +12,8 @@ proportional fonts) other terminals can't.
 
 ## Requirements
 
-- macOS (uses AppKit via Fiddle; no Linux/Windows support)
+- macOS for the full GUI (uses AppKit via Fiddle)
+- Windows support is in progress: core tests and the ConPTY shell backend run, but the Windows GUI, installer, embedded rubish mode, and image rendering are not complete yet.
 - Ruby >= 3.2
 
 ## Installation
@@ -28,6 +29,11 @@ Dock, and Cmd-Space. Each shortcut is a one-line wrapper that
 `exec`s into the gem-bundled launcher; re-run `echoes install` after
 each `gem update echoes` to refresh the path. `echoes uninstall`
 removes them.
+
+On Windows, `echoes install` writes an `echoes.bat` wrapper to
+`~/bin` by default. Add that directory to `PATH` to run `echoes` from
+Command Prompt or PowerShell. Windows GUI support is still in progress;
+the launcher is intended for the current development build.
 
 To run from a clone instead:
 
@@ -287,6 +293,8 @@ emitters can keep OSC 66 strictly kitty-spec compatible.
 ```sh
 bin/setup
 bundle exec rake test       # run all tests
+ruby -S rake test:core      # Windows-friendly core test subset
+bundle exec rake test:windows_gui_smoke  # Windows GUI smoke on Windows
 bundle exec exe/echoes      # launch from the working tree
 bin/console                 # irb with the gem loaded
 ```

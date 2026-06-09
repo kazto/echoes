@@ -1,6 +1,24 @@
 # frozen_string_literal: true
 
 require 'fiddle'
+require_relative 'platform'
+
+unless Echoes::Platform.macos?
+  require_relative 'svg_cg_renderer'
+
+  module Echoes
+    module SvgRenderer
+      module_function
+
+      def rasterize(svg_bytes, width:, height:)
+        SvgCgRenderer.rasterize(svg_bytes, width: width, height: height)
+      end
+    end
+  end
+
+  return
+end
+
 require_relative 'objc'
 require_relative 'kitty_graphics_appkit'
 

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
-require "echoes/gui"
+require "echoes/shake_detector"
 
 class Echoes::ShakeDetectorTest < Test::Unit::TestCase
   def setup

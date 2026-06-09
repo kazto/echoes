@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative 'platform'
+
 module Echoes
   # iTerm2 inline-image protocol (OSC 1337 with the `File=` verb).
   # Wire format:
@@ -55,6 +57,7 @@ module Echoes
         height:  image[:height],
         cells_w: cells_w,
         cells_h: cells_h,
+        advance_cursor: false,
       )
       true
     end
@@ -86,8 +89,13 @@ module Echoes
     # (PNG / JPEG / GIF / TIFF / BMP) because it draws the
     # decoded CGImage into a known RGBA8 CGBitmapContext.
     def decode_image(bytes)
-      require_relative 'kitty_graphics_appkit'
-      KittyGraphics::AppKitPng.decode(bytes)
+      if Platform.windows?
+        require_relative 'kitty_graphics_win32'
+        KittyGraphics::GdiPlusPng.decode(bytes)
+      else
+        require_relative 'kitty_graphics_appkit'
+        KittyGraphics::AppKitPng.decode(bytes)
+      end
     end
 
     # SVG → {rgba:, width:, height:}. Computes the target pixel size

@@ -14,24 +14,39 @@
 end
 
 require_relative "echoes/version"
+require_relative "echoes/platform"
 require_relative "echoes/configuration"
 require_relative "echoes/cell"
 require_relative "echoes/cursor"
 require_relative "echoes/screen"
 require_relative "echoes/parser"
 require_relative "echoes/copy_mode"
+require_relative "echoes/shake_detector"
 require_relative "echoes/pane"
 require_relative "echoes/pane_tree"
 require_relative "echoes/tab"
 require_relative "echoes/sixel_decoder"
 require_relative "echoes/terminal"
-require_relative "echoes/objc"
 require_relative "echoes/preferences"
-require_relative "echoes/client"
-require_relative "echoes/gui"
 
 module Echoes
   class Error < StandardError; end
+
+  module_function
+
+  def load_gui_backend
+    require_relative "echoes/gui/backend"
+    if Platform.windows?
+      require_relative "echoes/win32"
+      require_relative "echoes/gui_win32"
+    elsif Platform.macos?
+      require_relative "echoes/objc"
+      require_relative "echoes/gui"
+    else
+      raise Error, "Echoes GUI is not supported on this platform"
+    end
+    require_relative "echoes/gui_orchestrator"
+  end
 end
 
 Echoes.load_config

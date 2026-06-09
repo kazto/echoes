@@ -2,6 +2,7 @@
 
 require 'zlib'
 require_relative 'svg_sniffer'
+require_relative 'platform'
 
 module Echoes
   # Minimum-viable Kitty graphics protocol decoder. Wire format:
@@ -259,11 +260,21 @@ module Echoes
       when '100', ''
         decode_png(bytes)
       when '24'
-        load_appkit
-        AppKitPng.from_rgb(bytes, opts['s'].to_i, opts['v'].to_i)
+        if Platform.windows?
+          require_relative 'kitty_graphics_win32'
+          GdiPlusPng.from_rgb(bytes, opts['s'].to_i, opts['v'].to_i)
+        else
+          load_appkit
+          AppKitPng.from_rgb(bytes, opts['s'].to_i, opts['v'].to_i)
+        end
       when '32'
-        load_appkit
-        AppKitPng.from_rgba(bytes, opts['s'].to_i, opts['v'].to_i)
+        if Platform.windows?
+          require_relative 'kitty_graphics_win32'
+          GdiPlusPng.from_rgba(bytes, opts['s'].to_i, opts['v'].to_i)
+        else
+          load_appkit
+          AppKitPng.from_rgba(bytes, opts['s'].to_i, opts['v'].to_i)
+        end
       end
     end
 
@@ -309,8 +320,13 @@ module Echoes
     # kitty_graphics_appkit.rb; loaded lazily so non-GUI tests
     # (which don't link AppKit) still pass.
     def decode_png(bytes)
-      load_appkit
-      AppKitPng.decode(bytes)
+      if Platform.windows?
+        require_relative 'kitty_graphics_win32'
+        GdiPlusPng.decode(bytes)
+      else
+        load_appkit
+        AppKitPng.decode(bytes)
+      end
     end
 
     def load_appkit

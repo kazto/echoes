@@ -2,10 +2,11 @@
 
 require "test_helper"
 require "echoes/preferences"
+require "tmpdir"
 
 class Echoes::PreferencesTest < Test::Unit::TestCase
-  # Round-trips a key through the real NSUserDefaults backing store.
-  # Each test uses a fresh random key to avoid colliding with others.
+  # Round-trips a key through the platform backend. Each test uses a
+  # fresh random key to avoid colliding with user preferences.
 
   def test_fetch_double_returns_default_when_key_is_unset
     key = unique_key
@@ -28,14 +29,43 @@ class Echoes::PreferencesTest < Test::Unit::TestCase
   end
 
   def test_zero_is_distinguishable_from_missing
-    # doubleForKey: returns 0.0 for both missing and explicitly-zero
-    # entries; fetch_double goes through objectForKey: so an explicit
-    # 0.0 round-trips as 0.0 instead of falling back to the default.
     key = unique_key
     Echoes::Preferences.set_double(key, 0.0)
     assert_equal 0.0, Echoes::Preferences.fetch_double(key, default: 99.0)
   ensure
     Echoes::Preferences.delete(key)
+  end
+
+  def test_json_backend_honors_echoes_config_home
+    Dir.mktmpdir("echoes-prefs") do |dir|
+      backend = Echoes::Preferences::JsonBackend.new(
+        env: {"ECHOES_CONFIG_HOME" => dir},
+        home: File.join(dir, "home")
+      )
+
+      assert_equal(File.join(dir, "preferences.json"), backend.prefs_path)
+      backend.set_double(:font_size, 18.5)
+
+      reloaded = Echoes::Preferences::JsonBackend.new(
+        env: {"ECHOES_CONFIG_HOME" => dir},
+        home: File.join(dir, "home")
+      )
+      assert_equal 18.5, reloaded.fetch_double(:font_size, default: 0.0)
+    end
+  end
+
+  def test_json_backend_uses_appdata_on_windows
+    omit("Windows path selection only") unless TestHelper::IS_WINDOWS
+
+    Dir.mktmpdir("echoes-appdata") do |dir|
+      backend = Echoes::Preferences::JsonBackend.new(
+        env: {"APPDATA" => dir},
+        home: File.join(dir, "home")
+      )
+
+      assert_equal(File.join(dir, "Echoes"), backend.config_dir)
+      assert_equal(File.join(dir, "Echoes", "preferences.json"), backend.prefs_path)
+    end
   end
 
   private

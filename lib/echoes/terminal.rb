@@ -1,48 +1,55 @@
 # frozen_string_literal: true
 
-require 'pty'
+require_relative 'shell_backend'
 require 'io/console'
 
 module Echoes
   class Terminal
-    attr_reader :screen
+    attr_reader :screen, :parser, :pid
 
-    def initialize(command: Echoes.config.shell, rows: nil, cols: nil)
+    def initialize(command: Echoes.config.shell, rows: nil, cols: nil, backend_class: ShellBackend.for_platform)
       size = IO.console&.winsize || [24, 80]
       @rows = rows || size[0]
       @cols = cols || size[1]
       @command = command
+      @backend_class = backend_class
       @screen = Screen.new(rows: @rows, cols: @cols)
-      @parser = Parser.new(@screen, writer: ->(s) { @write_io&.write(s) rescue nil })
+      @parser = Parser.new(@screen, writer: ->(s) { @shell_backend&.write(s) rescue nil })
     end
 
     def run
-      PTY.spawn(@command) do |read_io, write_io, pid|
-        @read_io = read_io
-        @write_io = write_io
-        @pid = pid
+      start_backend
+      setup_signal_handlers
 
-        @read_io.winsize = [@rows, @cols]
-
-        setup_signal_handlers
-
-        STDIN.raw do
-          reader = Thread.new { read_loop }
-          write_loop
-          reader.kill
-        end
+      STDIN.raw do
+        reader = Thread.new { read_loop }
+        write_loop
+        reader.kill
       end
+    ensure
+      @shell_backend&.close
     end
 
     private
 
+    def start_backend
+      @shell_backend = @backend_class.new(
+        command: @command,
+        env: nil,
+        rows: @rows,
+        cols: @cols
+      )
+      @pid = @shell_backend.pid
+      @shell_backend
+    end
+
     def read_loop
       loop do
-        data = @read_io.read_nonblock(4096)
+        data = @shell_backend.read_available_output(4096)
         @parser.feed(data)
         render
       rescue IO::WaitReadable
-        IO.select([@read_io])
+        IO.select([@shell_backend.read_io])
         retry
       rescue EOFError, Errno::EIO
         break
@@ -52,7 +59,7 @@ module Echoes
     def write_loop
       loop do
         data = STDIN.read_nonblock(4096)
-        @write_io.write(data)
+        @shell_backend.write(data)
       rescue IO::WaitReadable
         IO.select([STDIN])
         retry
@@ -111,11 +118,13 @@ module Echoes
     end
 
     def setup_signal_handlers
+      return if Platform.windows?
+
       Signal.trap(:WINCH) do
         if IO.console
           @rows, @cols = IO.console.winsize
           @screen.resize(@rows, @cols)
-          @read_io.winsize = [@rows, @cols]
+          @shell_backend.resize(@rows, @cols)
           render
         end
       end

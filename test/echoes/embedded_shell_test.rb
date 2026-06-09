@@ -1,8 +1,24 @@
 # frozen_string_literal: true
 
 require "test_helper"
-require "echoes/embedded_shell"
 require "tmpdir"
+
+if TestHelper::IS_WINDOWS
+  class Echoes::EmbeddedShellTest < Test::Unit::TestCase
+    test "embedded shell raises a clear unsupported error" do
+      require "echoes/embedded_shell"
+
+      error = assert_raise(Echoes::Error) do
+        Echoes::EmbeddedShell.new(no_rc: true)
+      end
+      assert_match(/not supported on Windows/, error.message)
+    end
+  end
+
+  return
+end
+
+require "echoes/embedded_shell"
 
 class Echoes::EmbeddedShellTest < Test::Unit::TestCase
   def setup
@@ -42,7 +58,8 @@ class Echoes::EmbeddedShellTest < Test::Unit::TestCase
 
   test "cd changes the embedded shell's cwd" do
     @shell.submit_and_wait("cd /tmp")
-    assert_equal "/private/tmp", @shell.cwd
+    expected_tmp = Echoes::Platform.macos? ? "/private/tmp" : "/tmp"
+    assert_equal expected_tmp, @shell.cwd
   end
 
   test "complete_at returns command completions" do

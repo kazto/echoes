@@ -27,6 +27,8 @@ class Echoes::InstallerTest < Test::Unit::TestCase
   end
 
   test "install drops both wrapper bundles into the target dir" do
+    omit("macOS bundle installer only") if TestHelper::IS_WINDOWS
+
     capture_stdio do
       Echoes::Installer.install(source_root: @source, target_dir: @target)
     end
@@ -35,6 +37,8 @@ class Echoes::InstallerTest < Test::Unit::TestCase
   end
 
   test "wrapper Info.plist is a copy of the source Info.plist" do
+    omit("macOS bundle installer only") if TestHelper::IS_WINDOWS
+
     capture_stdio do
       Echoes::Installer.install(source_root: @source, target_dir: @target)
     end
@@ -44,6 +48,8 @@ class Echoes::InstallerTest < Test::Unit::TestCase
   end
 
   test "wrapper exec's into the source bundle's launcher" do
+    omit("macOS bundle installer only") if TestHelper::IS_WINDOWS
+
     capture_stdio do
       Echoes::Installer.install(source_root: @source, target_dir: @target)
     end
@@ -56,6 +62,8 @@ class Echoes::InstallerTest < Test::Unit::TestCase
   end
 
   test "install creates the target dir if missing" do
+    omit("macOS bundle installer only") if TestHelper::IS_WINDOWS
+
     nested = File.join(@target, 'fresh-subdir')
     refute Dir.exist?(nested)
     capture_stdio do
@@ -65,6 +73,8 @@ class Echoes::InstallerTest < Test::Unit::TestCase
   end
 
   test "install skips bundles that don't exist in the source" do
+    omit("macOS bundle installer only") if TestHelper::IS_WINDOWS
+
     FileUtils.remove_entry(File.join(@source, 'EchoesEmbed.app'))
     _out, err = capture_stdio do
       Echoes::Installer.install(source_root: @source, target_dir: @target)
@@ -75,6 +85,8 @@ class Echoes::InstallerTest < Test::Unit::TestCase
   end
 
   test "uninstall removes both bundles when present" do
+    omit("macOS bundle installer only") if TestHelper::IS_WINDOWS
+
     capture_stdio do
       Echoes::Installer.install(source_root: @source, target_dir: @target)
     end
@@ -86,6 +98,8 @@ class Echoes::InstallerTest < Test::Unit::TestCase
   end
 
   test "uninstall is a no-op when nothing is installed" do
+    omit("macOS bundle installer only") if TestHelper::IS_WINDOWS
+
     out, _ = capture_stdio do
       removed = Echoes::Installer.uninstall(target_dir: @target)
       assert_equal [], removed
@@ -94,9 +108,41 @@ class Echoes::InstallerTest < Test::Unit::TestCase
   end
 
   test "default_source_root resolves to the gem root containing the .app bundles" do
+    omit("macOS bundle installer only") if TestHelper::IS_WINDOWS
+
     root = Echoes::Installer.default_source_root
     assert Dir.exist?(File.join(root, 'Echoes.app')),
            "expected gem root #{root.inspect} to contain Echoes.app"
+  end
+
+  test "Windows install writes an echoes bat launcher" do
+    omit("Windows installer only") unless TestHelper::IS_WINDOWS
+
+    out, _ = capture_stdio do
+      installed = Echoes::Installer.install(source_root: @source, target_dir: @target)
+      assert_equal [File.join(@target, 'echoes.bat')], installed
+    end
+
+    bat_path = File.join(@target, 'echoes.bat')
+    assert File.exist?(bat_path)
+    assert_match(/ruby "#{Regexp.escape(File.join(@source, 'exe', 'echoes'))}" %\*/, File.read(bat_path))
+    assert_match(/Installed echoes\.bat wrapper/, out)
+  end
+
+  test "Windows uninstall removes the bat launcher" do
+    omit("Windows installer only") unless TestHelper::IS_WINDOWS
+
+    capture_stdio do
+      Echoes::Installer.install(source_root: @source, target_dir: @target)
+    end
+
+    out, _ = capture_stdio do
+      removed = Echoes::Installer.uninstall(target_dir: @target)
+      assert_equal [File.join(@target, 'echoes.bat')], removed
+    end
+
+    refute File.exist?(File.join(@target, 'echoes.bat'))
+    assert_match(/Removed .*echoes\.bat/, out)
   end
 
   private

@@ -494,13 +494,14 @@ module Echoes
     # Parse the `key=value:key=value:...` meta block that lives in
     # the second field of OSC 66 (and of OSC 7772 ;multicell).
     # `allow_extensions: false` accepts only the kitty spec keys
-    # (s/w/n/d/v/h) so OSC 66 stays strictly compatible with other
-    # terminals — Echoes-private knobs (f=family, flip=h|v|hv) are
-    # routed through OSC 7772 ;multicell, where collisions with a
-    # future kitty spec extension can't surprise emitters.
+    # (s/w/n/d/v/h) plus the Echoes ConPTY style bridge (e_fg/e_bg/e_bold).
+    # Echoes-private layout knobs (f=family, flip=h|v|hv) are routed through
+    # OSC 7772 ;multicell, where collisions with a future kitty spec extension
+    # can't surprise emitters.
     def parse_multicell_meta(meta_str, allow_extensions:)
       params = {scale: 1, width: 0, frac_n: 0, frac_d: 0, valign: 0, halign: 0,
                  family: nil, flip_h: false, flip_v: false}
+      style_attrs = {}
       meta_str.to_s.split(':').each do |pair|
         k, v = pair.split('=', 2)
         next unless v
@@ -517,6 +518,9 @@ module Echoes
         when 'd' then params[:frac_d] = v.to_i.clamp(0, 15)
         when 'v' then params[:valign] = v.to_i.clamp(0, 3)
         when 'h' then params[:halign] = v.to_i.clamp(0, 2)
+        when 'e_fg' then style_attrs[:fg] = v.to_i.clamp(0, 255)
+        when 'e_bg' then style_attrs[:bg] = v.to_i.clamp(0, 255)
+        when 'e_bold' then style_attrs[:bold] = v.to_i != 0
         when 'f'
           # Family name. Names with ':' aren't representable here
           # because ':' is the meta-field separator — use ',' or
@@ -534,6 +538,7 @@ module Echoes
           end
         end
       end
+      params[:style_attrs] = style_attrs unless style_attrs.empty?
       params
     end
 

@@ -6,10 +6,6 @@ when 'install', 'uninstall'
   require 'echoes/installer'
   Echoes::Installer.public_send(ARGV.shift)
 else
-  require 'echoes'
-  if ARGV.delete('--tty') || ARGV.delete('-t')
-    Echoes::Terminal.new.run
-  else
-    Echoes::GUI.new.run
-  end
+  require 'echoes/cli'
+  Echoes::CLI.run(ARGV)
 end

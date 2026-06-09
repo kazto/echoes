@@ -21,6 +21,7 @@
 
 require 'json'
 require 'fiddle/import'
+require_relative 'platform'
 require 'rubish'
 require 'rubish/runtime/command'
 require 'reline'
@@ -34,10 +35,13 @@ module Echoes
 
   class EmbeddedShellHelper
     DARWIN_TIOCSCTTY = 0x20007461
+    LINUX_TIOCSCTTY  = 0x540E
 
     def initialize
       Process.setsid rescue nil
-      STDIN.ioctl(DARWIN_TIOCSCTTY, 0) rescue nil
+      
+      tiocsctty = Platform.macos? ? DARWIN_TIOCSCTTY : LINUX_TIOCSCTTY
+      STDIN.ioctl(tiocsctty, 0) rescue nil
       # After claiming ctty, explicitly set the slave's foreground
       # process group to ours. Without this, the line discipline has
       # nowhere to deliver SIGINT (the kernel doesn't do it automatically
@@ -73,7 +77,7 @@ module Echoes
       # Errors land on stderr (= the pty, visible in the pane) so
       # silent failures during startup don't disappear into the void.
       run_init_step(:setup_default_aliases)
-      run_init_step(:load_config)
+      run_init_step(:load_config) if Platform.macos?
       run_init_step(:load_history) unless no_rc
       @control_in  = IO.for_fd(3, 'r')
       @control_out = IO.for_fd(4, 'w')

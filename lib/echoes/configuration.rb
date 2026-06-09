@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative 'platform'
 require_relative 'profile'
 
 module Echoes
@@ -8,7 +9,7 @@ module Echoes
       @font_size = 14.0
       @rows = 24
       @cols = 80
-      @shell = ENV['SHELL'] || '/bin/bash'
+      @shell = ENV['SHELL'] || Platform.default_shell
       @scrollback_limit = 1000
       @foreground = [0.9, 0.9, 0.9]
       @background = [0.0, 0.0, 0.0]
@@ -250,17 +251,32 @@ module Echoes
     end
   end
 
-  CONFIG_PATH = File.join(Dir.home, '.config', 'echoes', 'echoes.conf')
+  CONFIG_FILENAME = 'echoes.conf'
+  CONFIG_PATH = File.join(Dir.home, '.config', 'echoes', CONFIG_FILENAME)
 
   def self.config
     @config ||= Configuration.new
   end
 
-  def self.load_config
-    if File.exist?(CONFIG_PATH)
-      config.instance_eval(File.read(CONFIG_PATH), CONFIG_PATH)
+  def self.config_paths(os: Platform.host_os, env: ENV, home: Dir.home)
+    if env['ECHOES_CONFIG_HOME']
+      return [File.join(env['ECHOES_CONFIG_HOME'], CONFIG_FILENAME)]
+    end
+
+    legacy_path = File.join(home, '.config', 'echoes', CONFIG_FILENAME)
+    return [legacy_path] unless Platform.windows?(os)
+
+    appdata_root = env['APPDATA'] || File.join(home, 'AppData', 'Roaming')
+    windows_path = File.join(appdata_root, 'Echoes', CONFIG_FILENAME)
+    [windows_path, legacy_path].uniq
+  end
+
+  def self.load_config(paths: nil)
+    path = (paths || config_paths).find { |candidate| File.exist?(candidate) }
+    if path
+      config.instance_eval(File.read(path), path)
     end
   rescue SyntaxError, StandardError => e
-    warn "echoes: error loading #{CONFIG_PATH}: #{e.message}"
+    warn "echoes: error loading #{path || CONFIG_PATH}: #{e.message}"
   end
 end

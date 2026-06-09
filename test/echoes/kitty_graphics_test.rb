@@ -569,6 +569,33 @@ class Echoes::KittyGraphicsTest < Test::Unit::TestCase
   end
 end
 
+if TestHelper::IS_WINDOWS
+  class Echoes::KittyGraphicsWin32Test < Test::Unit::TestCase
+    TINY_RGBA_PNG = [
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNg",
+      "+M8AAAICAQCCS1niAAAAAElFTkSuQmCC"
+    ].join.unpack1("m0").b
+
+    test "GDI+ decoder decodes PNG dimensions and RGBA bytes" do
+      require "echoes/kitty_graphics_win32"
+      omit("GDI+ PNG decoder unavailable") unless Echoes::KittyGraphics::GdiPlusPng.available?
+
+      image = Echoes::KittyGraphics::GdiPlusPng.decode(TINY_RGBA_PNG)
+      assert_not_nil image
+      assert_equal 1, image[:width]
+      assert_equal 1, image[:height]
+      assert_equal 4, image[:rgba].bytesize
+    end
+
+    test "GDI+ raw RGB decoder expands to RGBA" do
+      require "echoes/kitty_graphics_win32"
+
+      image = Echoes::KittyGraphics::GdiPlusPng.from_rgb("\x01\x02\x03".b, 1, 1)
+      assert_equal "\x01\x02\x03\xFF".b, image[:rgba]
+    end
+  end
+end
+
 # Lightweight monkey-patch so dispatch tests can inject decoded
 # images without going through the AppKit-backed PNG decoder.
 # Uses TestHelpers.replace_singleton_method (test_helper.rb) so the swaps don't

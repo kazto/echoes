@@ -1,73 +1,94 @@
 # frozen_string_literal: true
 
 require 'fileutils'
+require_relative 'platform'
 
 module Echoes
-  # Puts a thin wrapper Echoes.app / EchoesEmbed.app into
-  # ~/Applications/ so the user can launch echoes from Spotlight,
-  # Dock, or Cmd-Space without digging into the gem's install path.
-  # The wrapper's only job is to exec into the *real* launcher
-  # inside the gem — the gem's launcher already does all the
-  # interesting work (arch forcing on Apple Silicon, Ruby probing,
-  # $LOAD_PATH bootstrap).
-  #
-  # The gem path is baked into the wrapper at install time. After
-  # `gem update echoes` the user should re-run `echoes install` to
-  # refresh the shortcut to the new gem location.
+  # Puts launcher wrappers into place so the user can easily launch echoes.
+  # On macOS: copies thin Echoes.app / EchoesEmbed.app bundles to ~/Applications/.
+  # On Windows: drops echoes.bat into the user's home/bin or specified directory.
   module Installer
     USER_APPS_DIR = File.expand_path('~/Applications')
     BUNDLES = %w[Echoes.app EchoesEmbed.app].freeze
 
     module_function
 
-    # `source_root` is the directory containing the .app bundles —
-    # normally the gem's own root, computed from this file's path.
-    # Overridable for tests.
-    def install(source_root: default_source_root, target_dir: USER_APPS_DIR)
-      FileUtils.mkdir_p(target_dir)
-
-      installed = []
-      BUNDLES.each do |bundle|
-        source = File.join(source_root, bundle)
-        unless Dir.exist?(source)
-          warn "echoes install: #{bundle} not found at #{source} (skipping)"
-          next
-        end
-        target = File.join(target_dir, bundle)
-        write_wrapper(source, target)
-        installed << target
-      end
-
-      if installed.empty?
-        puts 'echoes install: nothing to do.'
-      else
-        puts 'Installed:'
-        installed.each { |t| puts "  #{t}" }
-        puts
-        puts 'Re-run `echoes install` after `gem update echoes` to refresh the shortcuts.'
-      end
-      installed
+    def is_windows?
+      Platform.windows?
     end
 
-    def uninstall(target_dir: USER_APPS_DIR)
-      removed = []
-      BUNDLES.each do |bundle|
-        target = File.join(target_dir, bundle)
-        next unless Dir.exist?(target)
-        FileUtils.remove_entry(target)
-        removed << target
-      end
-      if removed.empty?
-        puts 'echoes uninstall: nothing to remove.'
+    def install(source_root: default_source_root, target_dir: nil)
+      if is_windows?
+        target_dir ||= File.expand_path('~/bin')
+        FileUtils.mkdir_p(target_dir)
+        bat_path = File.join(target_dir, 'echoes.bat')
+        real_launcher = File.join(source_root, 'exe', 'echoes')
+        File.write(bat_path, <<~BAT)
+          @echo off
+          ruby "#{real_launcher}" %*
+        BAT
+        puts "Installed echoes.bat wrapper at #{bat_path}"
+        puts "Please ensure #{target_dir} is in your system PATH to run `echoes` from any command prompt."
+        [bat_path]
       else
-        removed.each { |t| puts "Removed #{t}" }
+        target_dir ||= USER_APPS_DIR
+        FileUtils.mkdir_p(target_dir)
+
+        installed = []
+        BUNDLES.each do |bundle|
+          source = File.join(source_root, bundle)
+          unless Dir.exist?(source)
+            warn "echoes install: #{bundle} not found at #{source} (skipping)"
+            next
+          end
+          target = File.join(target_dir, bundle)
+          write_wrapper(source, target)
+          installed << target
+        end
+
+        if installed.empty?
+          puts 'echoes install: nothing to do.'
+        else
+          puts 'Installed:'
+          installed.each { |t| puts "  #{t}" }
+          puts
+          puts 'Re-run `echoes install` after `gem update echoes` to refresh the shortcuts.'
+        end
+        installed
       end
-      removed
+    end
+
+    def uninstall(target_dir: nil)
+      if is_windows?
+        target_dir ||= File.expand_path('~/bin')
+        bat_path = File.join(target_dir, 'echoes.bat')
+        if File.exist?(bat_path)
+          File.delete(bat_path)
+          puts "Removed #{bat_path}"
+          [bat_path]
+        else
+          puts "echoes uninstall: echoes.bat not found (nothing to remove)."
+          []
+        end
+      else
+        target_dir ||= USER_APPS_DIR
+        removed = []
+        BUNDLES.each do |bundle|
+          target = File.join(target_dir, bundle)
+          next unless Dir.exist?(target)
+          FileUtils.remove_entry(target)
+          removed << target
+        end
+        if removed.empty?
+          puts 'echoes uninstall: nothing to remove.'
+        else
+          removed.each { |t| puts "Removed #{t}" }
+        end
+        removed
+      end
     end
 
     def default_source_root
-      # File is at <gem-root>/lib/echoes/installer.rb; two `..`s land
-      # at the gem root where Echoes.app / EchoesEmbed.app live.
       File.expand_path('../..', __dir__)
     end
 

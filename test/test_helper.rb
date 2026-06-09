@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
+ENV["ECHOES_CONFIG_HOME"] ||= File.expand_path("../tmp/test-config", __dir__)
 require "echoes"
 
 require "test-unit"
@@ -31,4 +32,11 @@ module TestHelpers
     klass.send(:remove_method, new_name) if klass.method_defined?(new_name) || klass.private_method_defined?(new_name)
     klass.send(:alias_method, new_name, old_name)
   end
+end
+
+module TestHelper
+  IS_WINDOWS = Echoes::Platform.windows?
+  # Windows uses cmd.exe to mimic an interactive process that handles stdin and echoes output.
+  CAT_COMMAND = IS_WINDOWS ? "cmd.exe" : "/bin/cat"
+  TRUE_COMMAND = IS_WINDOWS ? "cmd.exe /c exit" : "/usr/bin/true"
 end

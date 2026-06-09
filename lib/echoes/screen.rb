@@ -184,7 +184,30 @@ module Echoes
     end
 
     def put_multicell(text, scale:, width:, frac_n:, frac_d:, valign:, halign:,
-                       family: nil, flip_h: false, flip_v: false)
+                       family: nil, flip_h: false, flip_v: false, style_attrs: nil)
+      if style_attrs && !style_attrs.empty?
+        saved_attrs = Cell.new
+        saved_attrs.copy_from(@attrs)
+        style_attrs.each do |key, value|
+          case key
+          when :fg then @attrs.fg = value
+          when :bg then @attrs.bg = value
+          when :bold then @attrs.bold = value
+          end
+        end
+
+        begin
+          return put_multicell(
+            text,
+            scale: scale, width: width, frac_n: frac_n, frac_d: frac_d,
+            valign: valign, halign: halign, family: family,
+            flip_h: flip_h, flip_v: flip_v,
+          )
+        ensure
+          @attrs = saved_attrs
+        end
+      end
+
       mc_rows = scale
 
       if width > 0
@@ -244,8 +267,10 @@ module Echoes
     # Place a Kitty-graphics-protocol image as a multicell anchor.
     # `rgba` is a Ruby string of width*height*4 bytes (RGBA8, top
     # row first). `cells_w` / `cells_h` come from the wire's `c=` /
-    # `r=` options; when nil we size to the image's natural pixel
-    # dims divided by cell pixel size. `suppress_cursor` honors the
+    # `r=` options. When both are nil we size to the image's natural
+    # pixel dims divided by cell pixel size; when only one is given the
+    # other is derived to preserve the image's aspect ratio (matching
+    # Kitty/iTerm2 single-dimension semantics). `suppress_cursor` honors the
     # `C=1` request to leave the cursor where it was.
     #
     # The renderer is format-agnostic: it just blits `multicell.sixel`'s
@@ -253,14 +278,46 @@ module Echoes
     # rather than introducing a parallel `:image` key.
     def put_kitty_image(rgba:, width:, height:, cells_w: nil, cells_h: nil,
                          px_x_offset: 0, px_y_offset: 0,
-                         suppress_cursor: false, image_id: nil, z_index: 0)
+                         suppress_cursor: false, advance_cursor: nil,
+                         image_id: nil, z_index: 0)
       return if rgba.nil? || width <= 0 || height <= 0
       return if @cell_pixel_width.to_f <= 0 || @cell_pixel_height.to_f <= 0
+      advance_cursor = !suppress_cursor if advance_cursor.nil?
 
-      mc_cols = cells_w && cells_w > 0 ? cells_w : (width  / @cell_pixel_width ).ceil
-      mc_rows = cells_h && cells_h > 0 ? cells_h : (height / @cell_pixel_height).ceil
+      have_w = cells_w && cells_w > 0
+      have_h = cells_h && cells_h > 0
+      if have_w && have_h
+        mc_cols = cells_w
+        mc_rows = cells_h
+      elsif have_w
+        # Only the width was requested: derive the height so the box
+        # keeps the image's pixel aspect ratio (Kitty/iTerm2 single-
+        # dimension semantics). Box px = mc_cols*cell_w by mc_rows*cell_h,
+        # so mc_rows = mc_cols * cell_w * (height/width) / cell_h.
+        mc_cols = cells_w
+        mc_rows = (cells_w * @cell_pixel_width * height /
+                   (width * @cell_pixel_height)).round
+      elsif have_h
+        mc_rows = cells_h
+        mc_cols = (cells_h * @cell_pixel_height * width /
+                   (height * @cell_pixel_width)).round
+      else
+        mc_cols = (width  / @cell_pixel_width ).ceil
+        mc_rows = (height / @cell_pixel_height).ceil
+      end
       mc_cols = [mc_cols, 1].max
       mc_rows = [mc_rows, 1].max
+
+      # Scale oversized images down to fit the grid (preserving
+      # aspect ratio) instead of dropping them. The GUI blits the
+      # full-resolution bitmap into the cell rect via StretchDIBits,
+      # so fewer cells simply renders a smaller image — no data lost.
+      if mc_cols > @cols || mc_rows > @rows
+        fit = [@cols.to_f / mc_cols, @rows.to_f / mc_rows].min
+        mc_cols = [(mc_cols * fit).floor, 1].max
+        mc_rows = [(mc_rows * fit).floor, 1].max
+      end
+
       if suppress_cursor
         # C=1 (slide-presentation mode): anchor at the current
         # cursor without wrapping or scrolling. A multi-image
@@ -274,7 +331,6 @@ module Echoes
         # (Used to bail out entirely on oversize; presentation
         # clients prefer "show what fits" to "show nothing.")
       else
-        return if mc_cols > @cols || mc_rows > @rows
         if @cursor.col + mc_cols > @cols
           @cursor.col = 0
           line_feed
@@ -350,7 +406,7 @@ module Echoes
         image:      {rgba: rgba, width: width, height: height},
       }
 
-      unless suppress_cursor
+      if advance_cursor
         # Sixel parity: cursor lands at column 0 of the row after
         # the image. If that row is past the bottom, scroll.
         @cursor.col = 0
@@ -519,7 +575,12 @@ module Echoes
 
     def backspace
       @pending_wrap = false
-      @cursor.col = [0, @cursor.col - 1].max
+      if @cursor.col > 0
+        @cursor.col -= 1
+      elsif @cursor.row > 0 && @line_wrapped[@cursor.row - 1]
+        @cursor.row -= 1
+        @cursor.col = @cols - 1
+      end
     end
 
     def erase_in_display(mode = 0)
@@ -540,6 +601,7 @@ module Echoes
         @scrollback.clear
         @scrollback_wrapped.clear
       end
+      prune_orphaned_placements
     end
 
     def erase_in_line(mode = 0)
@@ -553,6 +615,7 @@ module Echoes
       when 2
         clear_row(@cursor.row)
       end
+      prune_orphaned_placements
     end
 
     def insert_lines(n = 1)
@@ -639,7 +702,24 @@ module Echoes
     def shift_placements(delta)
       return if @placements.empty?
       @placements.each { |p| p[:anchor_row] += delta }
-      @placements.reject! { |p| p[:anchor_row] + p[:cell_rows] <= 0 }
+      @placements.reject! do |p|
+        p[:anchor_row] + p[:cell_rows] <= -@scrollback.size
+      end
+    end
+
+    # Drop placements whose anchor cell is no longer an image multicell —
+    # i.e. the row backing the image was erased (e.g. `cls`, which clears the
+    # screen with per-line `\e[K` rather than `\e[2J`, and `\e[K` resets the
+    # anchor cell). The renderer draws from @placements independently of the
+    # grid, so an erased image would otherwise linger on screen.
+    def prune_orphaned_placements
+      return if @placements.empty?
+      @placements.reject! do |p|
+        r = p[:anchor_row]
+        next false if r < 0 || r >= @grid.size
+        cell = @grid[r][p[:anchor_col]]
+        !(cell && cell.multicell.is_a?(Hash))
+      end
     end
 
     def scroll_down(n = 1)
