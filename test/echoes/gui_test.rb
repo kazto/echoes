@@ -426,7 +426,7 @@ if Echoes::Platform.windows?
       assert_nil gui.instance_variable_get(:@mouse_button_down)
     end
 
-    test "Windows Ctrl+C copies normal text selection without writing interrupt" do
+    test "Windows Ctrl+Shift+C copies normal text selection without writing interrupt" do
       screen = Echoes::Screen.new(rows: 1, cols: 10)
       "hello".chars.each_with_index { |char, index| screen.grid[0][index].char = char }
       pane = StubSelectablePane.new(screen, [], 0, 0.0, nil)
@@ -440,7 +440,7 @@ if Echoes::Platform.windows?
 
       captured = nil
       with_win32_clipboard_setter(->(_hwnd, text) { captured = text }) do
-        assert_true gui.send(:handle_normal_selection_keydown, 0x43, ctrl_pressed: true, shift_pressed: false)
+        assert_true gui.send(:handle_normal_selection_keydown, 0x43, ctrl_pressed: true, shift_pressed: true)
       end
 
       assert_equal "ell", captured
@@ -449,7 +449,7 @@ if Echoes::Platform.windows?
       assert_equal [0, 3], gui.instance_variable_get(:@selection_end)
     end
 
-    test "Windows Ctrl+C selection message is handled before window dispatch" do
+    test "Windows Ctrl+Shift+C selection message is handled before window dispatch" do
       screen = Echoes::Screen.new(rows: 1, cols: 10)
       "hello".chars.each_with_index { |char, index| screen.grid[0][index].char = char }
       pane = StubSelectablePane.new(screen, [], 0, 0.0, nil)
@@ -462,7 +462,9 @@ if Echoes::Platform.windows?
       gui.instance_variable_set(:@selection_end, [0, 3])
 
       captured = nil
-      key_state = ->(vk) { vk == Echoes::Win32::VK_CONTROL ? 0x8000 : 0 }
+      key_state = ->(vk) {
+        [Echoes::Win32::VK_CONTROL, 0x10].include?(vk) ? 0x8000 : 0
+      }
       with_win32_const(:GetKeyState, key_state) do
         with_win32_clipboard_setter(->(_hwnd, text) { captured = text }) do
           assert_true gui.send(:handle_normal_selection_key_message, Echoes::Win32::WM_KEYDOWN, 0x43)
@@ -471,6 +473,28 @@ if Echoes::Platform.windows?
 
       assert_equal "ell", captured
       assert_equal [], pane.writes
+    end
+
+    test "Windows Ctrl+C does not copy normal text selection" do
+      screen = Echoes::Screen.new(rows: 1, cols: 10)
+      "hello".chars.each_with_index { |char, index| screen.grid[0][index].char = char }
+      pane = StubSelectablePane.new(screen, [], 0, 0.0, nil)
+      gui = Echoes::GUI::Backend::Win32.allocate
+      gui.instance_variable_set(:@active_tab, 0)
+      gui.instance_variable_set(:@tabs, [StubTab.new(pane)])
+      gui.instance_variable_set(:@cols, 10)
+      gui.instance_variable_set(:@hwnd, nil)
+      gui.instance_variable_set(:@selection_anchor, [0, 1])
+      gui.instance_variable_set(:@selection_end, [0, 3])
+
+      captured = nil
+      with_win32_clipboard_setter(->(_hwnd, text) { captured = text }) do
+        assert_false gui.send(:handle_normal_selection_keydown, 0x43, ctrl_pressed: true, shift_pressed: false)
+      end
+
+      assert_nil captured
+      assert_equal [0, 1], gui.instance_variable_get(:@selection_anchor)
+      assert_equal [0, 3], gui.instance_variable_get(:@selection_end)
     end
 
     test "Windows modifier key alone keeps normal text selection for shortcuts" do
@@ -505,7 +529,6 @@ if Echoes::Platform.windows?
         [0x08, false, false], # Backspace
         [0x0D, false, false], # Enter
         [0x41, false, false], # A
-        [0x56, true, false],  # Ctrl+V
         [0x26, false, false]  # Up
       ].each do |vk, ctrl_pressed, shift_pressed|
         screen = Echoes::Screen.new(rows: 1, cols: 10)
@@ -1010,18 +1033,28 @@ if Echoes::Platform.windows?
 
     test "Windows accelerator table encodes menu shortcuts" do
       gui = Echoes::GUI::Backend::Win32.allocate
+      ctrl_shift = Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY
 
       bytes = gui.send(:accelerator_table_bytes, Echoes::GUI::Backend::Win32::ACCELERATORS)
       entries = bytes.bytes.each_slice(6).map { |chunk| chunk.pack("C*").unpack("Cxvv") }
 
       assert_equal Echoes::GUI::Backend::Win32::ACCELERATORS.size, entries.size
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x54, Echoes::GUI::Backend::Win32::MENU_NEW_TAB], entries[0]
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x46, Echoes::GUI::Backend::Win32::MENU_FIND], entries[2]
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x57, Echoes::GUI::Backend::Win32::MENU_CLOSE_TAB], entries[5]
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x50, Echoes::GUI::Backend::Win32::MENU_TOGGLE_POINTER], entries[8]
-      assert_equal [Echoes::Win32::FVIRTKEY, 0x70, Echoes::GUI::Backend::Win32::MENU_ABOUT], entries[10]
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x41, Echoes::GUI::Backend::Win32::MENU_SELECT_ALL], entries[11]
-      assert_equal [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY | 0x80, 0x30, Echoes::GUI::Backend::Win32::MENU_RESET_FONT], entries[-1]
+      assert_include entries, [ctrl_shift, 0x54, Echoes::GUI::Backend::Win32::MENU_NEW_TAB]
+      assert_include entries, [ctrl_shift, 0x4F, Echoes::GUI::Backend::Win32::MENU_OPEN_FILE]
+      assert_include entries, [ctrl_shift, 0x43, Echoes::GUI::Backend::Win32::MENU_COPY]
+      assert_include entries, [ctrl_shift, 0x56, Echoes::GUI::Backend::Win32::MENU_PASTE]
+      assert_include entries, [ctrl_shift, 0x41, Echoes::GUI::Backend::Win32::MENU_SELECT_ALL]
+      assert_include entries, [ctrl_shift, 0x46, Echoes::GUI::Backend::Win32::MENU_FIND]
+      assert_include entries, [ctrl_shift, 0x57, Echoes::GUI::Backend::Win32::MENU_CLOSE_TAB]
+      assert_include entries, [ctrl_shift, 0x44, Echoes::GUI::Backend::Win32::MENU_SPLIT_RIGHT]
+      assert_include entries, [ctrl_shift, 0xBB, Echoes::GUI::Backend::Win32::MENU_INCREASE_FONT]
+      assert_include entries, [ctrl_shift, 0xBD, Echoes::GUI::Backend::Win32::MENU_DECREASE_FONT]
+      assert_include entries, [ctrl_shift | 0x80, 0x30, Echoes::GUI::Backend::Win32::MENU_RESET_FONT]
+      assert_include entries, [Echoes::Win32::FVIRTKEY, 0x72, Echoes::GUI::Backend::Win32::MENU_FIND_NEXT]
+      assert_include entries, [Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x72, Echoes::GUI::Backend::Win32::MENU_FIND_PREVIOUS]
+      assert_include entries, [Echoes::Win32::FALT | Echoes::Win32::FVIRTKEY, 0x73, Echoes::GUI::Backend::Win32::MENU_EXIT]
+      assert_false entries.include?([ctrl_shift, 0x57, Echoes::GUI::Backend::Win32::MENU_CLOSE_PANE])
+      assert_false entries.include?([ctrl_shift, 0x44, Echoes::GUI::Backend::Win32::MENU_SPLIT_DOWN])
     end
 
     test "Windows pointer visibility toggles through ShowCursor and clears cursor while hidden" do

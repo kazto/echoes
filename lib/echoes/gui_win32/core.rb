@@ -48,21 +48,23 @@ module Echoes
     TIMER_INTERVAL_MS = 15
 
     ACCELERATORS = [
-      [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x54, MENU_NEW_TAB],   # Ctrl+T
-      [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x4F, MENU_OPEN_FILE], # Ctrl+O
-      [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x46, MENU_FIND],      # Ctrl+F
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x54, MENU_NEW_TAB],   # Ctrl+Shift+T
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x4F, MENU_OPEN_FILE], # Ctrl+Shift+O
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x43, MENU_COPY],      # Ctrl+Shift+C
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x56, MENU_PASTE],     # Ctrl+Shift+V
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x41, MENU_SELECT_ALL], # Ctrl+Shift+A
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x46, MENU_FIND],      # Ctrl+Shift+F
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x47, MENU_FIND_NEXT], # Ctrl+Shift+G
       [Echoes::Win32::FVIRTKEY, 0x72, MENU_FIND_NEXT],                   # F3
       [Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x72, MENU_FIND_PREVIOUS], # Shift+F3
-      [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x57, MENU_CLOSE_TAB], # Ctrl+W
-      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x44, MENU_SPLIT_DOWN], # Ctrl+Shift+D
-      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x57, MENU_CLOSE_PANE], # Ctrl+Shift+W
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x57, MENU_CLOSE_TAB], # Ctrl+Shift+W
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x44, MENU_SPLIT_RIGHT], # Ctrl+Shift+D
       [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x50, MENU_TOGGLE_POINTER], # Ctrl+Shift+P
       [Echoes::Win32::FALT | Echoes::Win32::FVIRTKEY, 0x73, MENU_EXIT],          # Alt+F4
       [Echoes::Win32::FVIRTKEY, 0x70, MENU_ABOUT],                       # F1
-      [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x41, MENU_SELECT_ALL], # Ctrl+A
-      [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0xBB, MENU_INCREASE_FONT], # Ctrl++ (VK_OEM_PLUS)
-      [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0xBD, MENU_DECREASE_FONT], # Ctrl+- (VK_OEM_MINUS)
-      [Echoes::Win32::FCONTROL | Echoes::Win32::FVIRTKEY, 0x30, MENU_RESET_FONT]  # Ctrl+0
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0xBB, MENU_INCREASE_FONT], # Ctrl+Shift++ (VK_OEM_PLUS)
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0xBD, MENU_DECREASE_FONT], # Ctrl+Shift+- (VK_OEM_MINUS)
+      [Echoes::Win32::FCONTROL | Echoes::Win32::FSHIFT | Echoes::Win32::FVIRTKEY, 0x30, MENU_RESET_FONT]  # Ctrl+Shift+0
     ].freeze
 
     extend Echoes::GUI::Osc7

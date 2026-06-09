@@ -607,6 +607,7 @@ module Echoes
         return true
       end
 
+      return false if ctrl_pressed && !shift_pressed
       return false if normal_selection_modifier_key?(vk)
 
       clear_normal_selection
@@ -625,7 +626,7 @@ module Echoes
     end
 
     private def normal_selection_copy_key?(vk, ctrl_pressed:, shift_pressed:)
-      ctrl_pressed && !shift_pressed && vk.to_i == 0x43 # C
+      ctrl_pressed && shift_pressed && vk.to_i == 0x43 # C
     end
 
     private def normal_selection_modifier_key?(vk)
