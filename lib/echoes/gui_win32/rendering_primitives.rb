@@ -176,6 +176,21 @@ module Echoes
       Win32::SetTimer.call(@hwnd, TIMER_ID, TIMER_INTERVAL_MS, nil) != 0
     end
 
+    # Block until a new window message (keystroke, paint, timer, ...) arrives
+    # or `timeout_ms` elapses, then return so the loop can drain it. This
+    # replaces a fixed `sleep`, which delayed keystrokes by up to the sleep
+    # duration before they reached ConPTY. The timeout still bounds how long we
+    # wait so ConPTY output (not a window message) is polled at a steady rate.
+    private def wait_for_messages(timeout_ms)
+      fn = Win32::MsgWaitForMultipleObjectsEx
+      unless fn
+        sleep(timeout_ms / 1000.0)
+        return
+      end
+
+      fn.call(0, nil, timeout_ms, Win32::QS_ALLINPUT, Win32::MWMO_INPUTAVAILABLE)
+    end
+
     private def stop_native_timer
       return false unless @native_timer_enabled
       return false unless Win32::KillTimer && @hwnd && !Win32.null_pointer?(@hwnd)

@@ -47,6 +47,7 @@ module Echoes
     KillTimer         = new_func(USER32, 'KillTimer', [P, U], I)
     GetMessageW       = new_func(USER32, 'GetMessageW', [P, P, U, U], I)
     PeekMessageW      = new_func(USER32, 'PeekMessageW', [P, P, U, U, U], I)
+    MsgWaitForMultipleObjectsEx = new_func(USER32, 'MsgWaitForMultipleObjectsEx', [U, P, U, U, U], L)
     TranslateMessage  = new_func(USER32, 'TranslateMessage', [P], I)
     DispatchMessageW  = new_func(USER32, 'DispatchMessageW', [P], L)
     DefWindowProcW    = new_func(USER32, 'DefWindowProcW', [P, U, P, P], L)
@@ -317,6 +318,10 @@ module Echoes
     INFINITE           = 0xFFFFFFFF
     WAIT_OBJECT_0      = 0x00000000
     WAIT_TIMEOUT       = 0x00000102
+
+    # MsgWaitForMultipleObjectsEx wake mask / flags
+    QS_ALLINPUT         = 0x04FF
+    MWMO_INPUTAVAILABLE = 0x0004
 
     # Alternate INFINITE for signed integers
     INFINITE_SIGNED    = -1

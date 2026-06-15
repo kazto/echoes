@@ -510,8 +510,11 @@ module Echoes
 
         handle_timer_tick unless @native_timer_enabled
 
-        # CPU負荷低減と Ruby の GVL 解放のため、適度にスリープ
-        sleep 0.015
+        # 入力（キーストローク等）が来たら即座に起床して処理する。固定スリープ
+        # だとスリープ中の入力が最大 15ms 滞留して ConPTY への送信が遅れるため、
+        # メッセージ待ちでブロックしつつ、タイムアウトで ConPTY 出力を定期ポーリ
+        # ングする。
+        wait_for_messages(TIMER_INTERVAL_MS)
       end
 
       # Cleanup
