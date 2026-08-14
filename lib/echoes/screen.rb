@@ -7,7 +7,8 @@ module Echoes
     attr_reader :rows, :cols, :cursor, :grid, :scrollback, :dirty_rows,
                 :command_marks
     attr_accessor :cell_pixel_width, :cell_pixel_height, :title, :current_directory,
-                  :pending_wrap, :background, :bg_fills
+                  :pending_wrap, :background, :bg_fills,
+                  :preserve_multicell_on_blank_write
     # Tracks what kitty-graphics images are currently visible on
     # this pane's grid. Each entry: {image_id:, anchor_row:,
     # anchor_col:, cell_cols:, cell_rows:, x_off:, y_off:, image:}.
@@ -147,26 +148,31 @@ module Echoes
         end
       end
 
-      erase_multicell_at(@cursor.row, @cursor.col)
-
-      if @insert_mode
-        row = @grid[@cursor.row]
-        w.times { row.pop; row.insert(@cursor.col, Cell.new) }
-      end
-
       cell = @grid[@cursor.row][@cursor.col]
-      cell.copy_from(@attrs)
-      cell.char = c
-      cell.width = w
+      preserve_multicell = @preserve_multicell_on_blank_write && c == " " && cell.multicell
 
-      if w == 2 && @cursor.col + 1 < @cols
-        # Mark the next cell as a continuation (width 0)
-        next_cell = @grid[@cursor.row][@cursor.col + 1]
-        next_cell.reset!
-        next_cell.width = 0
+      unless preserve_multicell
+        erase_multicell_at(@cursor.row, @cursor.col)
+
+        if @insert_mode
+          row = @grid[@cursor.row]
+          w.times { row.pop; row.insert(@cursor.col, Cell.new) }
+        end
+
+        cell = @grid[@cursor.row][@cursor.col]
+        cell.copy_from(@attrs)
+        cell.char = c
+        cell.width = w
+
+        if w == 2 && @cursor.col + 1 < @cols
+          # Mark the next cell as a continuation (width 0)
+          next_cell = @grid[@cursor.row][@cursor.col + 1]
+          next_cell.reset!
+          next_cell.width = 0
+        end
+
+        mark_dirty(@cursor.row)
       end
-
-      mark_dirty(@cursor.row)
 
       @cursor.col += w
       if @cursor.col >= @cols

@@ -205,6 +205,17 @@ class Echoes::ParserTest < Test::Unit::TestCase
     assert_equal(2, @screen.cursor.col)
   end
 
+  test "ConPTY padding spaces do not erase an OSC 66 anchor" do
+    @screen = Echoes::Screen.new(rows: 24, cols: 120)
+    @screen.preserve_multicell_on_blank_write = true
+    @parser = Echoes::Parser.new(@screen)
+    @parser.feed("\e]66;s=3;# heading \a\e[3;1H  ")
+
+    assert_equal("#", @screen.grid[0][0].char)
+    assert_equal({cols: 3, rows: 3, scale: 3, frac_n: 0, frac_d: 0, valign: 0, halign: 0, family: nil, flip_h: false, flip_v: false}, @screen.grid[0][0].multicell)
+    assert_equal(:cont, @screen.grid[2][0].multicell)
+  end
+
   test "OSC 66 multicell with explicit width" do
     @parser.feed("\e]66;s=2:w=3;Hi\x07")
     cell = @screen.grid[0][0]

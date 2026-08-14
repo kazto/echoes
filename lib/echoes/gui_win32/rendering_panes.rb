@@ -7,6 +7,13 @@ module Echoes
     private
 
     private def wire_screen_handlers(pane)
+      # ConPTY does not account for OSC 66's scaled footprint when it emits
+      # console-buffer diffs.  Its padding spaces can therefore land inside a
+      # multicell continuation and must not erase the overlay.  Explicit
+      # erase controls and non-blank overwrites still remove it normally.
+      if pane.screen.respond_to?(:preserve_multicell_on_blank_write=)
+        pane.screen.preserve_multicell_on_blank_write = true
+      end
       pane.screen.clipboard_handler = method(:handle_clipboard)
       pane.screen.glyph_measurer = method(:measure_glyph)
       pane.screen.capture_handler = ->(path) { capture_pane_to_png(pane, path) }

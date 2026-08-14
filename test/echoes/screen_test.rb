@@ -417,6 +417,20 @@ class Echoes::ScreenTest < Test::Unit::TestCase
     assert_equal("X", @screen.grid[0][1].char)
   end
 
+  test "put_char can preserve multicell overlays from blank writes" do
+    @screen.preserve_multicell_on_blank_write = true
+    @screen.put_multicell("#", scale: 3, width: 0, frac_n: 0, frac_d: 0, valign: 0, halign: 0)
+
+    @screen.cursor.row = 2
+    @screen.cursor.col = 0
+    @screen.put_char(" ")
+
+    assert_equal("#", @screen.grid[0][0].char)
+    assert_kind_of(Hash, @screen.grid[0][0].multicell)
+    assert_equal(:cont, @screen.grid[2][0].multicell)
+    assert_equal(1, @screen.cursor.col)
+  end
+
   test "put_multicell multiple graphemes in auto width" do
     @screen.put_multicell("AB", scale: 2, width: 0, frac_n: 0, frac_d: 0, valign: 0, halign: 0)
     # A at (0,0), B at (0,2)
