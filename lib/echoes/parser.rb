@@ -494,7 +494,8 @@ module Echoes
     # Parse the `key=value:key=value:...` meta block that lives in
     # the second field of OSC 66 (and of OSC 7772 ;multicell).
     # `allow_extensions: false` accepts only the kitty spec keys
-    # (s/w/n/d/v/h) plus the Echoes ConPTY style bridge (e_fg/e_bg/e_bold).
+    # (s/w/n/d/v/h) plus the Echoes ConPTY style bridge
+    # (e_fg/e_bg/e_fg_rgb/e_bg_rgb/e_bold).
     # Echoes-private layout knobs (f=family, flip=h|v|hv) are routed through
     # OSC 7772 ;multicell, where collisions with a future kitty spec extension
     # can't surprise emitters.
@@ -520,6 +521,12 @@ module Echoes
         when 'h' then params[:halign] = v.to_i.clamp(0, 2)
         when 'e_fg' then style_attrs[:fg] = v.to_i.clamp(0, 255)
         when 'e_bg' then style_attrs[:bg] = v.to_i.clamp(0, 255)
+        when 'e_fg_rgb', 'e_bg_rgb'
+          components = v.split(',', -1)
+          if components.length == 3 && components.all? { |component| component.match?(/\A\d{1,3}\z/) }
+            rgb = components.map { |component| component.to_i.clamp(0, 255) }
+            style_attrs[k == 'e_fg_rgb' ? :fg : :bg] = rgb
+          end
         when 'e_bold' then style_attrs[:bold] = v.to_i != 0
         when 'f'
           # Family name. Names with ':' aren't representable here
