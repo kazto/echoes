@@ -289,6 +289,20 @@ class Echoes::ParserTest < Test::Unit::TestCase
     assert_equal([0, 0, 0], cell.bg)
   end
 
+  test "OSC 7772 cursor-offset positions a following multicell" do
+    @parser.feed("\e]7772;cursor-offset;2;4\x07\e]66;s=2;H\x07")
+    cell = @screen.grid[2][4]
+    assert_equal("H", cell.char)
+    assert_equal(2, cell.multicell[:scale])
+  end
+
+  test "OSC 7772 cursor-position places a following multicell absolutely" do
+    @parser.feed("\e[9;20H\e]7772;cursor-position;2;4\x07\e]66;s=2;H\x07")
+    cell = @screen.grid[2][4]
+    assert_equal("H", cell.char)
+    assert_equal(2, cell.multicell[:scale])
+  end
+
   test "OSC 66 ignores f= (Echoes extension lives on OSC 7772 ;multicell)" do
     @parser.feed("\e]66;s=2:f=Helvetica Neue;Title\x07")
     mc = @screen.grid[0][0].multicell

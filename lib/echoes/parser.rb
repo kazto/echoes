@@ -640,6 +640,13 @@ module Echoes
         return unless text
         text.force_encoding('UTF-8')
         @screen.put_multicell(text, **parse_multicell_meta(meta_str, allow_extensions: true))
+      when 'cursor-offset'
+        rows, cols = (args || '').split(';', 2).map { |value| [value.to_i, 0].max }
+        @screen.move_cursor_down(rows) if rows && rows > 0
+        @screen.move_cursor_forward(cols) if cols && cols > 0
+      when 'cursor-position'
+        row, col = (args || '').split(';', 2).map { |value| [value.to_i, 0].max }
+        @screen.move_cursor(row || 0, col || 0)
       when 'bg-color'
         rgba = parse_hex_color((args || '').strip)
         if rgba
