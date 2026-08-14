@@ -91,6 +91,10 @@ module Echoes
     CreateAcceleratorTableW = new_func(USER32, 'CreateAcceleratorTableW', [P, I], P)
     DestroyAcceleratorTable = new_func(USER32, 'DestroyAcceleratorTable', [P], I)
     TranslateAcceleratorW = new_func(USER32, 'TranslateAcceleratorW', [P, P, P], I)
+    # HICON is pointer-sized: 64-bit must use GetClassLongPtrW (GetClassLongW
+    # rejects pointer-sized fields there), while 32-bit user32.dll only
+    # exports GetClassLongW — same split as the SDK's GetClassLongPtr macro.
+    GetClassLongPtrW  = new_func(USER32, Fiddle::SIZEOF_VOIDP == 8 ? 'GetClassLongPtrW' : 'GetClassLongW', [P, I], S)
     EnumDisplayMonitors = new_func(USER32, 'EnumDisplayMonitors', [P, P, P, P], I)
     GetMonitorInfoW   = new_func(USER32, 'GetMonitorInfoW', [P, P], I)
     MonitorFromWindow = new_func(USER32, 'MonitorFromWindow', [P, U], P)
@@ -301,6 +305,7 @@ module Echoes
     NIF_TIP            = 0x00000004
     NIF_INFO           = 0x00000010
     NIIF_INFO          = 0x00000001
+    GCLP_HICON         = -14
     NOTIFYICONDATAW_V4_SIZE = Fiddle::SIZEOF_VOIDP == 8 ? 976 : 956
 
     MONITORINFO_SIZE   = 40
@@ -558,7 +563,7 @@ module Echoes
       end
 
       # Try to get the window's icon
-      icon_handle = GetClassLongW ? GetClassLongW.call(hwnd, GCL_HICON) : 0
+      icon_handle = GetClassLongPtrW ? GetClassLongPtrW.call(hwnd, GCLP_HICON) : 0
       icon_handle = 0 if icon_handle == 0 || null_pointer?(icon_handle)
 
       if Fiddle::SIZEOF_VOIDP == 8
